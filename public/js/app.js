@@ -600,9 +600,43 @@
 
   // ---------- игроки ----------
 
+  /* До перезапуска панели бэкенд мог прислать имена с ANSI-кодами цвета
+     (Paper/Purpur) — одна и та же личность распадается на две записи.
+     Чистим имена и сливаем записи. */
+  function cleanPlayerName(name) {
+    return String(name)
+      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+      .replace(/§[0-9a-fk-orx]/gi, '')
+      .replace(/[\x00-\x1f\x7f]/g, '');
+  }
+
+  function mergedPlayers(list) {
+    const byName = new Map();
+    for (const raw of list || []) {
+      const name = cleanPlayerName(raw.name);
+      if (!name) continue;
+      const p = byName.get(name) || {
+        name, uuid: null, ip: null, online: false, joinedAt: null,
+        lastSeen: null, loginPos: null, advancements: 0, lastAdvancement: null,
+      };
+      p.uuid = p.uuid || raw.uuid;
+      p.ip = p.ip || raw.ip;
+      p.loginPos = p.loginPos || raw.loginPos;
+      if (raw.online) { p.online = true; p.joinedAt = raw.joinedAt || p.joinedAt; }
+      if (raw.lastSeen && (!p.lastSeen || raw.lastSeen > p.lastSeen)) p.lastSeen = raw.lastSeen;
+      if (raw.advancements > p.advancements) {
+        p.advancements = raw.advancements;
+        p.lastAdvancement = raw.lastAdvancement;
+      }
+      byName.set(name, p);
+    }
+    return Array.from(byName.values())
+      .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
+  }
+
   function renderPlayers(server) {
     const panel = $('#players-list');
-    const players = server.playersInfo || [];
+    const players = mergedPlayers(server.playersInfo);
     panel.innerHTML = '';
     if (!players.length) {
       const empty = document.createElement('div');
@@ -652,8 +686,8 @@
       actions.className = 'player-actions';
       const invBtn = document.createElement('button');
       invBtn.className = 'mc-btn sm';
-      invBtn.appendChild(picon('user'));
-      invBtn.appendChild(document.createTextNode(' Инвентарь'));
+      invBtn.appendChild(picon('info-box'));
+      invBtn.appendChild(document.createTextNode(' Информация'));
       invBtn.addEventListener('click', () => openInventory(p.name));
       actions.appendChild(invBtn);
 
@@ -668,7 +702,7 @@
   async function fetchPlayTimes() {
     const server = state.current;
     if (!server) return;
-    const names = (server.playersInfo || []).map((p) => p.name).slice(0, 12);
+    const names = mergedPlayers(server.playersInfo).map((p) => p.name).slice(0, 12);
     for (const name of names) {
       if (state.playTimes[name] != null) continue;
       try {
@@ -838,6 +872,7 @@
   }
 
   function appendConsoleLine(line) {
+    line = String(line).replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''); // ANSI-цвета Paper/Purpur
     const consoleEl = $('#console');
     const atBottom = consoleEl.scrollTop + consoleEl.clientHeight >= consoleEl.scrollHeight - 40;
     const el = document.createElement('span');
