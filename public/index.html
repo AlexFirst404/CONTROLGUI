@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONTROLGUI — Панель Minecraft-серверов</title>
+<link rel="icon" type="image/png" href="/assets/gear.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- CodeMirror: редактор файлов (номера строк, Ctrl+F, подсветка, подсказки) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/properties/properties.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/jump-to-line.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/anyword-hint.min.js"></script>
+<link rel="stylesheet" href="css/minecraft.css">
+</head>
+<body class="theme-lime">
+<div class="bg-pattern"></div>
+<div class="shade"></div>
+
+<div id="app">
+
+  <div id="java-alert" class="java-alert hidden"></div>
+
+  <!-- ЭКРАН: СПИСОК СЕРВЕРОВ -->
+  <section id="screen-list" class="screen">
+    <h1 class="mc-title">Выберите сервер</h1>
+    <div class="mc-card inset list-panel" id="server-list">
+      <div class="list-empty" id="list-empty">
+        Серверов пока нет.<br>Нажмите «Создать сервер», чтобы развернуть первый!
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="mc-btn primary" id="btn-goto-create"><i class="pi" data-ic="plus"></i> Создать сервер</button>
+      <button class="mc-btn" id="btn-refresh"><i class="pi" data-ic="reload"></i> Обновить</button>
+      <button class="mc-btn" id="btn-manage" disabled><i class="pi" data-ic="sliders"></i> Управлять</button>
+      <button class="mc-btn danger" id="btn-delete" disabled><i class="pi" data-ic="trash"></i> Удалить</button>
+    </div>
+  </section>
+
+  <!-- ЭКРАН: СОЗДАНИЕ СЕРВЕРА -->
+  <section id="screen-create" class="screen hidden">
+    <h1 class="mc-title">Создание нового сервера</h1>
+    <form id="create-form" class="mc-card form-panel" autocomplete="off">
+      <div class="form-grid">
+        <label class="mc-label">Имя сервера
+          <input class="fld" name="name" maxlength="40" placeholder="Мой сервер" required>
+        </label>
+        <label class="mc-label">MOTD (описание в списке)
+          <input class="fld" name="motd" maxlength="59" placeholder="A Minecraft Server">
+        </label>
+
+        <label class="mc-label">Ядро
+          <select class="fld" id="core-select">
+            <option value="vanilla">Vanilla — официальное от Mojang</option>
+            <option value="paper">Paper — оптимизация и плагины</option>
+            <option value="purpur">Purpur — Paper + тонкая настройка</option>
+            <option value="folia">Folia — многопоточный Paper</option>
+            <option value="mohist">Mohist — Forge-моды + плагины</option>
+            <option value="forge">Forge — моды</option>
+          </select>
+        </label>
+        <label class="mc-label">Версия
+          <select class="fld" name="version" id="version-select" required>
+            <option value="">Загрузка версий...</option>
+          </select>
+        </label>
+
+        <label class="mc-label">Порт
+          <input class="fld" name="port" type="number" min="1024" max="65535" value="25565" required>
+        </label>
+        <label class="mc-label">Макс. игроков
+          <input class="fld" name="maxPlayers" type="number" min="1" max="1000" value="20">
+        </label>
+
+        <button type="button" class="mc-btn mc-cycle" id="cycle-gamemode"
+          data-key="gamemode" data-label="Режим игры"
+          data-values="survival,creative,adventure,spectator"
+          data-names="Выживание,Творческий,Приключение,Наблюдатель"></button>
+        <button type="button" class="mc-btn mc-cycle" id="cycle-difficulty"
+          data-key="difficulty" data-label="Сложность"
+          data-values="peaceful,easy,normal,hard"
+          data-names="Мирная,Лёгкая,Нормальная,Сложная" data-start="2"></button>
+
+        <label class="mc-label">Сид мира (необязательно)
+          <input class="fld" name="levelSeed" maxlength="100" placeholder="случайный">
+        </label>
+        <div class="opt-card slider-block">
+          <span class="opt-label">Память: <span class="slider-val" id="mem-create-val"></span></span>
+          <div class="mc-slider" id="mem-create"></div>
+        </div>
+
+        <div class="opt-card toggle-row">
+          <span class="toggle-label">Лицензия (online-mode)</span>
+          <div class="mc-toggle on" id="toggle-online"></div>
+        </div>
+        <div class="opt-card toggle-row">
+          <span class="toggle-label">PVP</span>
+          <div class="mc-toggle on" id="toggle-pvp"></div>
+        </div>
+      </div>
+
+      <span class="check-row" id="eula-row">
+        <span class="mc-check" id="eula-check"><span class="tick"></span></span>
+        <span>Я принимаю <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a></span>
+      </span>
+
+      <div class="hint">Для современных версий (1.20.5+) требуется Java 21. Файлы качаются с официальных источников: Mojang, PaperMC, PurpurMC, MohistMC, Forge. Установка Forge занимает несколько минут.</div>
+
+      <div class="btn-row">
+        <button type="submit" class="mc-btn primary" id="btn-create"><i class="pi" data-ic="check"></i> Создать сервер</button>
+        <button type="button" class="mc-btn" id="btn-create-cancel">Отмена</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ЭКРАН: СЕРВЕР -->
+  <section id="screen-server" class="screen hidden">
+
+    <div class="mc-card server-head">
+      <div class="sh-left">
+        <button class="mc-btn sm" id="btn-back" title="К списку серверов"><i class="pi" data-ic="chevron-left"></i></button>
+        <div class="sh-id">
+          <div class="sh-name" id="server-title">Сервер</div>
+          <div class="sh-sub">
+            <span class="status-badge" id="server-status"></span>
+            <span class="sh-addr" id="server-addr"></span>
+          </div>
+        </div>
+      </div>
+      <div class="sh-actions">
+        <button class="mc-btn sm primary" id="btn-start"><i class="pi" data-ic="play"></i> Запустить</button>
+        <button class="mc-btn sm" id="btn-restart"><i class="pi" data-ic="reload"></i> Перезапуск</button>
+        <button class="mc-btn sm" id="btn-stop"><i class="pi" data-ic="pause"></i> Остановить</button>
+        <button class="mc-btn sm danger" id="btn-kill"><i class="pi" data-ic="close-box"></i> Убить</button>
+        <button class="mc-btn sm accent hidden" id="btn-redownload"><i class="pi" data-ic="download"></i> Установить ядро</button>
+      </div>
+    </div>
+
+    <div class="progress-wrap hidden" id="download-wrap">
+      <div class="progress-label" id="download-label">Загрузка...</div>
+      <div class="mc-progress"><div class="mc-progress-fill" id="download-fill"></div></div>
+    </div>
+
+    <nav class="mc-card tabbar">
+      <button class="mc-tab sel" data-tab="console"><i class="pi" data-ic="script-text"></i> Консоль</button>
+      <button class="mc-tab" data-tab="settings"><i class="pi" data-ic="sliders-2"></i> Настройки</button>
+      <button class="mc-tab" data-tab="files"><i class="pi" data-ic="folder"></i> Файлы</button>
+      <button class="mc-tab" data-tab="info"><i class="pi" data-ic="info-box"></i> Информация</button>
+    </nav>
+
+    <!-- Вкладка: консоль -->
+    <div class="tab-pane" id="tab-console">
+      <div class="stats-row" id="stats-row">
+        <div class="mc-card stat-card">
+          <div class="stat-top">
+            <i class="pi stat-ic" data-ic="zap"></i>
+            <span class="stat-name">Процессор</span>
+            <span class="stat-val" id="stat-cpu">—</span>
+          </div>
+          <canvas class="stat-graph" id="graph-cpu"></canvas>
+        </div>
+        <div class="mc-card stat-card">
+          <div class="stat-top">
+            <i class="pi stat-ic" data-ic="chart-bar"></i>
+            <span class="stat-name">Память</span>
+            <span class="stat-val" id="stat-ram">—</span>
+          </div>
+          <canvas class="stat-graph" id="graph-ram"></canvas>
+        </div>
+        <div class="mc-card stat-card">
+          <div class="stat-top">
+            <i class="pi stat-ic" data-ic="download"></i>
+            <span class="stat-name">Чтение (диск+сеть)</span>
+            <span class="stat-val" id="stat-read">—</span>
+          </div>
+          <canvas class="stat-graph" id="graph-read"></canvas>
+        </div>
+        <div class="mc-card stat-card">
+          <div class="stat-top">
+            <i class="pi stat-ic" data-ic="upload"></i>
+            <span class="stat-name">Запись (диск+сеть)</span>
+            <span class="stat-val" id="stat-write">—</span>
+          </div>
+          <canvas class="stat-graph" id="graph-write"></canvas>
+        </div>
+      </div>
+
+      <div class="console" id="console"></div>
+
+      <div class="console-input-row">
+        <div class="cmd-wrap">
+          <div class="mc-card cmd-suggest hidden" id="cmd-suggest"></div>
+          <input class="fld console-input" id="command-input"
+                 placeholder="Команда… (введите / и нажимайте Tab для подсказок)" autocomplete="off" spellcheck="false">
+        </div>
+        <button class="mc-btn" id="btn-send"><i class="pi" data-ic="arrow-right"></i> Отправить</button>
+      </div>
+    </div>
+
+    <!-- Вкладка: настройки -->
+    <div class="tab-pane hidden" id="tab-settings">
+      <form id="settings-form" class="mc-card form-panel" autocomplete="off">
+        <div class="form-grid" id="settings-known"></div>
+        <label class="mc-label" style="margin-top:16px">Остальные параметры server.properties (key=value, по строке)
+          <textarea class="fld settings-raw" id="settings-raw" rows="8" spellcheck="false"></textarea>
+        </label>
+        <div class="hint">Изменения применяются после перезапуска сервера.</div>
+        <div class="btn-row btn-row-left">
+          <button type="submit" class="mc-btn primary"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Вкладка: файлы -->
+    <div class="tab-pane hidden" id="tab-files">
+      <div class="mc-card form-panel" id="files-browser">
+        <div class="files-head">
+          <div class="crumbs" id="files-crumbs"></div>
+          <div class="files-toolbar">
+            <button class="mc-btn sm primary" id="btn-new-file"><i class="pi" data-ic="file-plus"></i> Файл</button>
+            <button class="mc-btn sm" id="btn-new-dir"><i class="pi" data-ic="folder-plus"></i> Папка</button>
+            <button class="mc-btn sm accent" id="btn-upload"><i class="pi" data-ic="upload"></i> Загрузить</button>
+            <button class="mc-btn sm" id="btn-files-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
+            <input type="file" id="upload-input" class="hidden">
+          </div>
+        </div>
+        <div class="label-dim files-path" id="files-path"></div>
+        <div class="mc-card inset files-list" id="files-list"></div>
+      </div>
+      <div class="mc-card form-panel hidden" id="file-editor">
+        <div class="editor-head">
+          <div class="section-title" style="margin:0">Редактор: <span class="file-editor-name" id="editor-name"></span></div>
+          <div class="editor-actions">
+            <button class="mc-btn sm primary" id="btn-editor-save"><i class="pi" data-ic="save"></i> Сохранить</button>
+            <button class="mc-btn sm" id="btn-editor-close"><i class="pi" data-ic="close"></i> Закрыть</button>
+          </div>
+        </div>
+        <div class="hint" style="margin:8px 0 10px">Ctrl+F — поиск, Ctrl+G — следующее совпадение, Ctrl+S — сохранить, Ctrl+Space — подсказки (работают и при вводе).</div>
+        <div id="editor-cm"></div>
+        <textarea class="fld hidden" id="editor-text" rows="20" spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <!-- Вкладка: информация -->
+    <div class="tab-pane hidden" id="tab-info">
+      <div class="mc-card form-panel">
+        <div class="section-title">Сервер</div>
+        <div class="info-grid" id="info-grid"></div>
+        <div class="section-title" style="margin-top:24px">Игроки</div>
+        <div class="mc-card inset players-list" id="players-list"></div>
+        <div class="danger-zone">
+          <div class="danger-title">Опасная зона</div>
+          <button class="mc-btn danger" id="btn-delete-server"><i class="pi" data-ic="trash"></i> Удалить сервер и все его файлы</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ДИАЛОГ ПОДТВЕРЖДЕНИЯ -->
+  <div id="dialog-root" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head"><span id="dialog-title">Подтверждение</span></div>
+      <div class="modal-body" id="dialog-text"></div>
+      <div class="btn-row">
+        <button class="mc-btn" id="dialog-yes">Да</button>
+        <button class="mc-btn" id="dialog-no">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ДИАЛОГ ВВОДА -->
+  <div id="input-root" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head"><span id="input-title">Введите имя</span></div>
+      <div class="modal-body">
+        <input class="fld" id="input-field" autocomplete="off">
+      </div>
+      <div class="btn-row">
+        <button class="mc-btn primary" id="input-ok">ОК</button>
+        <button class="mc-btn" id="input-cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ИНВЕНТАРЬ ИГРОКА -->
+  <div id="inv-root" class="modal-wrap hidden">
+    <div class="modal inv-modal">
+      <div class="modal-head">
+        <span id="inv-title">Игрок</span>
+        <button class="mc-btn sm" id="inv-close"><i class="pi" data-ic="close"></i></button>
+      </div>
+      <div class="modal-body" id="inv-body"></div>
+    </div>
+  </div>
+
+  <div id="toast-root" class="toast-root"></div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
