@@ -56,6 +56,8 @@ window.API = (function () {
     player: (id, name) => call('GET', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),
     whitelist: (id) => call('GET', '/api/servers/' + id + '/whitelist'),
     whitelistChange: (id, action, name) => call('POST', '/api/servers/' + id + '/whitelist', { action: action, name: name }),
+    moderate: (id, action, name) => call('POST', '/api/servers/' + id + '/moderate', { action: action, name: name }),
+    playerDelete: (id, name) => call('DELETE', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),
     files: (id, path) => call('GET', '/api/servers/' + id + '/files?path=' + encodeURIComponent(path || '')),
     fileGet: (id, path) => call('GET', '/api/servers/' + id + '/file?path=' + encodeURIComponent(path)),
     fileSave: (id, path, content) => call('PUT', '/api/servers/' + id + '/file', { path: path, content: content }),

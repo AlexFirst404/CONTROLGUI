@@ -278,6 +278,9 @@
       state.sse.close();
       state.sse = null;
     }
+    // адрес отражает экран — после F5 возвращаемся туда же
+    if (name === 'list') history.replaceState(null, '', location.pathname);
+    else if (name === 'create') history.replaceState(null, '', '#create');
   }
 
   function initCycleButtons(root) {
@@ -679,6 +682,13 @@
   function renderPlayers(server) {
     const panel = $('#players-list');
     const players = mergedPlayers(server.playersInfo);
+    const bannedSet = new Set((server.banned || []).map((n) => n.toLowerCase()));
+    // забаненные, которых нет в списке — показываем, чтобы можно было разбанить
+    for (const bn of server.banned || []) {
+      if (!players.some((p) => p.name.toLowerCase() === bn.toLowerCase())) {
+        players.push({ name: bn, uuid: null, ip: null, online: false, joinedAt: null, lastSeen: null, advancements: 0 });
+      }
+    }
     panel.innerHTML = '';
     if (!players.length) {
       const empty = document.createElement('div');
@@ -700,6 +710,7 @@
 
       const main = document.createElement('div');
       main.className = 'player-main';
+      const banned = bannedSet.has(p.name.toLowerCase());
       const nameEl = document.createElement('div');
       nameEl.className = 'player-name';
       const dot = document.createElement('span');
@@ -707,6 +718,12 @@
       dot.title = p.online ? 'В сети' : 'Не в сети';
       nameEl.appendChild(dot);
       nameEl.appendChild(document.createTextNode(p.name));
+      if (banned) {
+        const badge = document.createElement('span');
+        badge.className = 'pl-banned';
+        badge.textContent = 'ЗАБАНЕН';
+        nameEl.appendChild(badge);
+      }
       const sub = document.createElement('div');
       sub.className = 'player-sub';
       const subParts = [];
@@ -743,27 +760,57 @@
       kickBtn.title = kickBtn.disabled ? 'Игрок не в сети' : 'Выгнать с сервера';
       kickBtn.addEventListener('click', async () => {
         if (await confirmDialog('Кикнуть игрока «' + p.name + '»?', { title: 'Кик', yesText: 'Кикнуть' })) {
-          await guard(() => API.command(state.currentId, 'kick ' + p.name));
+          await guard(() => API.moderate(state.currentId, 'kick', p.name));
           showToast('Игрок «' + p.name + '» кикнут.', 'ok');
           setTimeout(refreshServer, 800);
         }
       });
       actions.appendChild(kickBtn);
 
-      const banBtn = document.createElement('button');
-      banBtn.className = 'mc-btn sm danger';
-      banBtn.appendChild(picon('close-box'));
-      banBtn.appendChild(document.createTextNode(' Бан'));
-      banBtn.disabled = !running;
-      banBtn.title = banBtn.disabled ? 'Доступно на работающем сервере' : 'Забанить навсегда';
-      banBtn.addEventListener('click', async () => {
-        if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн больше не сможет зайти на сервер (until /pardon).', { title: 'Бан' })) {
-          await guard(() => API.command(state.currentId, 'ban ' + p.name));
-          showToast('Игрок «' + p.name + '» забанен.', 'ok');
-          setTimeout(refreshServer, 800);
+      if (banned) {
+        const pardonBtn = document.createElement('button');
+        pardonBtn.className = 'mc-btn sm primary';
+        pardonBtn.appendChild(picon('check'));
+        pardonBtn.appendChild(document.createTextNode(' Разбан'));
+        pardonBtn.addEventListener('click', async () => {
+          if (await confirmDialog('Разбанить игрока «' + p.name + '»?', { title: 'Разбан', yesText: 'Разбанить', danger: false })) {
+            await guard(() => API.moderate(state.currentId, 'pardon', p.name));
+            showToast('Игрок «' + p.name + '» разбанен.', 'ok');
+            setTimeout(refreshServer, 800);
+          }
+        });
+        actions.appendChild(pardonBtn);
+      } else {
+        const banBtn = document.createElement('button');
+        banBtn.className = 'mc-btn sm danger';
+        banBtn.appendChild(picon('close-box'));
+        banBtn.appendChild(document.createTextNode(' Бан'));
+        banBtn.addEventListener('click', async () => {
+          if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн не сможет зайти, пока не разбанят.', { title: 'Бан' })) {
+            await guard(() => API.moderate(state.currentId, 'ban', p.name));
+            showToast('Игрок «' + p.name + '» забанен.', 'ok');
+            setTimeout(refreshServer, 800);
+          }
+        });
+        actions.appendChild(banBtn);
+      }
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'mc-btn sm danger';
+      delBtn.appendChild(picon('trash'));
+      delBtn.disabled = p.online;
+      delBtn.title = p.online ? 'Игрок в сети — сначала кикните' : 'Стереть все данные игрока';
+      delBtn.addEventListener('click', async () => {
+        if (await confirmDialog('Стереть ВСЕ данные игрока «' + p.name + '»?\nИнвентарь, позиция, статистика, достижения и история входов будут удалены безвозвратно.', { title: 'Удаление данных игрока' })) {
+          await guard(async () => {
+            await API.playerDelete(state.currentId, p.name);
+            showToast('Данные игрока «' + p.name + '» стёрты.', 'ok');
+            delete state.playTimes[p.name];
+            setTimeout(refreshServer, 400);
+          });
         }
       });
-      actions.appendChild(banBtn);
+      actions.appendChild(delBtn);
 
       row.appendChild(head);
       row.appendChild(main);
@@ -852,6 +899,17 @@
   function closeInventory() {
     $('#inv-root').classList.add('hidden');
     if (state.invTimer) { clearInterval(state.invTimer); state.invTimer = null; }
+    state.invSnapshot = null;
+  }
+
+  /* снимок значимых данных: модалка перерисовывается ТОЛЬКО при изменении
+     (lastPlayed/время сессии в снимок не входят — они меняются всегда) */
+  function playerSnapshot(d) {
+    return JSON.stringify({
+      online: d.online, realtime: d.realtime, hp: d.health, food: d.food,
+      xp: d.xpLevel, pos: d.pos, dim: d.dimension, inv: d.inventory,
+      time: d.playTimeTicks, fj: d.firstJoinAt, lj: d.lastJoinAt, ips: d.ips, uuid: d.uuid,
+    });
   }
 
   async function openInventory(name) {
@@ -860,14 +918,19 @@
       const data = await API.player(state.currentId, name);
       const bases = await resolveIconBases(state.current ? state.current.version : '');
       buildPlayerModal(name, data, bases);
+      state.invSnapshot = playerSnapshot(data);
       $('#inv-root').classList.remove('hidden');
-      // онлайн-игрок: данные приходят в реальном времени — обновляем модалку
+      // онлайн-игрок: тихо опрашиваем, но DOM трогаем только при изменениях
       if (data.online) {
         state.invTimer = setInterval(async () => {
           if ($('#inv-root').classList.contains('hidden')) { closeInventory(); return; }
           try {
             const fresh = await API.player(state.currentId, name);
-            buildPlayerModal(name, fresh, bases);
+            const snap = playerSnapshot(fresh);
+            if (snap !== state.invSnapshot) {
+              state.invSnapshot = snap;
+              buildPlayerModal(name, fresh, bases);
+            }
           } catch (e) { /* пропускаем такт */ }
         }, 3000);
       }
@@ -1645,6 +1708,9 @@
 
   function switchTab(tab) {
     state.currentTab = tab;
+    if (state.currentId) {
+      history.replaceState(null, '', '#server=' + state.currentId + '/tab/' + tab);
+    }
     $$('.mc-tab').forEach((btn) => btn.classList.toggle('sel', btn.dataset.tab === tab));
     $('#tab-console').classList.toggle('hidden', tab !== 'console');
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
