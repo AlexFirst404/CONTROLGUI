@@ -54,6 +54,8 @@ window.API = (function () {
     consoleStream: (id) => new EventSource('/api/servers/' + id + '/console'),
     stats: (id) => call('GET', '/api/servers/' + id + '/stats'),
     player: (id, name) => call('GET', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),
+    whitelist: (id) => call('GET', '/api/servers/' + id + '/whitelist'),
+    whitelistChange: (id, action, name) => call('POST', '/api/servers/' + id + '/whitelist', { action: action, name: name }),
     files: (id, path) => call('GET', '/api/servers/' + id + '/files?path=' + encodeURIComponent(path || '')),
     fileGet: (id, path) => call('GET', '/api/servers/' + id + '/file?path=' + encodeURIComponent(path)),
     fileSave: (id, path, content) => call('PUT', '/api/servers/' + id + '/file', { path: path, content: content }),

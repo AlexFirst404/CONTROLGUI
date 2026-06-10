@@ -161,6 +161,7 @@
       <button class="mc-tab sel" data-tab="console"><i class="pi" data-ic="script-text"></i> Консоль</button>
       <button class="mc-tab" data-tab="settings"><i class="pi" data-ic="sliders-2"></i> Настройки</button>
       <button class="mc-tab" data-tab="files"><i class="pi" data-ic="folder"></i> Файлы</button>
+      <button class="mc-tab" data-tab="players"><i class="pi" data-ic="users"></i> Игроки</button>
       <button class="mc-tab" data-tab="info"><i class="pi" data-ic="info-box"></i> Информация</button>
     </nav>
 
@@ -199,6 +200,14 @@
           </div>
           <canvas class="stat-graph" id="graph-write"></canvas>
         </div>
+        <div class="mc-card stat-card">
+          <div class="stat-top">
+            <i class="pi stat-ic" data-ic="users"></i>
+            <span class="stat-name">Игроки</span>
+            <span class="stat-val" id="stat-players">—</span>
+          </div>
+          <canvas class="stat-graph" id="graph-players"></canvas>
+        </div>
       </div>
 
       <div class="console" id="console"></div>
@@ -217,14 +226,27 @@
     <div class="tab-pane hidden" id="tab-settings">
       <form id="settings-form" class="mc-card form-panel" autocomplete="off">
         <div class="form-grid" id="settings-known"></div>
-        <label class="mc-label" style="margin-top:16px">Остальные параметры server.properties (key=value, по строке)
-          <textarea class="fld settings-raw" id="settings-raw" rows="8" spellcheck="false"></textarea>
-        </label>
+
+        <div id="wl-card" class="opt-card wl-card hidden">
+          <div class="opt-label"><i class="pi" data-ic="users"></i> Белый список — допущенные игроки</div>
+          <div class="wl-chips" id="wl-chips"></div>
+          <div class="wl-add">
+            <input class="fld" id="wl-input" placeholder="Ник игрока" maxlength="16" autocomplete="off">
+            <button type="button" class="mc-btn sm primary" id="wl-add-btn"><i class="pi" data-ic="plus"></i> Добавить</button>
+          </div>
+          <div class="hint" style="margin:8px 0 0">На работающем сервере применяется сразу; на остановленном — правится whitelist.json.</div>
+        </div>
+
         <div class="hint">Изменения применяются после перезапуска сервера.</div>
         <div class="btn-row btn-row-left">
           <button type="submit" class="mc-btn primary"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
         </div>
       </form>
+
+      <div class="mc-card form-panel danger-card">
+        <div class="danger-title">Опасная зона</div>
+        <button class="mc-btn danger" id="btn-delete-server"><i class="pi" data-ic="trash"></i> Удалить сервер и все его файлы</button>
+      </div>
     </div>
 
     <!-- Вкладка: файлы -->
@@ -257,17 +279,19 @@
       </div>
     </div>
 
+    <!-- Вкладка: игроки -->
+    <div class="tab-pane hidden" id="tab-players">
+      <div class="mc-card form-panel">
+        <div class="section-title">Игроки сервера</div>
+        <div class="mc-card inset players-list" id="players-list"></div>
+      </div>
+    </div>
+
     <!-- Вкладка: информация -->
     <div class="tab-pane hidden" id="tab-info">
       <div class="mc-card form-panel">
         <div class="section-title">Сервер</div>
         <div class="info-grid" id="info-grid"></div>
-        <div class="section-title" style="margin-top:24px">Игроки</div>
-        <div class="mc-card inset players-list" id="players-list"></div>
-        <div class="danger-zone">
-          <div class="danger-title">Опасная зона</div>
-          <button class="mc-btn danger" id="btn-delete-server"><i class="pi" data-ic="trash"></i> Удалить сервер и все его файлы</button>
-        </div>
       </div>
     </div>
   </section>

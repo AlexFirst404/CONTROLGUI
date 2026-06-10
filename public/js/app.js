@@ -614,17 +614,16 @@
     if (!server) return;
     const active = server.status === 'running' || server.status === 'starting' || server.status === 'stopping';
     if (!active) {
-      $('#stat-cpu').textContent = '—';
-      $('#stat-ram').textContent = '—';
-      $('#stat-read').textContent = '—';
-      $('#stat-write').textContent = '—';
-      ['#graph-cpu', '#graph-ram', '#graph-read', '#graph-write'].forEach((id) => sparkline(id, [], 1));
+      ['#stat-cpu', '#stat-ram', '#stat-read', '#stat-write', '#stat-players'].forEach((id) => { $(id).textContent = '—'; });
+      ['#graph-cpu', '#graph-ram', '#graph-read', '#graph-write', '#graph-players'].forEach((id) => sparkline(id, [], 1));
       return;
     }
     try {
       const data = await API.stats(state.currentId);
       const pts = data.points || [];
       const last = pts[pts.length - 1];
+      const online = server.players.length;
+      $('#stat-players').textContent = online + (state.maxPlayers ? ' / ' + state.maxPlayers : '');
       if (last) {
         $('#stat-cpu').textContent = last.cpu.toFixed(1) + '% из 100%';
         $('#stat-ram').textContent = last.ramMb + ' / ' + data.memLimitMb + ' МБ';
@@ -637,6 +636,7 @@
       sparkline('#graph-ram', pts.map((p) => p.ramMb), data.memLimitMb);
       sparkline('#graph-read', pts.map((p) => p.readBps), null);
       sparkline('#graph-write', pts.map((p) => p.writeBps), null);
+      sparkline('#graph-players', pts.map((p) => p.players || 0), Math.max(state.maxPlayers || 0, 5));
     } catch (e) { /* статы не критичны */ }
   }
 
@@ -724,14 +724,46 @@
       else if (p.lastSeen) l1.textContent = 'Был(а): ' + new Date(p.lastSeen).toLocaleTimeString('ru-RU');
       right.appendChild(l1);
 
+      const running = server.status === 'running';
       const actions = document.createElement('div');
       actions.className = 'player-actions';
+
       const invBtn = document.createElement('button');
       invBtn.className = 'mc-btn sm';
       invBtn.appendChild(picon('info-box'));
       invBtn.appendChild(document.createTextNode(' Информация'));
       invBtn.addEventListener('click', () => openInventory(p.name));
       actions.appendChild(invBtn);
+
+      const kickBtn = document.createElement('button');
+      kickBtn.className = 'mc-btn sm';
+      kickBtn.appendChild(picon('close'));
+      kickBtn.appendChild(document.createTextNode(' Кик'));
+      kickBtn.disabled = !(p.online && running);
+      kickBtn.title = kickBtn.disabled ? 'Игрок не в сети' : 'Выгнать с сервера';
+      kickBtn.addEventListener('click', async () => {
+        if (await confirmDialog('Кикнуть игрока «' + p.name + '»?', { title: 'Кик', yesText: 'Кикнуть' })) {
+          await guard(() => API.command(state.currentId, 'kick ' + p.name));
+          showToast('Игрок «' + p.name + '» кикнут.', 'ok');
+          setTimeout(refreshServer, 800);
+        }
+      });
+      actions.appendChild(kickBtn);
+
+      const banBtn = document.createElement('button');
+      banBtn.className = 'mc-btn sm danger';
+      banBtn.appendChild(picon('close-box'));
+      banBtn.appendChild(document.createTextNode(' Бан'));
+      banBtn.disabled = !running;
+      banBtn.title = banBtn.disabled ? 'Доступно на работающем сервере' : 'Забанить навсегда';
+      banBtn.addEventListener('click', async () => {
+        if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн больше не сможет зайти на сервер (until /pardon).', { title: 'Бан' })) {
+          await guard(() => API.command(state.currentId, 'ban ' + p.name));
+          showToast('Игрок «' + p.name + '» забанен.', 'ok');
+          setTimeout(refreshServer, 800);
+        }
+      });
+      actions.appendChild(banBtn);
 
       row.appendChild(head);
       row.appendChild(main);
@@ -752,7 +784,7 @@
         if (data.playTimeTicks != null) state.playTimes[name] = data.playTimeTicks;
       } catch (e) { /* нет данных */ }
     }
-    if (state.currentTab === 'info') renderPlayers(server);
+    if (state.currentTab === 'players') renderPlayers(server);
   }
 
   // ---------- инвентарь (широкая раскладка, иконки предметов) ----------
@@ -817,10 +849,33 @@
     grid.appendChild(vEl);
   }
 
+  function closeInventory() {
+    $('#inv-root').classList.add('hidden');
+    if (state.invTimer) { clearInterval(state.invTimer); state.invTimer = null; }
+  }
+
   async function openInventory(name) {
+    if (state.invTimer) { clearInterval(state.invTimer); state.invTimer = null; }
     await guard(async () => {
       const data = await API.player(state.currentId, name);
       const bases = await resolveIconBases(state.current ? state.current.version : '');
+      buildPlayerModal(name, data, bases);
+      $('#inv-root').classList.remove('hidden');
+      // онлайн-игрок: данные приходят в реальном времени — обновляем модалку
+      if (data.online) {
+        state.invTimer = setInterval(async () => {
+          if ($('#inv-root').classList.contains('hidden')) { closeInventory(); return; }
+          try {
+            const fresh = await API.player(state.currentId, name);
+            buildPlayerModal(name, fresh, bases);
+          } catch (e) { /* пропускаем такт */ }
+        }, 3000);
+      }
+    });
+  }
+
+  function buildPlayerModal(name, data, bases) {
+    {
       $('#inv-title').textContent = 'Игрок: ' + name;
       const body = $('#inv-body');
       body.innerHTML = '';
@@ -846,9 +901,14 @@
       sideCard.appendChild(avatar);
       const meta = document.createElement('div');
       meta.className = 'inv-meta';
-      metaRow(meta, 'check', 'Статус', data.online ? 'В сети' : 'Не в сети');
+      metaRow(meta, 'check', 'Статус', data.online
+        ? (data.realtime ? 'В сети · реальное время' : 'В сети')
+        : 'Не в сети');
       metaRow(meta, 'clock', 'Всего в игре', data.playTimeTicks != null ? fmtTicks(data.playTimeTicks) : 'нет данных');
-      if (data.lastPlayed) metaRow(meta, 'save', 'Сохранение', new Date(data.lastPlayed).toLocaleString('ru-RU'));
+      if (data.firstJoinAt) metaRow(meta, 'clock', 'Первый вход', new Date(data.firstJoinAt).toLocaleString('ru-RU'));
+      if (data.lastJoinAt) metaRow(meta, 'clock', 'Последний вход', new Date(data.lastJoinAt).toLocaleString('ru-RU'));
+      if (data.ips && data.ips.length) metaRow(meta, 'server', 'IP-адреса', data.ips.join(', '));
+      if (!data.realtime && data.lastPlayed) metaRow(meta, 'save', 'Сохранение', new Date(data.lastPlayed).toLocaleString('ru-RU'));
       if (data.xpLevel != null) metaRow(meta, 'chart-bar', 'Опыт', 'уровень ' + data.xpLevel);
       if (data.health != null) metaRow(meta, 'zap', 'Здоровье', data.health + ' / 20');
       if (data.food != null) metaRow(meta, 'minus', 'Сытость', data.food + ' / 20');
@@ -900,7 +960,9 @@
 
         const hint = document.createElement('div');
         hint.className = 'inv-empty-note';
-        hint.textContent = 'Данные из сохранения мира — для игрока в сети обновляются при автосохранении.';
+        hint.textContent = data.realtime
+          ? 'Данные в реальном времени — обновляются каждые 3 секунды.'
+          : 'Данные из сохранения мира — для игрока в сети обновляются при автосохранении.';
         main.appendChild(hint);
       }
 
@@ -909,8 +971,7 @@
       body.appendChild(flex);
 
       if (data.playTimeTicks != null) state.playTimes[name] = data.playTimeTicks;
-      $('#inv-root').classList.remove('hidden');
-    });
+    }
   }
 
   // ---------- консоль ----------
@@ -1066,20 +1127,81 @@
 
   // ---------- настройки ----------
 
-  const KNOWN_FIELDS = [
-    { key: 'motd', label: 'MOTD (описание)', type: 'text' },
-    { key: 'server-port', label: 'Порт', type: 'number' },
-    { key: 'gamemode', label: 'Режим игры', type: 'select', options: [['survival', 'Выживание'], ['creative', 'Творческий'], ['adventure', 'Приключение'], ['spectator', 'Наблюдатель']] },
-    { key: 'difficulty', label: 'Сложность', type: 'select', options: [['peaceful', 'Мирная'], ['easy', 'Лёгкая'], ['normal', 'Нормальная'], ['hard', 'Сложная']] },
-    { key: 'max-players', label: 'Макс. игроков', type: 'number' },
-    { key: 'online-mode', label: 'Лицензия (online-mode)', type: 'bool' },
-    { key: 'pvp', label: 'PVP', type: 'bool' },
-    { key: 'hardcore', label: 'Хардкор', type: 'bool' },
-    { key: 'white-list', label: 'Белый список', type: 'bool' },
-    { key: 'view-distance', label: 'Дальность прорисовки', type: 'number' },
-    { key: 'spawn-protection', label: 'Защита спавна (блоки)', type: 'number' },
-    { key: 'enable-command-block', label: 'Командные блоки', type: 'bool' },
-  ];
+  /* Переводы и типы всех штатных ключей server.properties.
+     Неизвестные ключи получают тип автоматически (true/false -> свитч,
+     число -> числовое поле, иначе текст). */
+  const PROPERTY_DEFS = {
+    'motd': { label: 'MOTD (описание в списке)', type: 'text' },
+    'server-port': { label: 'Порт сервера', type: 'number' },
+    'gamemode': { label: 'Режим игры', type: 'select', options: [['survival', 'Выживание'], ['creative', 'Творческий'], ['adventure', 'Приключение'], ['spectator', 'Наблюдатель']] },
+    'difficulty': { label: 'Сложность', type: 'select', options: [['peaceful', 'Мирная'], ['easy', 'Лёгкая'], ['normal', 'Нормальная'], ['hard', 'Сложная']] },
+    'max-players': { label: 'Максимум игроков', type: 'number' },
+    'online-mode': { label: 'Лицензия (online-mode)', type: 'bool' },
+    'pvp': { label: 'PVP', type: 'bool' },
+    'hardcore': { label: 'Хардкор', type: 'bool' },
+    'white-list': { label: 'Белый список', type: 'bool' },
+    'enforce-whitelist': { label: 'Принудительный белый список', type: 'bool' },
+    'view-distance': { label: 'Дальность прорисовки, чанки', type: 'number' },
+    'simulation-distance': { label: 'Дистанция симуляции, чанки', type: 'number' },
+    'spawn-protection': { label: 'Защита спавна, блоки', type: 'number' },
+    'enable-command-block': { label: 'Командные блоки', type: 'bool' },
+    'allow-flight': { label: 'Разрешить полёт', type: 'bool' },
+    'allow-nether': { label: 'Нижний мир (Незер)', type: 'bool' },
+    'accepts-transfers': { label: 'Приём transfer-подключений', type: 'bool' },
+    'broadcast-console-to-ops': { label: 'Вывод консоли операторам', type: 'bool' },
+    'broadcast-rcon-to-ops': { label: 'Вывод RCON операторам', type: 'bool' },
+    'bug-report-link': { label: 'Ссылка для баг-репортов', type: 'text' },
+    'enable-jmx-monitoring': { label: 'JMX-мониторинг', type: 'bool' },
+    'enable-query': { label: 'Query-протокол (статистика)', type: 'bool' },
+    'enable-rcon': { label: 'RCON (удалённая консоль)', type: 'bool' },
+    'enable-status': { label: 'Показывать статус в списке серверов', type: 'bool' },
+    'enforce-secure-profile': { label: 'Требовать подписанный профиль', type: 'bool' },
+    'entity-broadcast-range-percentage': { label: 'Дальность видимости сущностей, %', type: 'number' },
+    'force-gamemode': { label: 'Принудительный режим игры', type: 'bool' },
+    'function-permission-level': { label: 'Уровень прав функций (1–4)', type: 'number' },
+    'generate-structures': { label: 'Генерация структур', type: 'bool' },
+    'generator-settings': { label: 'Настройки генератора (JSON)', type: 'text' },
+    'hide-online-players': { label: 'Скрывать список игроков', type: 'bool' },
+    'initial-disabled-packs': { label: 'Отключённые датапаки', type: 'text' },
+    'initial-enabled-packs': { label: 'Включённые датапаки', type: 'text' },
+    'level-name': { label: 'Имя папки мира', type: 'text' },
+    'level-seed': { label: 'Сид мира', type: 'text' },
+    'level-type': { label: 'Тип мира', type: 'text' },
+    'log-ips': { label: 'Логировать IP игроков', type: 'bool' },
+    'max-chained-neighbor-updates': { label: 'Лимит цепочек обновлений', type: 'number' },
+    'max-tick-time': { label: 'Макс. время тика, мс (−1 — выкл)', type: 'number' },
+    'max-world-size': { label: 'Макс. радиус мира, блоки', type: 'number' },
+    'network-compression-threshold': { label: 'Порог сжатия пакетов, байт', type: 'number' },
+    'op-permission-level': { label: 'Уровень прав операторов (1–4)', type: 'number' },
+    'pause-when-empty-seconds': { label: 'Пауза мира без игроков, сек', type: 'number' },
+    'player-idle-timeout': { label: 'Кик AFK, минут (0 — выкл)', type: 'number' },
+    'prevent-proxy-connections': { label: 'Блокировать прокси-подключения', type: 'bool' },
+    'query.port': { label: 'Порт Query', type: 'number' },
+    'rate-limit': { label: 'Лимит пакетов (0 — выкл)', type: 'number' },
+    'rcon.password': { label: 'Пароль RCON', type: 'text' },
+    'rcon.port': { label: 'Порт RCON', type: 'number' },
+    'region-file-compression': { label: 'Сжатие файлов регионов', type: 'text' },
+    'require-resource-pack': { label: 'Обязательный ресурспак', type: 'bool' },
+    'resource-pack': { label: 'Ссылка на ресурспак', type: 'text' },
+    'resource-pack-id': { label: 'UUID ресурспака', type: 'text' },
+    'resource-pack-prompt': { label: 'Текст запроса ресурспака', type: 'text' },
+    'resource-pack-sha1': { label: 'SHA1 ресурспака', type: 'text' },
+    'server-ip': { label: 'IP для привязки (пусто — все)', type: 'text' },
+    'spawn-monsters': { label: 'Спавн монстров', type: 'bool' },
+    'spawn-animals': { label: 'Спавн животных', type: 'bool' },
+    'spawn-npcs': { label: 'Спавн жителей', type: 'bool' },
+    'status-heartbeat-interval': { label: 'Интервал heartbeat, сек', type: 'number' },
+    'sync-chunk-writes': { label: 'Синхронная запись чанков', type: 'bool' },
+    'text-filtering-config': { label: 'Конфиг фильтра чата', type: 'text' },
+    'text-filtering-version': { label: 'Версия фильтра чата', type: 'number' },
+    'use-native-transport': { label: 'Нативный транспорт (Linux)', type: 'bool' },
+  };
+
+  function autoDef(key, value) {
+    if (value === 'true' || value === 'false') return { label: key, type: 'bool' };
+    if (/^-?\d+$/.test(value)) return { label: key, type: 'number' };
+    return { label: key, type: 'text' };
+  }
 
   async function loadSettings() {
     if (!state.currentId) return;
@@ -1095,7 +1217,7 @@
     const grid = $('#settings-known');
     grid.innerHTML = '';
     const properties = data.properties || {};
-    const used = new Set();
+    state.maxPlayers = parseInt(properties['max-players'], 10) || null;
 
     grid.appendChild(makeField('Имя сервера (в панели)', 'text', '__name', data.name || ''));
 
@@ -1118,17 +1240,79 @@
       format: fmtMem, labelEl: memVal,
     });
 
-    for (const field of KNOWN_FIELDS) {
-      if (!(field.key in properties)) continue;
-      used.add(field.key);
-      grid.appendChild(makeField(field.label, field.type, field.key, properties[field.key], field.options));
+    // известные ключи в порядке словаря, затем остальные по алфавиту
+    const knownKeys = Object.keys(PROPERTY_DEFS).filter((k) => k in properties);
+    const unknownKeys = Object.keys(properties).filter((k) => !(k in PROPERTY_DEFS)).sort();
+    for (const key of knownKeys.concat(unknownKeys)) {
+      const def = PROPERTY_DEFS[key] || autoDef(key, properties[key]);
+      const field = makeField(def.label, def.type, key, properties[key], def.options);
+      field.title = key + '=' + properties[key];
+      grid.appendChild(field);
     }
 
-    const rest = Object.keys(properties)
-      .filter((k) => !used.has(k))
-      .sort()
-      .map((k) => k + '=' + properties[k]);
-    $('#settings-raw').value = rest.join('\n');
+    // белый список: показать карточку и повесить реакцию на свитч
+    const wlRow = grid.querySelector('[data-prop-key="white-list"]');
+    if (wlRow) wlRow.addEventListener('click', () => setTimeout(updateWlVisibility, 0));
+    updateWlVisibility();
+  }
+
+  // ---------- белый список ----------
+
+  function updateWlVisibility() {
+    const row = $('#settings-known [data-prop-key="white-list"]');
+    const on = row && row._getValue && row._getValue() === 'true';
+    $('#wl-card').classList.toggle('hidden', !on);
+    if (on) guard(loadWhitelist);
+  }
+
+  async function loadWhitelist() {
+    if (!state.currentId) return;
+    const data = await API.whitelist(state.currentId);
+    const chips = $('#wl-chips');
+    chips.innerHTML = '';
+    if (!data.entries.length) {
+      const empty = document.createElement('span');
+      empty.className = 'label-dim';
+      empty.textContent = 'Список пуст — добавьте первый ник.';
+      chips.appendChild(empty);
+      return;
+    }
+    for (const name of data.entries) {
+      const chip = document.createElement('span');
+      chip.className = 'wl-chip';
+      const img = document.createElement('img');
+      img.src = 'https://mc-heads.net/avatar/' + encodeURIComponent(name) + '/16';
+      img.alt = '';
+      img.onerror = () => img.remove();
+      chip.appendChild(img);
+      chip.appendChild(document.createTextNode(name));
+      const x = picon('close');
+      x.title = 'Убрать из белого списка';
+      x.addEventListener('click', async () => {
+        if (await confirmDialog('Убрать «' + name + '» из белого списка?', { title: 'Белый список', yesText: 'Убрать' })) {
+          await guard(async () => {
+            await API.whitelistChange(state.currentId, 'remove', name);
+            setTimeout(() => guard(loadWhitelist), 600);
+          });
+        }
+      });
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    }
+  }
+
+  async function addToWhitelist() {
+    const input = $('#wl-input');
+    const name = input.value.trim();
+    if (!name) return;
+    await guard(async () => {
+      const res = await API.whitelistChange(state.currentId, 'add', name);
+      showToast(res.via === 'command'
+        ? 'Команда whitelist add отправлена серверу.'
+        : '«' + name + '» добавлен в whitelist.json.', 'ok');
+      input.value = '';
+      setTimeout(() => guard(loadWhitelist), 600);
+    });
   }
 
   function makeField(label, type, key, value, options) {
@@ -1196,13 +1380,6 @@
       const value = el._getValue ? el._getValue() : '';
       if (key === '__name') name = value;
       else properties[key] = value;
-    }
-    for (const rawLine of $('#settings-raw').value.split('\n')) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
-      const i = line.indexOf('=');
-      if (i <= 0) continue;
-      properties[line.slice(0, i).trim()] = line.slice(i + 1);
     }
 
     await guard(async () => {
@@ -1472,10 +1649,11 @@
     $('#tab-console').classList.toggle('hidden', tab !== 'console');
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
     $('#tab-files').classList.toggle('hidden', tab !== 'files');
+    $('#tab-players').classList.toggle('hidden', tab !== 'players');
     $('#tab-info').classList.toggle('hidden', tab !== 'info');
     if (tab === 'settings') loadSettings();
     if (tab === 'console') loadStats();
-    if (tab === 'info') fetchPlayTimes();
+    if (tab === 'players') fetchPlayTimes();
     if (tab === 'files') {
       $('#file-editor').classList.add('hidden');
       $('#files-browser').classList.remove('hidden');
@@ -1597,9 +1775,14 @@
     $('#btn-editor-save').addEventListener('click', saveFileEditor);
     $('#btn-editor-close').addEventListener('click', closeFileEditor);
 
-    $('#inv-close').addEventListener('click', () => $('#inv-root').classList.add('hidden'));
+    $('#inv-close').addEventListener('click', closeInventory);
     $('#inv-root').addEventListener('click', (event) => {
-      if (event.target === $('#inv-root')) $('#inv-root').classList.add('hidden');
+      if (event.target === $('#inv-root')) closeInventory();
+    });
+
+    $('#wl-add-btn').addEventListener('click', addToWhitelist);
+    $('#wl-input').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); addToWhitelist(); }
     });
   }
 
@@ -1623,13 +1806,16 @@
     loadVersions();
     guard(loadServers).then(suggestPort);
   } else if (location.hash.startsWith('#server=')) {
+    // форматы: #server=<id>, #server=<id>/player/<ник>, #server=<id>/tab/<вкладка>
     const rest = location.hash.slice(8);
-    const parts = rest.split('/player/');
-    const id = parts[0];
+    const playerSplit = rest.split('/player/');
+    const tabSplit = playerSplit[0].split('/tab/');
+    const id = tabSplit[0];
     guard(loadServers).then(() => {
       if (state.servers.some((s) => s.id === id)) {
         openServer(id);
-        if (parts[1]) setTimeout(() => openInventory(decodeURIComponent(parts[1])), 400);
+        if (tabSplit[1]) switchTab(tabSplit[1]);
+        if (playerSplit[1]) setTimeout(() => openInventory(decodeURIComponent(playerSplit[1])), 400);
       }
     });
   }
