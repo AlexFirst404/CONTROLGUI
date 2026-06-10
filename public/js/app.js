@@ -25,8 +25,50 @@
     folia: 'Folia', mohist: 'Mohist', forge: 'Forge',
   };
 
-  // официальные текстуры предметов (по id), item -> block -> текст
-  const TEX_BASE = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.4/assets/minecraft/textures/';
+  /* Иконки предметов «как в игре»:
+     1) mc.nerothe.com — пре-рендеренные иконки инвентаря (блоки — изометрия),
+        версия совпадает с версией сервера, с откатом к ближайшей доступной;
+     2) плоские текстуры из InventivetalentDev/minecraft-assets той же версии;
+     3) текстовое имя. */
+  const ICON_RENDER_HOST = 'https://mc.nerothe.com/img/';
+  const ICON_TEX_HOST = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/';
+  const ICON_VERSION_FALLBACKS = ['1.21.11', '1.21.4'];
+  const iconBaseCache = new Map(); // версия сервера -> Promise<{render, tex}>
+
+  function probeImage(url) {
+    return new Promise((resolve) => {
+      const im = new Image();
+      im.onload = () => resolve(true);
+      im.onerror = () => resolve(false);
+      im.src = url;
+    });
+  }
+
+  function resolveIconBases(version) {
+    if (iconBaseCache.has(version)) return iconBaseCache.get(version);
+    const promise = (async () => {
+      const candidates = [version].concat(ICON_VERSION_FALLBACKS)
+        .filter((v, i, arr) => v && arr.indexOf(v) === i);
+      let render = null;
+      let tex = null;
+      for (const v of candidates) {
+        if (await probeImage(ICON_RENDER_HOST + v + '/minecraft_stone.png')) {
+          render = ICON_RENDER_HOST + v + '/';
+          break;
+        }
+      }
+      for (const v of candidates) {
+        if (await probeImage(ICON_TEX_HOST + v + '/assets/minecraft/textures/item/diamond.png')) {
+          tex = ICON_TEX_HOST + v + '/assets/minecraft/textures/';
+          break;
+        }
+      }
+      if (!tex) tex = ICON_TEX_HOST + '1.21.4/assets/minecraft/textures/';
+      return { render, tex };
+    })();
+    iconBaseCache.set(version, promise);
+    return promise;
+  }
 
   const COMMANDS = [
     'advancement', 'attribute', 'ban', 'ban-ip', 'banlist', 'bossbar', 'clear', 'clone',
@@ -717,7 +759,7 @@
 
   const ARMOR_SLOTS = [[103, 'Шлем'], [102, 'Нагрудник'], [101, 'Поножи'], [100, 'Ботинки'], [-106, 'Левая рука']];
 
-  function invCell(item, label) {
+  function invCell(item, label, bases) {
     const cell = document.createElement('div');
     cell.className = 'inv-cell' + (item ? '' : ' empty');
     if (item) {
@@ -726,17 +768,24 @@
       img.className = 'it-img';
       img.alt = '';
       img.loading = 'lazy';
-      // у составных блоков (верстак, печка) нет плоской текстуры — пробуем грани
-      const candidates = [
-        'item/' + item.id, 'block/' + item.id,
-        'block/' + item.id + '_front', 'block/' + item.id + '_top', 'block/' + item.id + '_side',
-      ];
+      // основной источник — игровой рендер нужной версии; затем плоские
+      // текстуры (и грани составных блоков); в самом конце — текст
+      const candidates = [];
+      if (bases && bases.render) candidates.push(bases.render + 'minecraft_' + item.id + '.png');
+      const tex = (bases && bases.tex) || (ICON_TEX_HOST + '1.21.4/assets/minecraft/textures/');
+      candidates.push(
+        tex + 'item/' + item.id + '.png',
+        tex + 'block/' + item.id + '.png',
+        tex + 'block/' + item.id + '_front.png',
+        tex + 'block/' + item.id + '_top.png',
+        tex + 'block/' + item.id + '_side.png'
+      );
       let attempt = 0;
-      img.src = TEX_BASE + candidates[attempt] + '.png';
+      img.src = candidates[attempt];
       img.onerror = () => {
         attempt++;
         if (attempt < candidates.length) {
-          img.src = TEX_BASE + candidates[attempt] + '.png';
+          img.src = candidates[attempt];
         } else {
           const it = document.createElement('span');
           it.className = 'it';
@@ -771,6 +820,7 @@
   async function openInventory(name) {
     await guard(async () => {
       const data = await API.player(state.currentId, name);
+      const bases = await resolveIconBases(state.current ? state.current.version : '');
       $('#inv-title').textContent = 'Игрок: ' + name;
       const body = $('#inv-body');
       body.innerHTML = '';
@@ -833,19 +883,19 @@
         main.appendChild(mkSec('user', 'Броня и левая рука'));
         const armorGrid = document.createElement('div');
         armorGrid.className = 'inv-grid row5';
-        for (const [slot, label] of ARMOR_SLOTS) armorGrid.appendChild(invCell(bySlot.get(slot), label));
+        for (const [slot, label] of ARMOR_SLOTS) armorGrid.appendChild(invCell(bySlot.get(slot), label, bases));
         main.appendChild(armorGrid);
 
         main.appendChild(mkSec('folder', 'Инвентарь'));
         const mainGrid = document.createElement('div');
         mainGrid.className = 'inv-grid';
-        for (let slot = 9; slot <= 35; slot++) mainGrid.appendChild(invCell(bySlot.get(slot)));
+        for (let slot = 9; slot <= 35; slot++) mainGrid.appendChild(invCell(bySlot.get(slot), null, bases));
         main.appendChild(mainGrid);
 
         main.appendChild(mkSec('command', 'Хотбар'));
         const hotGrid = document.createElement('div');
         hotGrid.className = 'inv-grid';
-        for (let slot = 0; slot <= 8; slot++) hotGrid.appendChild(invCell(bySlot.get(slot)));
+        for (let slot = 0; slot <= 8; slot++) hotGrid.appendChild(invCell(bySlot.get(slot), null, bases));
         main.appendChild(hotGrid);
 
         const hint = document.createElement('div');
