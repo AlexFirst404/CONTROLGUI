@@ -726,14 +726,18 @@
       img.className = 'it-img';
       img.alt = '';
       img.loading = 'lazy';
-      img.dataset.kind = 'item';
-      img.src = TEX_BASE + 'item/' + item.id + '.png';
+      // у составных блоков (верстак, печка) нет плоской текстуры — пробуем грани
+      const candidates = [
+        'item/' + item.id, 'block/' + item.id,
+        'block/' + item.id + '_front', 'block/' + item.id + '_top', 'block/' + item.id + '_side',
+      ];
+      let attempt = 0;
+      img.src = TEX_BASE + candidates[attempt] + '.png';
       img.onerror = () => {
-        if (img.dataset.kind === 'item') {
-          img.dataset.kind = 'block';
-          img.src = TEX_BASE + 'block/' + item.id + '.png';
+        attempt++;
+        if (attempt < candidates.length) {
+          img.src = TEX_BASE + candidates[attempt] + '.png';
         } else {
-          // текстуры нет (составной блок) — показываем название
           const it = document.createElement('span');
           it.className = 'it';
           it.textContent = item.id.replace(/_/g, ' ');
@@ -784,6 +788,12 @@
       secInfo.appendChild(picon('user'));
       secInfo.appendChild(document.createTextNode('Об игроке'));
       sideCard.appendChild(secInfo);
+      const avatar = document.createElement('img');
+      avatar.className = 'inv-avatar';
+      avatar.alt = '';
+      avatar.src = headUrl({ uuid: data.uuid, name: name }, 96);
+      avatar.onerror = () => { avatar.onerror = null; avatar.src = '/assets/gear.png'; };
+      sideCard.appendChild(avatar);
       const meta = document.createElement('div');
       meta.className = 'inv-meta';
       metaRow(meta, 'check', 'Статус', data.online ? 'В сети' : 'Не в сети');
@@ -794,7 +804,7 @@
       if (data.food != null) metaRow(meta, 'minus', 'Сытость', data.food + ' / 20');
       if (data.pos) metaRow(meta, 'search', 'Позиция', data.pos.join(', ') + (data.dimension ? ' · ' + data.dimension : ''));
       const uuidEl = document.createElement('div');
-      uuidEl.style.cssText = 'margin-top:12px;font-size:10px;color:#6f7a72;word-break:break-all;';
+      uuidEl.className = 'inv-uuid';
       uuidEl.textContent = 'UUID: ' + (data.uuid || '—');
       sideCard.appendChild(meta);
       sideCard.appendChild(uuidEl);
@@ -1563,9 +1573,14 @@
     loadVersions();
     guard(loadServers).then(suggestPort);
   } else if (location.hash.startsWith('#server=')) {
-    const id = location.hash.slice(8);
+    const rest = location.hash.slice(8);
+    const parts = rest.split('/player/');
+    const id = parts[0];
     guard(loadServers).then(() => {
-      if (state.servers.some((s) => s.id === id)) openServer(id);
+      if (state.servers.some((s) => s.id === id)) {
+        openServer(id);
+        if (parts[1]) setTimeout(() => openInventory(decodeURIComponent(parts[1])), 400);
+      }
     });
   }
 })();
