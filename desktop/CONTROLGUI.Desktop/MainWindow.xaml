@@ -1,0 +1,31 @@
+<Window x:Class="ControlGui.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="CONTROLGUI — Панель Minecraft-серверов"
+        Width="1380" Height="900"
+        MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#0A0A0A"
+        Loaded="OnLoaded" Closing="OnClosing">
+    <Grid>
+        <wv2:WebView2 x:Name="Web" Visibility="Collapsed"/>
+
+        <!-- заставка, пока панель поднимается -->
+        <Grid x:Name="Splash" Background="#0A0A0A">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="CONTROLGUI"
+                           FontFamily="Consolas" FontSize="34" FontWeight="Bold"
+                           Foreground="#80DA5B" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="SplashText" Text="Запускаю панель…"
+                           FontFamily="Consolas" FontSize="15"
+                           Foreground="#A9B4AB" Margin="0,18,0,0"
+                           HorizontalAlignment="Center" TextAlignment="Center"
+                           TextWrapping="Wrap" MaxWidth="640"/>
+                <ProgressBar x:Name="SplashBar" IsIndeterminate="True"
+                             Width="320" Height="6" Margin="0,22,0,0"
+                             Foreground="#52A535" Background="#1E1E1F" BorderThickness="0"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
