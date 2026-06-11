@@ -77,4 +77,36 @@ public partial class MainWindow : Window
     {
         _launcher.Shutdown();
     }
+
+    // ---- кастомный тайтлбар ----
+
+    private void OnMinimize(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
+    }
+
+    private void OnMaximizeRestore(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+    }
+
+    private void OnCloseWindow(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    /// <summary>
+    /// Безрамочное окно при разворачивании вылезает за края экрана на толщину
+    /// рамки ресайза — компенсируем отступом; заодно меняем глиф кнопки.
+    /// </summary>
+    private void OnStateChanged(object? sender, EventArgs e)
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        Root.Margin = maximized ? new Thickness(7) : new Thickness(0);
+        BtnMax.ToolTip = maximized ? "Восстановить" : "Развернуть";
+        IcMax.Visibility = maximized ? Visibility.Collapsed : Visibility.Visible;
+        IcRestore.Visibility = maximized ? Visibility.Visible : Visibility.Collapsed;
+    }
 }

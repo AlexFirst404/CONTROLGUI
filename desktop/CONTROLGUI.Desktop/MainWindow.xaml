@@ -6,26 +6,150 @@
         Width="1380" Height="900"
         MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
         Background="#0A0A0A"
-        Loaded="OnLoaded" Closing="OnClosing">
-    <Grid>
-        <wv2:WebView2 x:Name="Web" Visibility="Collapsed"/>
+        Loaded="OnLoaded" Closing="OnClosing" StateChanged="OnStateChanged">
 
-        <!-- заставка, пока панель поднимается -->
-        <Grid x:Name="Splash" Background="#0A0A0A">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="CONTROLGUI"
-                           FontFamily="Consolas" FontSize="34" FontWeight="Bold"
-                           Foreground="#80DA5B" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="SplashText" Text="Запускаю панель…"
-                           FontFamily="Consolas" FontSize="15"
-                           Foreground="#A9B4AB" Margin="0,18,0,0"
-                           HorizontalAlignment="Center" TextAlignment="Center"
-                           TextWrapping="Wrap" MaxWidth="640"/>
-                <ProgressBar x:Name="SplashBar" IsIndeterminate="True"
-                             Width="320" Height="6" Margin="0,22,0,0"
-                             Foreground="#52A535" Background="#1E1E1F" BorderThickness="0"/>
-            </StackPanel>
+    <!-- безрамочное окно с собственным тайтлбаром; перетаскивание, снап и
+         двойной клик по шапке работают за счёт CaptionHeight -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="44"
+                      ResizeBorderThickness="6"
+                      GlassFrameThickness="0"
+                      CornerRadius="0"
+                      UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <!-- кнопка тайтлбара в стиле кита: плоская, ховер-подсветка -->
+        <Style x:Key="TitleBtn" TargetType="Button">
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+            <Setter Property="Width" Value="46"/>
+            <Setter Property="Height" Value="41"/>
+            <Setter Property="Background" Value="#242424"/>
+            <Setter Property="Foreground" Value="#D6E0D8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#353535"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#2A2A2A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- крестик: при наведении — красный, как danger-кнопка панели -->
+        <Style x:Key="TitleBtnClose" TargetType="Button" BasedOn="{StaticResource TitleBtn}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#C43F35"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#8B2A22"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="44"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ======================= кастомный тайтлбар ======================= -->
+        <Border Grid.Row="0" Background="#1B1B1B" BorderBrush="#5CB53D" BorderThickness="0,0,0,3">
+            <Grid>
+                <!-- название окна слева, с пиксельным «логотипом» -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                    <Border Width="18" Height="18" Background="#52A535" Margin="0,0,10,0">
+                        <Border Background="#80DA5B" Width="8" Height="8"
+                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="2,2,0,0"/>
+                    </Border>
+                    <TextBlock x:Name="TitleText"
+                               Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                               FontFamily="Consolas" FontSize="14" FontWeight="Bold"
+                               Foreground="#80DA5B" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- кастомные кнопки: свернуть / развернуть / закрыть
+                     (векторные глифы — не зависят от шрифтов) -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <Button x:Name="BtnMin" Style="{StaticResource TitleBtn}"
+                            ToolTip="Свернуть" Click="OnMinimize" Margin="0,0,1,0">
+                        <Rectangle Width="12" Height="2" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                    </Button>
+                    <Button x:Name="BtnMax" Style="{StaticResource TitleBtn}"
+                            ToolTip="Развернуть" Click="OnMaximizeRestore" Margin="0,0,1,0">
+                        <Grid>
+                            <!-- развернуть: один квадрат -->
+                            <Rectangle x:Name="IcMax" Width="11" Height="11" StrokeThickness="2"
+                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                            <!-- восстановить: два квадрата со сдвигом -->
+                            <Grid x:Name="IcRestore" Visibility="Collapsed">
+                                <Rectangle Width="9" Height="9" StrokeThickness="2" Margin="4,0,0,4"
+                                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                <Rectangle Width="9" Height="9" StrokeThickness="2" Margin="0,4,4,0"
+                                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                            </Grid>
+                        </Grid>
+                    </Button>
+                    <Button x:Name="BtnClose" Style="{StaticResource TitleBtnClose}"
+                            ToolTip="Закрыть" Click="OnCloseWindow">
+                        <Path StrokeThickness="2" Data="M0,0 L10,10 M10,0 L0,10"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ========================== содержимое =========================== -->
+        <Grid Grid.Row="1">
+            <wv2:WebView2 x:Name="Web" Visibility="Collapsed"/>
+
+            <!-- заставка, пока панель поднимается -->
+            <Grid x:Name="Splash" Background="#0A0A0A">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="CONTROLGUI"
+                               FontFamily="Consolas" FontSize="34" FontWeight="Bold"
+                               Foreground="#80DA5B" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="SplashText" Text="Запускаю панель…"
+                               FontFamily="Consolas" FontSize="15"
+                               Foreground="#A9B4AB" Margin="0,18,0,0"
+                               HorizontalAlignment="Center" TextAlignment="Center"
+                               TextWrapping="Wrap" MaxWidth="640"/>
+                    <ProgressBar x:Name="SplashBar" IsIndeterminate="True"
+                                 Width="320" Height="6" Margin="0,22,0,0"
+                                 Foreground="#52A535" Background="#1E1E1F" BorderThickness="0"/>
+                </StackPanel>
+            </Grid>
         </Grid>
     </Grid>
 </Window>
