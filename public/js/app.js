@@ -267,6 +267,55 @@
     };
   }
 
+  // ---------- настройки панели (тема, масштаб и т.д.) ----------
+
+  const APPSET_KEY = 'controlgui-settings';
+  const APPSET_DEFAULTS = { theme: 'theme-lime', scale: 100, bgAnim: true, graphs: true };
+
+  function loadAppSettings() {
+    try { return Object.assign({}, APPSET_DEFAULTS, JSON.parse(localStorage.getItem(APPSET_KEY)) || {}); }
+    catch (e) { return Object.assign({}, APPSET_DEFAULTS); }
+  }
+
+  function saveAppSettings(settings) {
+    try { localStorage.setItem(APPSET_KEY, JSON.stringify(settings)); } catch (e) { /* приватный режим */ }
+  }
+
+  function applyAppSettings(settings) {
+    document.body.classList.remove('theme-lime', 'theme-blue');
+    document.body.classList.add(settings.theme === 'theme-blue' ? 'theme-blue' : 'theme-lime');
+    document.body.style.zoom = settings.scale === 100 ? '' : settings.scale + '%';
+    document.body.classList.toggle('no-bganim', settings.bgAnim === false);
+    document.body.classList.toggle('hide-graphs', settings.graphs === false);
+  }
+
+  let appSettings = loadAppSettings();
+  let scaleSlider = null;
+
+  function changeAppSettings(patch) {
+    appSettings = Object.assign({}, appSettings, patch);
+    saveAppSettings(appSettings);
+    applyAppSettings(appSettings);
+  }
+
+  function openAppSettings() {
+    $('#set-theme').value = appSettings.theme;
+    if (!scaleSlider) {
+      scaleSlider = mkSlider($('#set-scale'), {
+        min: 80, max: 140, step: 5, value: appSettings.scale,
+        format: (v) => v + '%', labelEl: $('#set-scale-val'),
+      });
+      // применяем масштаб по отпусканию ползунка
+      $('#set-scale').addEventListener('pointerup', () => changeAppSettings({ scale: scaleSlider.value }));
+    } else {
+      scaleSlider.set(appSettings.scale);
+    }
+    $('#set-bganim').classList.toggle('on', appSettings.bgAnim !== false);
+    $('#set-graphs').classList.toggle('on', appSettings.graphs !== false);
+    $('#appset-root').classList.remove('hidden');
+    setTimeout(() => scaleSlider.refresh(), 30);
+  }
+
   // ---------- экраны ----------
 
   function showScreen(name) {
@@ -1850,8 +1899,32 @@
     $('#wl-input').addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); addToWhitelist(); }
     });
+
+    // настройки панели
+    $('#btn-app-settings').addEventListener('click', openAppSettings);
+    $('#appset-close').addEventListener('click', () => $('#appset-root').classList.add('hidden'));
+    $('#appset-root').addEventListener('click', (event) => {
+      if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
+    });
+    $('#set-theme').addEventListener('change', () => changeAppSettings({ theme: $('#set-theme').value }));
+    mkToggle($('#set-bganim'), appSettings.bgAnim !== false);
+    $('#set-bganim').addEventListener('click', () =>
+      changeAppSettings({ bgAnim: $('#set-bganim').classList.contains('on') }));
+    mkToggle($('#set-graphs'), appSettings.graphs !== false);
+    $('#set-graphs').addEventListener('click', () =>
+      changeAppSettings({ graphs: $('#set-graphs').classList.contains('on') }));
+
+    // при изменении размера окна перерисовываем графики под новую высоту
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (state.screen === 'server' && state.currentTab === 'console') loadStats();
+      }, 200);
+    });
   }
 
+  applyAppSettings(appSettings);
   applyIcons(document);
   initCycleButtons(document);
   mkToggle($('#toggle-online'), true);

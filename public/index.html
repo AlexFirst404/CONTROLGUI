@@ -37,6 +37,41 @@
 
   <div id="java-alert" class="java-alert hidden"></div>
 
+  <button id="btn-app-settings" class="mc-btn sm app-settings-btn" title="Настройки панели">
+    <i class="pi" data-ic="sliders"></i>
+  </button>
+
+  <!-- НАСТРОЙКИ ПАНЕЛИ (тема, масштаб и т.д.) -->
+  <div id="appset-root" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span>Настройки панели</span>
+        <button class="mc-btn sm" id="appset-close"><i class="pi" data-ic="close"></i></button>
+      </div>
+      <div class="modal-body">
+        <label class="mc-label">Тема оформления
+          <select class="fld" id="set-theme">
+            <option value="theme-lime">Лайм — зелёная (как в Bedrock)</option>
+            <option value="theme-blue">Синяя</option>
+          </select>
+        </label>
+        <div class="opt-card slider-block" style="margin-top:14px">
+          <span class="opt-label">Размер интерфейса: <span class="slider-val" id="set-scale-val"></span></span>
+          <div class="mc-slider" id="set-scale"></div>
+        </div>
+        <div class="opt-card toggle-row" style="margin-top:14px">
+          <span class="toggle-label">Анимация фона (ползущая сетка)</span>
+          <div class="mc-toggle" id="set-bganim"></div>
+        </div>
+        <div class="opt-card toggle-row" style="margin-top:14px">
+          <span class="toggle-label">Графики на вкладке «Консоль»</span>
+          <div class="mc-toggle" id="set-graphs"></div>
+        </div>
+        <div class="hint" style="margin-bottom:0">Применяется сразу и сохраняется в этом браузере/приложении.</div>
+      </div>
+    </div>
+  </div>
+
   <!-- ЭКРАН: СПИСОК СЕРВЕРОВ -->
   <section id="screen-list" class="screen">
     <h1 class="mc-title">Выберите сервер</h1>

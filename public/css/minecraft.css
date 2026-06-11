@@ -431,6 +431,27 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 ::-webkit-scrollbar-track { background: #1a1a1a; }
 ::-webkit-scrollbar-thumb { background: #b3ac9d; border: 2px solid #26231d; border-radius: 0; }
 
+/* ------------------------------------------- настройки панели ------------- */
+.app-settings-btn { position: fixed; top: 12px; right: 12px; z-index: 60; min-width: 0; }
+.no-bganim .bg-pattern::before { animation: none; }
+.hide-graphs .stat-graph { display: none; }
+
+/* --------------------------- адаптация по высоте окна ---------------------
+   при нехватке высоты сначала ужимаются графики, затем консоль */
+@media (max-height: 920px) {
+  .stat-graph { height: 54px; }
+  .console { height: max(430px, calc(100vh - 470px)); }
+}
+@media (max-height: 780px) {
+  .stat-graph { height: 36px; }
+  .stat-card { padding: 8px 12px 6px; }
+  .console { height: max(330px, calc(100vh - 420px)); }
+}
+@media (max-height: 640px) {
+  .stat-graph { display: none; }
+  .console { height: max(220px, calc(100vh - 330px)); }
+}
+
 /* ---------------------------------------------------------- адаптив ------- */
 @media (max-width: 900px) {
   .stats-row { grid-template-columns: 1fr 1fr; }
