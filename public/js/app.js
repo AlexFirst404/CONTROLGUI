@@ -323,6 +323,11 @@
     $('#screen-list').classList.toggle('hidden', name !== 'list');
     $('#screen-create').classList.toggle('hidden', name !== 'create');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
+    // бургер-меню — только на главном экране
+    $('#btn-burger').classList.toggle('hidden', name !== 'list');
+    $('#app-menu').classList.remove('open');
+    $('#app-scrim').classList.remove('open');
+    $('#burger-ic').classList.remove('open');
     if (name !== 'server' && state.sse) {
       state.sse.close();
       state.sse = null;
@@ -412,6 +417,7 @@
     const panel = $('#server-list');
     Array.from(panel.querySelectorAll('.srv-card')).forEach((el) => el.remove());
     $('#list-empty').classList.toggle('hidden', state.servers.length > 0);
+    panel.classList.toggle('single', state.servers.length === 1);
     renderHomeStats();
 
     for (const server of state.servers) {
