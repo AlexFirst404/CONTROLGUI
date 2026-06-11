@@ -360,6 +360,7 @@
         state.maxMemMb = Math.max(2048, Math.min(32768, Math.floor((st.totalMemMb - 2048) / 512) * 512));
         if (state.memCreateSlider) state.memCreateSlider.setRange(1024, state.maxMemMb);
       }
+      $('#about-version').textContent = String(st.app || '').replace('CONTROLGUI', '').trim();
       const alert = $('#java-alert');
       if (st.java && st.java.available) {
         alert.classList.add('hidden');
@@ -380,60 +381,112 @@
     renderList();
   }
 
+  function statusDotClass(status) {
+    if (status === 'running') return ' on';
+    if (status === 'starting' || status === 'stopping' || status === 'orphaned') return ' warn';
+    if (status === 'error' || status === 'no-jar') return ' err';
+    if (status === 'downloading') return ' dl';
+    return '';
+  }
+
+  function renderHomeStats() {
+    const box = $('#home-stats');
+    box.innerHTML = '';
+    const running = state.servers.filter((s) => s.status === 'running').length;
+    const players = state.servers.reduce((sum, s) => sum + s.players.length, 0);
+    const chip = (icon, html) => {
+      const el = document.createElement('span');
+      el.className = 'stat-chip';
+      el.appendChild(picon(icon));
+      const span = document.createElement('span');
+      span.innerHTML = html;
+      el.appendChild(span);
+      box.appendChild(el);
+    };
+    chip('server', 'Серверов: <b>' + state.servers.length + '</b>');
+    chip('zap', 'Работает: <b>' + running + '</b>');
+    chip('users', 'Игроков онлайн: <b>' + players + '</b>');
+  }
+
   function renderList() {
     const panel = $('#server-list');
-    Array.from(panel.querySelectorAll('.server-row')).forEach((el) => el.remove());
+    Array.from(panel.querySelectorAll('.srv-card')).forEach((el) => el.remove());
     $('#list-empty').classList.toggle('hidden', state.servers.length > 0);
-
-    if (!state.servers.some((s) => s.id === state.selectedId)) state.selectedId = null;
+    renderHomeStats();
 
     for (const server of state.servers) {
-      const row = document.createElement('div');
-      row.className = 'mc-row server-row' + (server.id === state.selectedId ? ' sel' : '');
+      const card = document.createElement('div');
+      card.className = 'srv-card';
 
+      const top = document.createElement('div');
+      top.className = 'srv-card-top';
       const icon = document.createElement('img');
       icon.className = 'server-icon';
       icon.src = iconFor(server.id);
       icon.alt = '';
-
-      const mid = document.createElement('div');
-      mid.className = 'server-row-mid';
+      const id = document.createElement('div');
+      id.className = 'srv-card-id';
       const nameEl = document.createElement('div');
-      nameEl.className = 'server-row-name';
+      nameEl.className = 'srv-card-name';
       nameEl.textContent = server.name;
       const subEl = document.createElement('div');
-      subEl.className = 'server-row-sub';
+      subEl.className = 'srv-card-sub';
       subEl.textContent = (CORE_NAMES[server.type] || server.type) + ' ' + server.version + ' · порт ' + server.port;
-      mid.appendChild(nameEl);
-      mid.appendChild(subEl);
+      id.appendChild(nameEl);
+      id.appendChild(subEl);
+      top.appendChild(icon);
+      top.appendChild(id);
 
-      const right = document.createElement('div');
-      right.className = 'server-row-right';
-      const statusEl = document.createElement('div');
-      statusEl.className = 'st-' + server.status;
-      statusEl.textContent = statusText(server);
-      right.appendChild(statusEl);
-      if (server.status === 'running') {
-        const playersEl = document.createElement('div');
-        playersEl.className = 'server-row-players';
-        playersEl.textContent = 'Игроки: ' + server.players.length;
-        right.appendChild(playersEl);
-      }
+      const line = document.createElement('div');
+      line.className = 'srv-card-line';
+      const st = document.createElement('span');
+      st.className = 'st-' + server.status;
+      const dot = document.createElement('span');
+      dot.className = 'status-dot' + statusDotClass(server.status);
+      st.appendChild(dot);
+      st.appendChild(document.createTextNode(statusText(server)));
+      const right = document.createElement('span');
+      right.className = 'right';
+      right.textContent = server.status === 'running' ? 'Игроки: ' + server.players.length : '';
+      line.appendChild(st);
+      line.appendChild(right);
 
-      row.appendChild(icon);
-      row.appendChild(mid);
-      row.appendChild(right);
-
-      row.addEventListener('click', () => {
-        state.selectedId = server.id;
-        renderList();
+      const actions = document.createElement('div');
+      actions.className = 'srv-card-actions';
+      const processAlive = ['starting', 'running', 'stopping'].includes(server.status);
+      const power = document.createElement('button');
+      power.className = 'mc-btn sm ' + (processAlive ? '' : 'primary');
+      power.appendChild(picon(processAlive ? 'pause' : 'play'));
+      power.appendChild(document.createTextNode(processAlive ? ' Остановить' : ' Запустить'));
+      power.disabled = !processAlive && (!server.jarReady || server.status === 'downloading' || server.status === 'orphaned');
+      power.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        if (processAlive) {
+          if (await confirmDialog('Остановить сервер «' + server.name + '»?' +
+                (server.players.length ? '\nОнлайн: ' + server.players.length + ' игрок(ов).' : ''),
+                { title: 'Остановка сервера', yesText: 'Остановить' })) {
+            await guard(() => API.stop(server.id));
+            guard(loadServers);
+          }
+        } else {
+          await guard(() => API.start(server.id));
+          guard(loadServers);
+        }
       });
-      row.addEventListener('dblclick', () => openServer(server.id));
-      panel.appendChild(row);
-    }
+      const open = document.createElement('button');
+      open.className = 'mc-btn sm';
+      open.appendChild(picon('arrow-right'));
+      open.appendChild(document.createTextNode(' Открыть'));
+      open.addEventListener('click', (event) => { event.stopPropagation(); openServer(server.id); });
+      actions.appendChild(power);
+      actions.appendChild(open);
 
-    $('#btn-manage').disabled = !state.selectedId;
-    $('#btn-delete').disabled = !state.selectedId;
+      card.appendChild(top);
+      card.appendChild(line);
+      card.appendChild(actions);
+      card.addEventListener('click', () => openServer(server.id));
+      panel.appendChild(card);
+    }
   }
 
   function iconFor(id) {
@@ -1818,8 +1871,39 @@
       if (state.memCreateSlider) state.memCreateSlider.refresh();
     });
     $('#btn-refresh').addEventListener('click', () => guard(loadServers));
-    $('#btn-manage').addEventListener('click', () => state.selectedId && openServer(state.selectedId));
-    $('#btn-delete').addEventListener('click', () => state.selectedId && deleteServer(state.selectedId));
+
+    // бургер-меню
+    const menuToggle = (open) => {
+      const want = open != null ? open : !$('#app-menu').classList.contains('open');
+      $('#app-menu').classList.toggle('open', want);
+      $('#app-scrim').classList.toggle('open', want);
+      $('#burger-ic').classList.toggle('open', want);
+    };
+    $('#btn-burger').addEventListener('click', () => menuToggle());
+    $('#app-scrim').addEventListener('click', () => menuToggle(false));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') menuToggle(false);
+    });
+    $$('#app-menu .menu-item[data-menu]').forEach((item) => item.addEventListener('click', () => {
+      menuToggle(false);
+      const action = item.dataset.menu;
+      if (action === 'home') { showScreen('list'); guard(loadServers); }
+      if (action === 'create') {
+        showScreen('create');
+        suggestPort();
+        loadVersions();
+        if (state.memCreateSlider) state.memCreateSlider.refresh();
+      }
+      if (action === 'settings') openAppSettings();
+      if (action === 'about') $('#about-root').classList.remove('hidden');
+    }));
+    Array.from(document.querySelectorAll('#app-menu a.menu-item')).forEach((a) =>
+      a.addEventListener('click', () => menuToggle(false)));
+
+    $('#about-close').addEventListener('click', () => $('#about-root').classList.add('hidden'));
+    $('#about-root').addEventListener('click', (event) => {
+      if (event.target === $('#about-root')) $('#about-root').classList.add('hidden');
+    });
 
     $('#create-form').addEventListener('submit', submitCreate);
     $('#btn-create-cancel').addEventListener('click', () => showScreen('list'));
@@ -1901,7 +1985,6 @@
     });
 
     // настройки панели
-    $('#btn-app-settings').addEventListener('click', openAppSettings);
     $('#appset-close').addEventListener('click', () => $('#appset-root').classList.add('hidden'));
     $('#appset-root').addEventListener('click', (event) => {
       if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');

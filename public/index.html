@@ -37,9 +37,44 @@
 
   <div id="java-alert" class="java-alert hidden"></div>
 
-  <button id="btn-app-settings" class="mc-btn sm app-settings-btn" title="Настройки панели">
-    <i class="pi" data-ic="sliders"></i>
+  <!-- бургер-меню -->
+  <button id="btn-burger" class="mc-btn sm app-burger" title="Меню">
+    <span class="burger-ic" id="burger-ic"><i></i><i></i><i></i></span>
   </button>
+  <div id="app-scrim" class="app-scrim"></div>
+  <nav id="app-menu" class="app-menu">
+    <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
+    <div class="menu-item" data-menu="create"><i class="pi" data-ic="plus"></i> Создать сервер</div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-menu="settings"><i class="pi" data-ic="sliders"></i> Настройки панели</div>
+    <div class="menu-item" data-menu="about"><i class="pi" data-ic="info-box"></i> О панели</div>
+    <div class="menu-sep"></div>
+    <a class="menu-item" href="https://github.com/AlexFirst404/CONTROLGUI" target="_blank" rel="noopener">
+      <i class="pi" data-ic="code"></i> GitHub</a>
+  </nav>
+
+  <!-- О ПАНЕЛИ -->
+  <div id="about-root" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span>О панели</span>
+        <button class="mc-btn sm" id="about-close"><i class="pi" data-ic="close"></i></button>
+      </div>
+      <div class="modal-body about-body">
+        <img src="/logo.png" class="about-logo" alt="">
+        <div class="about-name">CONTROLGUI <span id="about-version"></span></div>
+        <p class="about-text">Локальная панель управления настоящими Minecraft-серверами:
+          Vanilla, Paper, Purpur, Folia, Mohist и Forge. Консоль в реальном времени,
+          мониторинг ресурсов, файловый менеджер с редактором, игроки с инвентарём
+          и модерацией.</p>
+        <p class="about-text dim">Node.js без зависимостей · интерфейс в стиле Minecraft Ore UI ·
+          иконки Pixelarticons · редактор CodeMirror · головы скинов mc-heads.net ·
+          текстуры предметов minecraft-assets</p>
+        <a class="mc-btn sm" href="https://github.com/AlexFirst404/CONTROLGUI" target="_blank" rel="noopener"
+           style="margin-top:6px"><i class="pi" data-ic="code"></i> Репозиторий на GitHub</a>
+      </div>
+    </div>
+  </div>
 
   <!-- НАСТРОЙКИ ПАНЕЛИ (тема, масштаб и т.д.) -->
   <div id="appset-root" class="modal-wrap hidden">
@@ -74,8 +109,13 @@
 
   <!-- ЭКРАН: СПИСОК СЕРВЕРОВ -->
   <section id="screen-list" class="screen">
-    <h1 class="mc-title">Выберите сервер</h1>
-    <div class="mc-card inset list-panel" id="server-list">
+    <div class="home-hero">
+      <img src="/logo.png" class="hero-logo" alt="">
+      <h1 class="hero-title">CONTROL<span class="hero-accent">GUI</span></h1>
+      <div class="hero-sub">Локальная панель управления Minecraft-серверами</div>
+      <div class="hero-stats" id="home-stats"></div>
+    </div>
+    <div class="srv-grid" id="server-list">
       <div class="list-empty" id="list-empty">
         Серверов пока нет.<br>Нажмите «Создать сервер», чтобы развернуть первый!
       </div>
@@ -83,8 +123,6 @@
     <div class="btn-row">
       <button class="mc-btn primary" id="btn-goto-create"><i class="pi" data-ic="plus"></i> Создать сервер</button>
       <button class="mc-btn" id="btn-refresh"><i class="pi" data-ic="reload"></i> Обновить</button>
-      <button class="mc-btn" id="btn-manage" disabled><i class="pi" data-ic="sliders"></i> Управлять</button>
-      <button class="mc-btn danger" id="btn-delete" disabled><i class="pi" data-ic="trash"></i> Удалить</button>
     </div>
   </section>
 
