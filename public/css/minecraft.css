@@ -503,6 +503,11 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 .user-sub { font-size: 12px; color: #a9a9a9; margin-top: 3px; }
 .op-crown { width: 16px; height: 16px; }
 
+/* прячем нативную кнопку показа пароля движка (Edge/WebView2: ::-ms-reveal),
+   чтобы не появлялся второй глаз — оставляем только свою пиксельную иконку */
+input[type=password]::-ms-reveal,
+input[type=password]::-ms-clear { display: none; }
+
 /* глаз показа/скрытия пароля */
 .pass-wrap { position: relative; display: block; }
 .pass-wrap .fld { padding-right: 40px; }
