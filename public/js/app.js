@@ -119,6 +119,15 @@
     return !!(m.perms && m.perms[perm]);
   }
 
+  function canAny(perms) {
+    return perms.some((p) => can(p));
+  }
+
+  function accountLabel() {
+    if (state.openMode || !state.me || !state.me.username) return 'Локальный режим';
+    return state.me.username + (state.me.admin ? ' · админ' : '');
+  }
+
   async function loadMe() {
     try {
       const data = await API.me();
@@ -132,25 +141,46 @@
   /* Прячем вкладки/кнопки/пункты меню, недоступные пользователю. */
   function applyPermissions() {
     const isAdmin = state.me && (state.me.admin || (state.me.perms && state.me.perms.admin));
+    // текущий аккаунт — в меню и на главной
+    const accName = $('#menu-account-name'); if (accName) accName.textContent = accountLabel();
+    const homeAcc = $('#home-account');
+    if (homeAcc) {
+      homeAcc.innerHTML = '';
+      homeAcc.appendChild(picon('user'));
+      const t = document.createElement('span');
+      t.textContent = 'Вы вошли как: ' + accountLabel();
+      homeAcc.appendChild(t);
+    }
     // пункт «Пользователи» — админу или в открытом режиме (создать первого)
     $('#menu-users').classList.toggle('hidden', !(isAdmin || state.openMode));
     // «Выйти» — только когда есть вход
     $('#menu-logout').classList.toggle('hidden', state.openMode);
     // создание сервера
     $('#btn-goto-create').classList.toggle('hidden', !can('server.create'));
-    // вкладки сервера
-    const tabPerm = { console: 'console.view', settings: 'settings.edit', files: 'files.read', players: 'players.manage', backups: 'backups.manage' };
+    // вкладки сервера (по любому из соответствующих прав)
+    const tabPerm = {
+      console: ['console.view'],
+      settings: ['settings.edit'],
+      files: ['files.read'],
+      players: ['players.kick', 'players.ban', 'players.whitelist', 'players.delete'],
+      backups: ['backups.create', 'backups.restore', 'backups.delete'],
+    };
     $$('.mc-tab').forEach((btn) => {
       const p = tabPerm[btn.dataset.tab];
-      btn.classList.toggle('hidden', p ? !can(p) : false);
+      btn.classList.toggle('hidden', p ? !canAny(p) : false);
     });
-    // кнопки питания и ввода команды
-    const power = !can('server.power');
-    ['#btn-start', '#btn-restart', '#btn-stop', '#btn-kill', '#btn-redownload'].forEach((s) => {
-      const el = $(s); if (el) el.classList.toggle('perm-hidden', power);
-    });
+    // кнопки питания — каждая по своему праву
+    const toggleBtn = (sel, perm) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !can(perm)); };
+    toggleBtn('#btn-start', 'server.start');
+    toggleBtn('#btn-restart', 'server.stop');
+    toggleBtn('#btn-stop', 'server.stop');
+    toggleBtn('#btn-kill', 'server.kill');
+    toggleBtn('#btn-redownload', 'server.install');
     const noCmd = !can('console.command');
     ['#command-input', '#btn-send'].forEach((s) => { const el = $(s); if (el) el.classList.toggle('perm-hidden', noCmd); });
+    // создание бэкапа
+    const bk = $('#bk-create-btn'); if (bk) bk.classList.toggle('perm-hidden', !can('backups.create'));
+    const bkLabel = $('#bk-label'); if (bkLabel) bkLabel.classList.toggle('perm-hidden', !can('backups.create'));
   }
 
   // ---------- иконки ----------
@@ -918,50 +948,55 @@
       invBtn.addEventListener('click', () => openInventory(p.name));
       actions.appendChild(invBtn);
 
-      const kickBtn = document.createElement('button');
-      kickBtn.className = 'mc-btn sm';
-      kickBtn.appendChild(picon('close'));
-      kickBtn.appendChild(document.createTextNode(' Кик'));
-      kickBtn.disabled = !(p.online && running);
-      kickBtn.title = kickBtn.disabled ? 'Игрок не в сети' : 'Выгнать с сервера';
-      kickBtn.addEventListener('click', async () => {
-        if (await confirmDialog('Кикнуть игрока «' + p.name + '»?', { title: 'Кик', yesText: 'Кикнуть' })) {
-          await guard(() => API.moderate(state.currentId, 'kick', p.name));
-          showToast('Игрок «' + p.name + '» кикнут.', 'ok');
-          setTimeout(refreshServer, 800);
-        }
-      });
-      actions.appendChild(kickBtn);
-
-      if (banned) {
-        const pardonBtn = document.createElement('button');
-        pardonBtn.className = 'mc-btn sm primary';
-        pardonBtn.appendChild(picon('check'));
-        pardonBtn.appendChild(document.createTextNode(' Разбан'));
-        pardonBtn.addEventListener('click', async () => {
-          if (await confirmDialog('Разбанить игрока «' + p.name + '»?', { title: 'Разбан', yesText: 'Разбанить', danger: false })) {
-            await guard(() => API.moderate(state.currentId, 'pardon', p.name));
-            showToast('Игрок «' + p.name + '» разбанен.', 'ok');
+      if (can('players.kick')) {
+        const kickBtn = document.createElement('button');
+        kickBtn.className = 'mc-btn sm';
+        kickBtn.appendChild(picon('close'));
+        kickBtn.appendChild(document.createTextNode(' Кик'));
+        kickBtn.disabled = !(p.online && running);
+        kickBtn.title = kickBtn.disabled ? 'Игрок не в сети' : 'Выгнать с сервера';
+        kickBtn.addEventListener('click', async () => {
+          if (await confirmDialog('Кикнуть игрока «' + p.name + '»?', { title: 'Кик', yesText: 'Кикнуть' })) {
+            await guard(() => API.moderate(state.currentId, 'kick', p.name));
+            showToast('Игрок «' + p.name + '» кикнут.', 'ok');
             setTimeout(refreshServer, 800);
           }
         });
-        actions.appendChild(pardonBtn);
-      } else {
-        const banBtn = document.createElement('button');
-        banBtn.className = 'mc-btn sm danger';
-        banBtn.appendChild(picon('close-box'));
-        banBtn.appendChild(document.createTextNode(' Бан'));
-        banBtn.addEventListener('click', async () => {
-          if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн не сможет зайти, пока не разбанят.', { title: 'Бан' })) {
-            await guard(() => API.moderate(state.currentId, 'ban', p.name));
-            showToast('Игрок «' + p.name + '» забанен.', 'ok');
-            setTimeout(refreshServer, 800);
-          }
-        });
-        actions.appendChild(banBtn);
+        actions.appendChild(kickBtn);
       }
 
-      const delBtn = document.createElement('button');
+      if (can('players.ban')) {
+        if (banned) {
+          const pardonBtn = document.createElement('button');
+          pardonBtn.className = 'mc-btn sm primary';
+          pardonBtn.appendChild(picon('check'));
+          pardonBtn.appendChild(document.createTextNode(' Разбан'));
+          pardonBtn.addEventListener('click', async () => {
+            if (await confirmDialog('Разбанить игрока «' + p.name + '»?', { title: 'Разбан', yesText: 'Разбанить', danger: false })) {
+              await guard(() => API.moderate(state.currentId, 'pardon', p.name));
+              showToast('Игрок «' + p.name + '» разбанен.', 'ok');
+              setTimeout(refreshServer, 800);
+            }
+          });
+          actions.appendChild(pardonBtn);
+        } else {
+          const banBtn = document.createElement('button');
+          banBtn.className = 'mc-btn sm danger';
+          banBtn.appendChild(picon('close-box'));
+          banBtn.appendChild(document.createTextNode(' Бан'));
+          banBtn.addEventListener('click', async () => {
+            if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн не сможет зайти, пока не разбанят.', { title: 'Бан' })) {
+              await guard(() => API.moderate(state.currentId, 'ban', p.name));
+              showToast('Игрок «' + p.name + '» забанен.', 'ok');
+              setTimeout(refreshServer, 800);
+            }
+          });
+          actions.appendChild(banBtn);
+        }
+      }
+
+      const delBtn = can('players.delete') ? document.createElement('button') : null;
+      if (delBtn) {
       delBtn.className = 'mc-btn sm danger';
       delBtn.appendChild(picon('trash'));
       delBtn.disabled = p.online;
@@ -977,6 +1012,7 @@
         }
       });
       actions.appendChild(delBtn);
+      }
 
       row.appendChild(head);
       row.appendChild(main);
@@ -1964,19 +2000,23 @@
       dl.href = API.backupDownloadUrl(state.currentId, b.name);
       dl.title = 'Скачать';
       dl.appendChild(picon('download'));
-      const rest = document.createElement('button');
-      rest.className = 'mc-btn sm accent';
-      rest.title = 'Восстановить';
-      rest.appendChild(picon('reload'));
-      rest.addEventListener('click', () => restoreBackup(b));
-      const del = document.createElement('button');
-      del.className = 'mc-btn sm danger';
-      del.title = 'Удалить';
-      del.appendChild(picon('trash'));
-      del.addEventListener('click', () => deleteBackup(b));
       actions.appendChild(dl);
-      actions.appendChild(rest);
-      actions.appendChild(del);
+      if (can('backups.restore')) {
+        const rest = document.createElement('button');
+        rest.className = 'mc-btn sm accent';
+        rest.title = 'Восстановить';
+        rest.appendChild(picon('reload'));
+        rest.addEventListener('click', () => restoreBackup(b));
+        actions.appendChild(rest);
+      }
+      if (can('backups.delete')) {
+        const del = document.createElement('button');
+        del.className = 'mc-btn sm danger';
+        del.title = 'Удалить';
+        del.appendChild(picon('trash'));
+        del.addEventListener('click', () => deleteBackup(b));
+        actions.appendChild(del);
+      }
       row.appendChild(ic);
       row.appendChild(name);
       row.appendChild(meta);
@@ -2040,7 +2080,19 @@
   function buildPermsForm() {
     const box = $('#u-perms');
     box.innerHTML = '';
+    let currentGroup = null;
+    let grid = null;
     for (const p of state.permissions) {
+      if (p.group !== currentGroup) {
+        currentGroup = p.group;
+        const head = document.createElement('div');
+        head.className = 'perm-group';
+        head.textContent = p.group || 'Права';
+        box.appendChild(head);
+        grid = document.createElement('div');
+        grid.className = 'perms-grid';
+        box.appendChild(grid);
+      }
       const row = document.createElement('label');
       row.className = 'perm-row';
       const chk = document.createElement('span');
@@ -2054,7 +2106,7 @@
       lbl.textContent = p.label;
       row.appendChild(chk);
       row.appendChild(lbl);
-      box.appendChild(row);
+      grid.appendChild(row);
     }
   }
 

@@ -481,8 +481,20 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 .login-error { margin-top: 14px; padding: 10px 12px; background: #241a1a;
   border: 1px solid #a33; color: #ff9a8a; font-size: 13px; }
 
+/* ------------------------------------------------ текущий аккаунт --------- */
+.menu-account { display: flex; align-items: center; gap: 10px; padding: 13px 16px;
+  color: #e6f0e8; font-size: 13px; background: #242424; }
+.menu-account .pi { width: 14px; height: 14px; color: var(--accent-bright); }
+.menu-account #menu-account-name { font-weight: 500; word-break: break-all; }
+.home-account { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px;
+  color: #a9b4ab; font-size: 13px; background: var(--card); border: 1px solid var(--bd); padding: 7px 13px; }
+.home-account .pi { width: 13px; height: 13px; color: var(--accent-bright); }
+
 /* --------------------------------------------- пользователи --------------- */
-.perms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-top: 14px; }
+.perms-wrap { margin-top: 8px; }
+.perm-group { font-family: var(--font-head); font-size: 12px; letter-spacing: 1px; color: var(--accent-bright);
+  text-transform: uppercase; margin: 16px 0 8px; }
+.perms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-top: 4px; }
 @media (max-width: 640px) { .perms-grid { grid-template-columns: 1fr; } }
 .perm-row { display: flex; align-items: center; gap: 11px; cursor: pointer; font-size: 13px; color: #c8c8c8; user-select: none; }
 .user-row { padding: 13px 16px; }

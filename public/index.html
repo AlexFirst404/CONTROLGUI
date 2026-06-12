@@ -43,6 +43,11 @@
   </button>
   <div id="app-scrim" class="app-scrim"></div>
   <nav id="app-menu" class="app-menu">
+    <div class="menu-account" id="menu-account">
+      <i class="pi" data-ic="user"></i>
+      <span id="menu-account-name">…</span>
+    </div>
+    <div class="menu-sep"></div>
     <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
     <div class="menu-item" data-menu="create"><i class="pi" data-ic="plus"></i> Создать сервер</div>
     <div class="menu-sep"></div>
@@ -114,6 +119,7 @@
     <div class="home-hero">
       <h1 class="hero-title">CONTROL<span class="hero-accent">GUI</span></h1>
       <div class="hero-sub">Локальная панель управления Minecraft-серверами</div>
+      <div class="home-account" id="home-account"></div>
       <div class="hero-stats" id="home-stats"></div>
     </div>
     <div class="srv-grid" id="server-list">
@@ -227,7 +233,7 @@
         <span class="toggle-label">Администратор (все права)</span>
         <div class="mc-toggle" id="u-admin"></div>
       </div>
-      <div id="u-perms" class="perms-grid"></div>
+      <div id="u-perms" class="perms-wrap"></div>
       <div class="btn-row btn-row-left" style="margin-top:16px">
         <button class="mc-btn primary" id="u-create"><i class="pi" data-ic="check"></i> Создать пользователя</button>
       </div>
