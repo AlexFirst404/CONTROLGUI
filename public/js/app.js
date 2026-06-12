@@ -1814,38 +1814,32 @@
 
   // ---------- вкладки ----------
 
-  /* Скользящая черта под активной вкладкой: на старте сжимается,
-     летит к цели узкой и на месте расширяется до обычной ширины. */
+  /* Скользящая черта под активной вкладкой. Ведущий край движется быстрее
+     (раздельные транзишены left/right с задержкой) — полоска растягивается
+     в сторону цели и плавно сжимается, скорость нелинейная. */
   function moveTabIndicator(animate) {
     const bar = $('#tab-ind');
     const active = document.querySelector('.mc-tab.sel');
     if (!bar || !active) return;
     const inset = 10; // отступ черты от краёв кнопки (как у кита)
-    const newLeft = active.offsetLeft + inset;
-    const newWidth = Math.max(8, active.offsetWidth - inset * 2);
+    const barParentWidth = bar.parentElement.scrollWidth;
+    const left = active.offsetLeft + inset;
+    const right = barParentWidth - (active.offsetLeft + active.offsetWidth - inset);
 
-    const oldLeft = parseFloat(bar.style.left);
-    const oldWidth = parseFloat(bar.style.width);
-    bar.style.right = 'auto';
-    if (bar.getAnimations) bar.getAnimations().forEach((a) => a.cancel());
-    // конечное состояние сразу в стилях; анимация проигрывается поверх
-    bar.style.left = newLeft + 'px';
-    bar.style.width = newWidth + 'px';
-
-    if (animate === false || !bar.animate ||
-        isNaN(oldLeft) || isNaN(oldWidth) || Math.abs(oldLeft - newLeft) < 1) {
-      return;
+    bar.style.width = 'auto';
+    const prevLeft = parseFloat(bar.style.left) || 0;
+    const movingRight = left >= prevLeft;
+    const ease = 'cubic-bezier(.3, 0, .2, 1)';
+    if (animate === false) {
+      bar.style.transition = 'none';
+    } else if (movingRight) {
+      // вправо: правый край стартует сразу, левый догоняет
+      bar.style.transition = 'right .26s ' + ease + ', left .26s ' + ease + ' .08s';
+    } else {
+      bar.style.transition = 'left .26s ' + ease + ', right .26s ' + ease + ' .08s';
     }
-
-    const narrow = Math.max(16, Math.min(30, Math.round(newWidth * 0.35)));
-    const startCenter = oldLeft + oldWidth / 2;
-    const endCenter = newLeft + newWidth / 2;
-    bar.animate([
-      { left: oldLeft + 'px', width: oldWidth + 'px' },
-      { left: (startCenter - narrow / 2) + 'px', width: narrow + 'px', offset: 0.22 },
-      { left: (endCenter - narrow / 2) + 'px', width: narrow + 'px', offset: 0.74 },
-      { left: newLeft + 'px', width: newWidth + 'px' },
-    ], { duration: 340, easing: 'cubic-bezier(.35, 0, .22, 1)' });
+    bar.style.left = left + 'px';
+    bar.style.right = right + 'px';
   }
 
   function switchTab(tab) {
