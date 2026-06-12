@@ -1814,12 +1814,41 @@
 
   // ---------- вкладки ----------
 
+  /* Скользящая черта под активной вкладкой. Ведущий край движется быстрее
+     (раздельные транзишены left/right с задержкой) — полоска растягивается
+     в сторону цели и плавно сжимается, скорость нелинейная. */
+  function moveTabIndicator(animate) {
+    const bar = $('#tab-ind');
+    const active = document.querySelector('.mc-tab.sel');
+    if (!bar || !active) return;
+    const inset = 10; // отступ черты от краёв кнопки (как у кита)
+    const barParentWidth = bar.parentElement.scrollWidth;
+    const left = active.offsetLeft + inset;
+    const right = barParentWidth - (active.offsetLeft + active.offsetWidth - inset);
+
+    const prevLeft = parseFloat(bar.style.left) || 0;
+    const movingRight = left >= prevLeft;
+    const ease = 'cubic-bezier(.3, 0, .2, 1)';
+    if (animate === false) {
+      bar.style.transition = 'none';
+    } else if (movingRight) {
+      // вправо: правый край стартует сразу, левый догоняет
+      bar.style.transition = 'right .26s ' + ease + ', left .26s ' + ease + ' .08s';
+    } else {
+      bar.style.transition = 'left .26s ' + ease + ', right .26s ' + ease + ' .08s';
+    }
+    bar.style.left = left + 'px';
+    bar.style.right = right + 'px';
+  }
+
   function switchTab(tab) {
     state.currentTab = tab;
     if (state.currentId) {
       history.replaceState(null, '', '#server=' + state.currentId + '/tab/' + tab);
     }
     $$('.mc-tab').forEach((btn) => btn.classList.toggle('sel', btn.dataset.tab === tab));
+    moveTabIndicator(state.tabIndReady === true);
+    state.tabIndReady = true;
     $('#tab-console').classList.toggle('hidden', tab !== 'console');
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
     $('#tab-files').classList.toggle('hidden', tab !== 'files');
@@ -2003,14 +2032,23 @@
     $('#set-graphs').addEventListener('click', () =>
       changeAppSettings({ graphs: $('#set-graphs').classList.contains('on') }));
 
-    // при изменении размера окна перерисовываем графики под новую высоту
+    // при изменении размера окна перерисовываем графики и черту вкладок
     let resizeTimer = null;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        if (state.screen === 'server' && state.currentTab === 'console') loadStats();
+        if (state.screen === 'server') {
+          moveTabIndicator(false);
+          if (state.currentTab === 'console') loadStats();
+        }
       }, 200);
     });
+    // после загрузки пиксельного шрифта ширины вкладок меняются — поправляем черту
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        if (state.screen === 'server') moveTabIndicator(false);
+      });
+    }
   }
 
   applyAppSettings(appSettings);

@@ -231,9 +231,14 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
   transition: color .12s; white-space: nowrap; }
 .mc-tab .pi { width: 14px; height: 14px; opacity: .85; }
 .mc-tab:hover { color: #e6f0e8; }
-.mc-tab.sel { color: var(--accent-bright); }
-.mc-tab.sel::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0;
-  height: 3px; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.mc-tab.sel { color: var(--accent-bright); transition: color .2s; }
+
+/* скользящая зелёная черта: края анимируются с разной задержкой,
+   поэтому полоска растягивается к цели и сжимается на месте */
+.tabbar { position: relative; }
+.tab-ind { position: absolute; bottom: 0; height: 3px;
+  background: var(--accent); box-shadow: 0 0 6px var(--accent);
+  pointer-events: none; }
 
 .tab-pane { margin-top: 4px; }
 
