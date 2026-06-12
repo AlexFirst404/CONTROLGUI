@@ -1,11 +1,18 @@
 'use strict';
 const http = require('http');
+const os = require('os');
 const { handleApi } = require('./lib/api');
 const { serveStatic } = require('./lib/static');
 const manager = require('./lib/manager');
 const auth = require('./lib/auth');
+const remotes = require('./lib/remotes');
 
 const PORT = parseInt(process.env.PORT, 10) || 8400;
+
+// авто-привязка к центральному дашборду (хабу)
+const HUB_URL = process.env.CONTROLGUI_HUB || '';
+const HUB_SECRET = process.env.CONTROLGUI_HUB_SECRET || '';
+const PUBLIC_URL = process.env.CONTROLGUI_PUBLIC_URL || ('http://localhost:' + PORT);
 
 function readJsonBody(req) {
   return new Promise((resolve) => {
@@ -47,6 +54,25 @@ async function handleAuthRoutes(req, res, url) {
       'Set-Cookie': auth.clearCookie(),
     });
     res.end(JSON.stringify({ ok: true }));
+    return true;
+  }
+  // авто-привязка: удалённая установка регистрируется на этом хабе по секрету
+  // (без сессии — её приносит другой сервер, не браузер)
+  if (url === '/api/admin/register' && req.method === 'POST') {
+    const body = await readJsonBody(req);
+    if (!auth.verifyHubSecret(body.secret)) {
+      res.writeHead(auth.hubSecret() ? 401 : 403, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: auth.hubSecret() ? 'Неверный секрет привязки' : 'Авто-привязка выключена (нет CONTROLGUI_HUB_SECRET)' }));
+      return true;
+    }
+    try {
+      remotes.upsertAuto(body.url, body.password, body.name || '');
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
     return true;
   }
   return false;
@@ -94,7 +120,32 @@ server.listen(PORT, () => {
   console.log('');
   // найти java-процессы серверов, запущенные прошлым экземпляром панели
   try { manager.adoptOrphans(); } catch (e) { console.error('Поиск осиротевших процессов:', e.message); }
+  startSelfRegister();
 });
+
+/* Если заданы CONTROLGUI_HUB и CONTROLGUI_HUB_SECRET — эта установка сама
+   регистрируется в центральном дашборде (адрес + пароль) на старте и далее
+   раз в 2 минуты (heartbeat), чтобы появляться в нём автоматически. */
+function selfRegisterOnce() {
+  if (!HUB_URL || !HUB_SECRET) return;
+  remotes.postRegister(HUB_URL, {
+    secret: HUB_SECRET,
+    url: PUBLIC_URL,
+    password: process.env.CONTROLGUI_PASSWORD || '',
+    name: os.hostname(),
+  }).then(() => {
+    console.log('Зарегистрировано в админ-дашборде ' + HUB_URL);
+  }).catch((e) => {
+    console.error('Авто-привязка к ' + HUB_URL + ' не удалась (повтор позже): ' + e.message);
+  });
+}
+
+function startSelfRegister() {
+  if (!HUB_URL || !HUB_SECRET) return;
+  selfRegisterOnce();
+  const timer = setInterval(selfRegisterOnce, 120000);
+  timer.unref();
+}
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {

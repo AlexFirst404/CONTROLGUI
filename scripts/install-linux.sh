@@ -85,21 +85,45 @@ else
 fi
 mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/servers"
 
+# внешний адрес — нужен и для panel.env (авто-привязка), и для финального вывода
+IP="$(curl -fsS --max-time 5 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')"
+PUBLIC_URL="http://$IP:$PANEL_PORT"
+
 # ---------- пароль ----------
-if [ -f "$ENV_FILE" ] && grep -q CONTROLGUI_PASSWORD "$ENV_FILE"; then
-  PASSWORD="$(grep CONTROLGUI_PASSWORD "$ENV_FILE" | cut -d= -f2-)"
+# пароль сохраняется между запусками; читаем существующий или генерируем
+if [ -f "$ENV_FILE" ] && grep -q '^CONTROLGUI_PASSWORD=' "$ENV_FILE"; then
+  PASSWORD="$(grep '^CONTROLGUI_PASSWORD=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '\r\n')"
   c_dim "Пароль уже задан — оставляю прежний ($ENV_FILE)."
-else
+fi
+if [ -z "${PASSWORD:-}" ]; then
   # `|| true` обязателен: head обрывает пайп, tr ловит SIGPIPE (код 141),
   # и при set -o pipefail скрипт без этого молча умирает на этой строке
   PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16 || true)"
   if [ -z "$PASSWORD" ]; then PASSWORD="$(date +%s%N | sha256sum | head -c 16 || true)"; fi
-  {
-    echo "PORT=$PANEL_PORT"
-    echo "CONTROLGUI_PASSWORD=$PASSWORD"
-  } > "$ENV_FILE"
-  chmod 600 "$ENV_FILE"
 fi
+
+# ---------- авто-привязка к центральному дашборду (необязательно) ----------
+# хаб должен быть доступен с этого сервера; секрет = CONTROLGUI_HUB_SECRET на хабе
+HUB="${CONTROLGUI_HUB:-}"
+HUB_SECRET="${CONTROLGUI_HUB_SECRET:-}"
+if [ -z "$HUB" ] && [ -t 0 ]; then
+  printf 'Адрес центральной админ-панели для авто-привязки (Enter — пропустить): '
+  read -r HUB || HUB=""
+  if [ -n "$HUB" ]; then
+    printf 'Секрет привязки (CONTROLGUI_HUB_SECRET на дашборде): '
+    read -r HUB_SECRET || HUB_SECRET=""
+  fi
+fi
+
+# panel.env переписываем целиком (пароль сохранён выше), chmod 600
+{
+  echo "PORT=$PANEL_PORT"
+  echo "CONTROLGUI_PASSWORD=$PASSWORD"
+  echo "CONTROLGUI_PUBLIC_URL=$PUBLIC_URL"
+  [ -n "$HUB" ] && echo "CONTROLGUI_HUB=$HUB"
+  [ -n "$HUB_SECRET" ] && echo "CONTROLGUI_HUB_SECRET=$HUB_SECRET"
+} > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
 # ---------- systemd ----------
 c_green "[5/6] Настраиваю systemd-сервис ($SERVICE_NAME)…"
@@ -139,7 +163,6 @@ fi
 
 # ---------- готово ----------
 sleep 2
-IP="$(curl -fsS --max-time 5 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')"
 STATUS="$(systemctl is-active "$SERVICE_NAME" || true)"
 
 echo
@@ -147,7 +170,7 @@ c_green "============================================================"
 c_green " CONTROLGUI установлен!  Статус сервиса: $STATUS"
 c_green "============================================================"
 echo
-echo "  Сайт панели:   http://$IP:$PANEL_PORT"
+echo "  Сайт панели:   $PUBLIC_URL"
 echo "  Логин:         admin (подойдёт любой)"
 echo "  Пароль:        $PASSWORD"
 echo
@@ -156,6 +179,12 @@ c_dim "  Логи:          journalctl -u $SERVICE_NAME -f"
 c_dim "  Перезапуск:    systemctl restart $SERVICE_NAME"
 c_dim "  Серверы Minecraft создавайте на сайте — файлы лягут в $INSTALL_DIR/servers"
 echo
-c_dim "  Чтобы видеть этот сервер в общей админ-панели (раздел «Удалённые панели»),"
-c_dim "  добавьте там адрес  http://$IP:$PANEL_PORT  и пароль выше."
+if [ -n "$HUB" ] && [ -n "$HUB_SECRET" ]; then
+  c_green "  Авто-привязка: этот сервер сам зарегистрируется в дашборде $HUB"
+  c_dim   "  (появится там в разделе «Удалённые панели» в течение минуты)."
+else
+  c_dim "  Чтобы видеть этот сервер в общей админ-панели, добавьте в разделе"
+  c_dim "  «Удалённые панели» адрес  $PUBLIC_URL  и пароль выше — ИЛИ переустановите"
+  c_dim "  с авто-привязкой:  sudo CONTROLGUI_HUB=http://ХАБ:8400 CONTROLGUI_HUB_SECRET=секрет bash scripts/install-linux.sh"
+fi
 echo
