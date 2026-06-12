@@ -292,6 +292,14 @@
   let appSettings = loadAppSettings();
   let scaleSlider = null;
 
+  async function doLogout() {
+    const ok = await confirmDialog('Выйти из панели? Потребуется снова ввести пароль.',
+      { title: 'Выход', yesText: 'Выйти' });
+    if (!ok) return;
+    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* всё равно уходим */ }
+    location.href = '/login';
+  }
+
   function changeAppSettings(patch) {
     appSettings = Object.assign({}, appSettings, patch);
     saveAppSettings(appSettings);
@@ -366,6 +374,8 @@
         if (state.memCreateSlider) state.memCreateSlider.setRange(1024, state.maxMemMb);
       }
       $('#about-version').textContent = String(st.app || '').replace('CONTROLGUI', '').trim();
+      // пункт «Выйти» — только когда панель под паролем
+      $('#menu-logout').classList.toggle('hidden', !st.authEnabled);
       const alert = $('#java-alert');
       if (st.java && st.java.available) {
         alert.classList.add('hidden');
@@ -1932,6 +1942,7 @@
       }
       if (action === 'settings') openAppSettings();
       if (action === 'about') $('#about-root').classList.remove('hidden');
+      if (action === 'logout') doLogout();
     }));
     Array.from(document.querySelectorAll('#app-menu a.menu-item')).forEach((a) =>
       a.addEventListener('click', () => menuToggle(false)));

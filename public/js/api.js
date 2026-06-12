@@ -16,6 +16,11 @@ window.API = (function () {
     }
     let data = {};
     try { data = await res.json(); } catch (e) { /* пустой ответ */ }
+    // сессия истекла — уводим на страницу входа
+    if (res.status === 401 && data.login) {
+      location.href = '/login?next=' + encodeURIComponent(location.pathname + location.hash);
+      throw new Error('Требуется вход');
+    }
     if (!res.ok) throw new Error(data.error || ('Ошибка HTTP ' + res.status));
     return data;
   }

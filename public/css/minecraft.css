@@ -467,6 +467,21 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 .no-bganim .bg-pattern::before { animation: none; }
 .hide-graphs .stat-graph { display: none; }
 
+/* --------------------------------------------- страница входа ------------- */
+.login-wrap { position: relative; z-index: 5; min-height: 100vh;
+  display: flex; align-items: center; justify-content: center; padding: 20px; }
+.login-card { width: min(420px, 100%); padding: 30px 28px 26px; }
+.login-title { font-family: var(--font-head); font-size: 30px; font-weight: normal;
+  color: #e6e6e6; letter-spacing: 1.5px; text-align: center; margin: 0 0 6px;
+  text-shadow: 3px 3px 0 rgba(0,0,0,.55); }
+.login-sub { text-align: center; color: #a9b4ab; font-size: 13px; margin-bottom: 22px; }
+.login-btn { width: 100%; margin-top: 18px; }
+.login-error { margin-top: 14px; padding: 10px 12px; background: #241a1a;
+  border: 1px solid #a33; color: #ff9a8a; font-size: 13px; }
+
+/* выход в меню — красноватый акцент */
+.menu-item.danger .pi { color: #ff7a6a; }
+
 /* ----------------------------------------------------- о панели ----------- */
 .about-body { text-align: center; }
 .about-logo { width: 64px; height: 64px; image-rendering: pixelated; margin: 6px auto 12px; display: block; }

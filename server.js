@@ -1,38 +1,83 @@
 'use strict';
 const http = require('http');
-const crypto = require('crypto');
 const { handleApi } = require('./lib/api');
 const { serveStatic } = require('./lib/static');
 const manager = require('./lib/manager');
+const auth = require('./lib/auth');
 
 const PORT = parseInt(process.env.PORT, 10) || 8400;
 
-/* Если задан CONTROLGUI_PASSWORD — вся панель за HTTP Basic Auth
-   (логин любой, например admin). Для удалённых серверов обязательно. */
-const PASSWORD = process.env.CONTROLGUI_PASSWORD || '';
-
-function checkAuth(req, res) {
-  if (!PASSWORD) return true;
-  const header = req.headers.authorization || '';
-  const m = header.match(/^Basic (.+)$/);
-  if (m) {
-    let decoded = '';
-    try { decoded = Buffer.from(m[1], 'base64').toString('utf8'); } catch (e) { /* мусор */ }
-    const pass = decoded.slice(decoded.indexOf(':') + 1);
-    const a = Buffer.from(pass);
-    const b = Buffer.from(PASSWORD);
-    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
-  }
-  res.writeHead(401, {
-    'WWW-Authenticate': 'Basic realm="CONTROLGUI", charset="UTF-8"',
-    'Content-Type': 'text/plain; charset=utf-8',
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > 4096) req.destroy(); // защита от мусора
+    });
+    req.on('end', () => {
+      try { resolve(JSON.parse(data || '{}')); } catch (e) { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
   });
-  res.end('Требуется авторизация: логин admin и пароль из установки.');
+}
+
+/* Эндпоинты логина/логаута доступны без сессии. Возвращает true, если
+   запрос обработан здесь и дальше идти не нужно. */
+async function handleAuthRoutes(req, res, url) {
+  if (url === '/api/login' && req.method === 'POST') {
+    const body = await readJsonBody(req);
+    if (!auth.enabled() || auth.verifyPassword(body.password || '')) {
+      const token = auth.createSession();
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Set-Cookie': auth.sessionCookie(token),
+      });
+      res.end(JSON.stringify({ ok: true }));
+    } else {
+      res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Неверный пароль' }));
+    }
+    return true;
+  }
+  if (url === '/api/logout' && req.method === 'POST') {
+    const token = auth.parseCookies(req)[auth.COOKIE];
+    auth.destroySession(token);
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Set-Cookie': auth.clearCookie(),
+    });
+    res.end(JSON.stringify({ ok: true }));
+    return true;
+  }
   return false;
 }
 
-const server = http.createServer((req, res) => {
-  if (!checkAuth(req, res)) return;
+const server = http.createServer(async (req, res) => {
+  const urlPath = (req.url || '/').split('?')[0];
+
+  // логин/логаут — всегда доступны
+  if (await handleAuthRoutes(req, res, urlPath)) return;
+
+  // страница входа и её ресурсы — без сессии (иначе нечего показать)
+  const isPublicAsset = urlPath === '/login.html' || urlPath === '/login' ||
+    urlPath.startsWith('/css/') || urlPath.startsWith('/fonts/') ||
+    urlPath.startsWith('/assets/') || urlPath.startsWith('/icons/');
+
+  if (auth.enabled() && !auth.isAuthed(req) && !isPublicAsset) {
+    if (urlPath.startsWith('/api/')) {
+      res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Требуется вход', login: true }));
+    } else {
+      // навигация — отдаём страницу логина (адрес сохраняем в next)
+      res.writeHead(302, { Location: '/login?next=' + encodeURIComponent(req.url || '/') });
+      res.end();
+    }
+    return;
+  }
+
+  if (urlPath === '/login') {
+    return serveStatic(Object.assign(req, { url: '/login.html' }), res);
+  }
   if (req.url.startsWith('/api/')) return handleApi(req, res);
   serveStatic(req, res);
 });

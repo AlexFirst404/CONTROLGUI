@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход — CONTROLGUI</title>
+<link rel="icon" type="image/png" href="/assets/gear.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/minecraft.css">
+</head>
+<body class="theme-lime">
+<div class="bg-pattern"></div>
+<div class="shade"></div>
+
+<div class="login-wrap">
+  <div class="mc-card login-card">
+    <h1 class="login-title">CONTROL<span class="hero-accent">GUI</span></h1>
+    <div class="login-sub">Вход в панель управления</div>
+
+    <form id="login-form" autocomplete="off">
+      <label class="mc-label">Логин
+        <input class="fld" id="login-user" value="admin" autocomplete="username">
+      </label>
+      <label class="mc-label" style="margin-top:14px">Пароль
+        <input class="fld" id="login-pass" type="password" placeholder="Пароль из установки"
+               autocomplete="current-password" required autofocus>
+      </label>
+      <div class="login-error hidden" id="login-error"></div>
+      <button type="submit" class="mc-btn primary login-btn" id="login-btn">Войти</button>
+    </form>
+
+    <div class="hint" style="text-align:center;margin:16px 0 0">
+      Пароль выдал скрипт установки (и хранится в data/panel.env).
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('login-form');
+  var err = document.getElementById('login-error');
+  var btn = document.getElementById('login-btn');
+  form.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    err.classList.add('hidden');
+    btn.disabled = true;
+    var prev = btn.textContent;
+    btn.textContent = 'Проверяю…';
+    try {
+      var res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: document.getElementById('login-pass').value }),
+      });
+      if (res.ok) {
+        var next = new URLSearchParams(location.search).get('next') || '/';
+        if (next.charAt(0) !== '/') next = '/';
+        location.href = next;
+        return;
+      }
+      var data = {};
+      try { data = await res.json(); } catch (e) {}
+      err.textContent = data.error || 'Неверный пароль';
+      err.classList.remove('hidden');
+    } catch (e) {
+      err.textContent = 'Нет связи с панелью';
+      err.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  });
+})();
+</script>
+</body>
+</html>
