@@ -29,6 +29,28 @@ public partial class MainWindow : Window
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: dataDir);
             await Web.EnsureCoreWebView2Async(environment);
 
+            // ---- блокировка браузерных функций (kiosk-режим) ----
+            var s = Web.CoreWebView2.Settings;
+            s.AreDevToolsEnabled = false;             // F12 / Ctrl+Shift+I не открывают DevTools
+            s.AreBrowserAcceleratorKeysEnabled = false; // F12, Ctrl+R, Ctrl+F, Ctrl+P, Ctrl+± и т.п.
+            s.AreDefaultContextMenusEnabled = false;  // правый клик — без меню «Назад/Обновить/...»
+            s.IsZoomControlEnabled = false;           // Ctrl+колесо и Ctrl+± не меняют масштаб
+            s.IsStatusBarEnabled = false;             // нижняя полоса со ссылками
+            s.IsGeneralAutofillEnabled = false;
+            s.IsPasswordAutosaveEnabled = false;
+            // на всякий случай гасим F5/Ctrl-R/F12 и на уровне DOM (до их обработки браузером)
+            Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
+                window.addEventListener('keydown', function (e) {
+                  var k = (e.key || '').toLowerCase();
+                  if (k === 'f5' || k === 'f12'
+                      || (e.ctrlKey && (k === 'r' || k === 'p' || k === 'u' || k === 'j'))
+                      || ((e.ctrlKey && e.shiftKey) && (k === 'i' || k === 'j' || k === 'c' || k === 'r'))) {
+                    e.preventDefault(); e.stopPropagation();
+                  }
+                }, true);
+                window.addEventListener('contextmenu', function (e) { e.preventDefault(); }, true);
+            ");
+
             // внешние ссылки (EULA, adoptium и т.п.) — в системный браузер
             Web.CoreWebView2.NewWindowRequested += (_, args) =>
             {
