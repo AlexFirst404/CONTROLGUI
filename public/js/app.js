@@ -105,7 +105,53 @@
     sugItems: [],
     sugIndex: -1,
     cm: null, // CodeMirror instance
+    me: null,            // текущий пользователь {username, admin, perms}
+    permissions: [],     // список всех прав (из бэкенда)
+    openMode: true,      // нет пользователей — полный доступ
   };
+
+  // ---------- права ----------
+
+  function can(perm) {
+    const m = state.me;
+    if (!m) return true; // ещё не загрузили — не блокируем заранее
+    if (m.admin || (m.perms && m.perms.admin)) return true;
+    return !!(m.perms && m.perms[perm]);
+  }
+
+  async function loadMe() {
+    try {
+      const data = await API.me();
+      state.me = data.user;
+      state.permissions = data.permissions || [];
+      state.openMode = !!data.openMode;
+      applyPermissions();
+    } catch (e) { /* при 401 клиент сам уведёт на /login */ }
+  }
+
+  /* Прячем вкладки/кнопки/пункты меню, недоступные пользователю. */
+  function applyPermissions() {
+    const isAdmin = state.me && (state.me.admin || (state.me.perms && state.me.perms.admin));
+    // пункт «Пользователи» — админу или в открытом режиме (создать первого)
+    $('#menu-users').classList.toggle('hidden', !(isAdmin || state.openMode));
+    // «Выйти» — только когда есть вход
+    $('#menu-logout').classList.toggle('hidden', state.openMode);
+    // создание сервера
+    $('#btn-goto-create').classList.toggle('hidden', !can('server.create'));
+    // вкладки сервера
+    const tabPerm = { console: 'console.view', settings: 'settings.edit', files: 'files.read', players: 'players.manage', backups: 'backups.manage' };
+    $$('.mc-tab').forEach((btn) => {
+      const p = tabPerm[btn.dataset.tab];
+      btn.classList.toggle('hidden', p ? !can(p) : false);
+    });
+    // кнопки питания и ввода команды
+    const power = !can('server.power');
+    ['#btn-start', '#btn-restart', '#btn-stop', '#btn-kill', '#btn-redownload'].forEach((s) => {
+      const el = $(s); if (el) el.classList.toggle('perm-hidden', power);
+    });
+    const noCmd = !can('console.command');
+    ['#command-input', '#btn-send'].forEach((s) => { const el = $(s); if (el) el.classList.toggle('perm-hidden', noCmd); });
+  }
 
   // ---------- иконки ----------
 
@@ -323,8 +369,9 @@
     $('#screen-list').classList.toggle('hidden', name !== 'list');
     $('#screen-create').classList.toggle('hidden', name !== 'create');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
-    // бургер-меню — только на главном экране
-    $('#btn-burger').classList.toggle('hidden', name !== 'list');
+    $('#screen-users').classList.toggle('hidden', name !== 'users');
+    // бургер-меню — на главном и экране пользователей
+    $('#btn-burger').classList.toggle('hidden', !(name === 'list' || name === 'users'));
     $('#app-menu').classList.remove('open');
     $('#app-scrim').classList.remove('open');
     $('#burger-ic').classList.remove('open');
@@ -587,6 +634,15 @@
 
   // ---------- экран сервера ----------
 
+  function firstAllowedTab() {
+    const order = [
+      ['console', 'console.view'], ['settings', 'settings.edit'], ['files', 'files.read'],
+      ['players', 'players.manage'], ['backups', 'backups.manage'], ['info', null],
+    ];
+    for (const [tab, perm] of order) { if (!perm || can(perm)) return tab; }
+    return 'info';
+  }
+
   function openServer(id) {
     state.currentId = id;
     state.current = state.servers.find((s) => s.id === id) || null;
@@ -594,9 +650,10 @@
     state.editorPath = null;
     state.playTimes = {};
     showScreen('server');
-    switchTab('console');
+    applyPermissions();
+    switchTab(firstAllowedTab());
     renderServerHead();
-    connectConsole(id);
+    if (can('console.view')) connectConsole(id);
     refreshServer();
     loadSettings();
   }
@@ -655,6 +712,7 @@
 
     renderInfo(server);
     renderPlayers(server);
+    applyPermissions();
   }
 
   function renderInfo(server) {
@@ -1854,15 +1912,241 @@
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
     $('#tab-files').classList.toggle('hidden', tab !== 'files');
     $('#tab-players').classList.toggle('hidden', tab !== 'players');
+    $('#tab-backups').classList.toggle('hidden', tab !== 'backups');
     $('#tab-info').classList.toggle('hidden', tab !== 'info');
     if (tab === 'settings') loadSettings();
     if (tab === 'console') loadStats();
     if (tab === 'players') fetchPlayTimes();
+    if (tab === 'backups') loadBackups();
     if (tab === 'files') {
       $('#file-editor').classList.add('hidden');
       $('#files-browser').classList.remove('hidden');
       loadFiles();
     }
+  }
+
+  // ---------- бэкапы ----------
+
+  async function loadBackups() {
+    if (!state.currentId) return;
+    await guard(async () => {
+      const data = await API.backups(state.currentId);
+      renderBackups(data.backups || []);
+    });
+  }
+
+  function renderBackups(list) {
+    const box = $('#bk-list');
+    box.innerHTML = '';
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'files-empty';
+      empty.textContent = 'Бэкапов пока нет — создайте первый.';
+      box.appendChild(empty);
+      return;
+    }
+    for (const b of list) {
+      const row = document.createElement('div');
+      row.className = 'mc-row bk-row';
+      const ic = document.createElement('span');
+      ic.className = 'file-ic';
+      ic.appendChild(picon('save', 'var(--accent-bright)'));
+      const name = document.createElement('span');
+      name.className = 'file-name';
+      name.textContent = b.name.replace(/\.tar\.gz$/, '');
+      const meta = document.createElement('span');
+      meta.className = 'file-meta';
+      meta.textContent = fmtBytes(b.size) + ' · ' + new Date(b.mtime).toLocaleString('ru-RU');
+      const actions = document.createElement('span');
+      actions.className = 'file-actions';
+      const dl = document.createElement('a');
+      dl.className = 'mc-btn sm';
+      dl.href = API.backupDownloadUrl(state.currentId, b.name);
+      dl.title = 'Скачать';
+      dl.appendChild(picon('download'));
+      const rest = document.createElement('button');
+      rest.className = 'mc-btn sm accent';
+      rest.title = 'Восстановить';
+      rest.appendChild(picon('reload'));
+      rest.addEventListener('click', () => restoreBackup(b));
+      const del = document.createElement('button');
+      del.className = 'mc-btn sm danger';
+      del.title = 'Удалить';
+      del.appendChild(picon('trash'));
+      del.addEventListener('click', () => deleteBackup(b));
+      actions.appendChild(dl);
+      actions.appendChild(rest);
+      actions.appendChild(del);
+      row.appendChild(ic);
+      row.appendChild(name);
+      row.appendChild(meta);
+      row.appendChild(actions);
+      box.appendChild(row);
+    }
+  }
+
+  async function createBackup() {
+    if (!state.currentId) return;
+    const btn = $('#bk-create-btn');
+    btn.disabled = true;
+    const label = $('#bk-label').value.trim();
+    try {
+      showToast('Создаю бэкап…', 'ok');
+      await API.backupCreate(state.currentId, label);
+      $('#bk-label').value = '';
+      showToast('Бэкап создан.', 'ok');
+      loadBackups();
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function restoreBackup(b) {
+    const server = state.current || {};
+    if (server.status === 'running' || server.status === 'starting' || server.status === 'stopping') {
+      showToast('Сначала остановите сервер — восстановление только на остановленном.');
+      return;
+    }
+    const ok = await confirmDialog(
+      'Восстановить бэкап «' + b.name.replace(/\.tar\.gz$/, '') + '»?\nТекущие файлы сервера будут заменены. ' +
+      'Перед заменой панель сделает авто-бэкап текущего состояния.',
+      { title: 'Восстановление бэкапа', yesText: 'Восстановить' }
+    );
+    if (!ok) return;
+    await guard(async () => {
+      showToast('Восстанавливаю…', 'ok');
+      await API.backupRestore(state.currentId, b.name);
+      showToast('Бэкап восстановлен.', 'ok');
+      loadBackups();
+      refreshServer();
+    });
+  }
+
+  async function deleteBackup(b) {
+    const ok = await confirmDialog('Удалить бэкап «' + b.name.replace(/\.tar\.gz$/, '') + '»? Это действие необратимо.',
+      { title: 'Удаление бэкапа' });
+    if (!ok) return;
+    await guard(async () => {
+      await API.backupDelete(state.currentId, b.name);
+      showToast('Бэкап удалён.', 'ok');
+      loadBackups();
+    });
+  }
+
+  // ---------- пользователи ----------
+
+  function buildPermsForm() {
+    const box = $('#u-perms');
+    box.innerHTML = '';
+    for (const p of state.permissions) {
+      const row = document.createElement('label');
+      row.className = 'perm-row';
+      const chk = document.createElement('span');
+      chk.className = 'mc-check';
+      chk.dataset.perm = p.key;
+      const tick = document.createElement('span');
+      tick.className = 'tick';
+      chk.appendChild(tick);
+      chk.addEventListener('click', () => chk.classList.toggle('on'));
+      const lbl = document.createElement('span');
+      lbl.textContent = p.label;
+      row.appendChild(chk);
+      row.appendChild(lbl);
+      box.appendChild(row);
+    }
+  }
+
+  function collectPerms() {
+    const perms = {};
+    for (const chk of $$('#u-perms .mc-check')) perms[chk.dataset.perm] = chk.classList.contains('on');
+    return perms;
+  }
+
+  function openUsers() {
+    showScreen('users');
+    $('#users-open-note').classList.toggle('hidden', !state.openMode);
+    $('#u-admin').classList.toggle('on', state.openMode); // первого по умолчанию админом
+    $('#u-perms').classList.toggle('hidden', state.openMode);
+    $('#u-name').value = '';
+    $('#u-pass').value = '';
+    buildPermsForm();
+    loadUsers();
+  }
+
+  async function loadUsers() {
+    if (state.openMode) { $('#users-list').innerHTML = ''; return; }
+    await guard(async () => {
+      const data = await API.usersList();
+      renderUsers(data.users || []);
+    });
+  }
+
+  function renderUsers(list) {
+    const box = $('#users-list');
+    box.innerHTML = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'files-empty';
+      e.textContent = 'Пользователей нет.';
+      box.appendChild(e);
+      return;
+    }
+    for (const u of list) {
+      const row = document.createElement('div');
+      row.className = 'mc-row user-row';
+      const main = document.createElement('div');
+      main.className = 'user-main';
+      const name = document.createElement('div');
+      name.className = 'user-name';
+      name.textContent = u.username + (u.admin ? '  ★ админ' : '');
+      const sub = document.createElement('div');
+      sub.className = 'user-sub';
+      sub.textContent = u.admin ? 'Все права' : (state.permissions.filter((p) => u.perms[p.key]).map((p) => p.label).join(', ') || 'Без прав');
+      main.appendChild(name);
+      main.appendChild(sub);
+      const actions = document.createElement('div');
+      actions.className = 'file-actions';
+      const del = document.createElement('button');
+      del.className = 'mc-btn sm danger';
+      del.appendChild(picon('trash'));
+      del.title = 'Удалить';
+      const self = state.me && state.me.username && state.me.username.toLowerCase() === u.username.toLowerCase();
+      del.disabled = self;
+      del.addEventListener('click', async () => {
+        if (await confirmDialog('Удалить пользователя «' + u.username + '»?', { title: 'Удаление пользователя' })) {
+          await guard(async () => { await API.userDelete(u.username); showToast('Удалён.', 'ok'); loadUsers(); });
+        }
+      });
+      actions.appendChild(del);
+      row.appendChild(main);
+      row.appendChild(actions);
+      box.appendChild(row);
+    }
+  }
+
+  async function createUserFromForm() {
+    const username = $('#u-name').value.trim();
+    const password = $('#u-pass').value;
+    const admin = $('#u-admin').classList.contains('on');
+    if (!username || !password) { showToast('Введите логин и пароль'); return; }
+    await guard(async () => {
+      const res = await API.userCreate({ username, password, admin, perms: collectPerms() });
+      showToast('Пользователь «' + username + '» создан.', 'ok');
+      if (res && res.loggedIn) {
+        // создали первого админа в открытом режиме — перезагружаем под входом
+        await loadMe();
+        state.openMode = false;
+      }
+      openUsers();
+    });
+  }
+
+  async function doLogout() {
+    if (!(await confirmDialog('Выйти из панели?', { title: 'Выход', yesText: 'Выйти' }))) return;
+    try { await API.logout(); } catch (e) { /* всё равно уходим */ }
+    location.href = '/login';
   }
 
   // ---------- удаление сервера ----------
@@ -1932,9 +2216,22 @@
       }
       if (action === 'settings') openAppSettings();
       if (action === 'about') $('#about-root').classList.remove('hidden');
+      if (action === 'users') openUsers();
+      if (action === 'logout') doLogout();
     }));
     Array.from(document.querySelectorAll('#app-menu a.menu-item')).forEach((a) =>
       a.addEventListener('click', () => menuToggle(false)));
+
+    // экран пользователей
+    $('#users-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
+    $('#u-admin').addEventListener('click', () => {
+      const adminOn = $('#u-admin').classList.contains('on');
+      $('#u-perms').classList.toggle('hidden', adminOn);
+    });
+    $('#u-create').addEventListener('click', createUserFromForm);
+
+    // бэкапы
+    $('#bk-create-btn').addEventListener('click', createBackup);
 
     $('#about-close').addEventListener('click', () => $('#about-root').classList.add('hidden'));
     $('#about-root').addEventListener('click', (event) => {
@@ -2057,12 +2354,14 @@
   initCycleButtons(document);
   mkToggle($('#toggle-online'), true);
   mkToggle($('#toggle-pvp'), true);
+  mkToggle($('#u-admin'), false);
   state.memCreateSlider = mkSlider($('#mem-create'), {
     min: 1024, max: state.maxMemMb, step: 512, value: 2048,
     format: fmtMem, labelEl: $('#mem-create-val'),
   });
 
   bind();
+  loadMe();
   loadStatus();
   guard(loadServers);
   startPolling();

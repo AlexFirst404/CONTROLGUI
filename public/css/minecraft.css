@@ -462,10 +462,41 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 .menu-item:hover { background: #353535; color: #fff; }
 .menu-item .pi { width: 14px; height: 14px; color: var(--accent-bright); }
 .menu-sep { height: 1px; background: #3a3a3a; }
+.menu-item.danger .pi { color: #ff7a6a; }
 
 /* ------------------------------------------- настройки панели ------------- */
 .no-bganim .bg-pattern::before { animation: none; }
 .hide-graphs .stat-graph { display: none; }
+.perm-hidden { display: none !important; }
+
+/* --------------------------------------------- страница входа ------------- */
+.login-wrap { position: relative; z-index: 5; min-height: 100vh;
+  display: flex; align-items: center; justify-content: center; padding: 20px; }
+.login-card { width: min(420px, 100%); padding: 30px 28px 26px; }
+.login-title { font-family: var(--font-head); font-size: 30px; font-weight: normal;
+  color: #e6e6e6; letter-spacing: 1.5px; text-align: center; margin: 0 0 6px;
+  text-shadow: 3px 3px 0 rgba(0,0,0,.55); }
+.login-sub { text-align: center; color: #a9b4ab; font-size: 13px; margin-bottom: 22px; }
+.login-btn { width: 100%; margin-top: 18px; }
+.login-error { margin-top: 14px; padding: 10px 12px; background: #241a1a;
+  border: 1px solid #a33; color: #ff9a8a; font-size: 13px; }
+
+/* --------------------------------------------- пользователи --------------- */
+.perms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-top: 14px; }
+@media (max-width: 640px) { .perms-grid { grid-template-columns: 1fr; } }
+.perm-row { display: flex; align-items: center; gap: 11px; cursor: pointer; font-size: 13px; color: #c8c8c8; user-select: none; }
+.user-row { padding: 13px 16px; }
+.user-main { flex: 1; min-width: 0; }
+.user-name { font-size: 15px; color: #fff; }
+.user-sub { font-size: 12px; color: #a9a9a9; margin-top: 3px; }
+
+/* ------------------------------------------------- бэкапы ------------------ */
+.bk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.bk-create { display: flex; gap: 10px; align-items: stretch; }
+.bk-create .fld { max-width: 220px; }
+.bk-create .mc-btn { margin-bottom: 0; }
+.bk-list { margin-top: 12px; max-height: 56vh; overflow-y: auto; }
+.bk-row .file-actions a.mc-btn { text-decoration: none; }
 
 /* ----------------------------------------------------- о панели ----------- */
 .about-body { text-align: center; }

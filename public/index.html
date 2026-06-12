@@ -47,10 +47,12 @@
     <div class="menu-item" data-menu="create"><i class="pi" data-ic="plus"></i> Создать сервер</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="settings"><i class="pi" data-ic="sliders"></i> Настройки панели</div>
+    <div class="menu-item hidden" id="menu-users" data-menu="users"><i class="pi" data-ic="users"></i> Пользователи</div>
     <div class="menu-item" data-menu="about"><i class="pi" data-ic="info-box"></i> О панели</div>
     <div class="menu-sep"></div>
     <a class="menu-item" href="https://github.com/AlexFirst404/CONTROLGUI" target="_blank" rel="noopener">
       <i class="pi" data-ic="code"></i> GitHub</a>
+    <div class="menu-item danger hidden" id="menu-logout" data-menu="logout"><i class="pi" data-ic="close"></i> Выйти</div>
   </nav>
 
   <!-- О ПАНЕЛИ -->
@@ -201,6 +203,39 @@
     </form>
   </section>
 
+  <!-- ЭКРАН: ПОЛЬЗОВАТЕЛИ -->
+  <section id="screen-users" class="screen hidden">
+    <div class="server-head" style="background:none;border:0;padding:0">
+      <button class="mc-btn sm" id="users-back"><i class="pi" data-ic="chevron-left"></i> Назад</button>
+      <h1 class="mc-title" style="flex:1;text-align:left;margin:0">Пользователи и права</h1>
+    </div>
+    <div id="users-open-note" class="hint hidden">
+      Сейчас панель открыта без входа (локальный режим). Создайте первого пользователя — он станет
+      администратором, и дальше для входа потребуются логин и пароль.
+    </div>
+    <div class="mc-card form-panel">
+      <div class="section-title" id="users-form-title">Новый пользователь</div>
+      <div class="form-grid">
+        <label class="mc-label">Логин
+          <input class="fld" id="u-name" maxlength="24" placeholder="например stas" autocomplete="off">
+        </label>
+        <label class="mc-label">Пароль
+          <input class="fld" id="u-pass" type="text" maxlength="64" placeholder="минимум 4 символа" autocomplete="off">
+        </label>
+      </div>
+      <div class="opt-card toggle-row" style="margin-top:14px">
+        <span class="toggle-label">Администратор (все права)</span>
+        <div class="mc-toggle" id="u-admin"></div>
+      </div>
+      <div id="u-perms" class="perms-grid"></div>
+      <div class="btn-row btn-row-left" style="margin-top:16px">
+        <button class="mc-btn primary" id="u-create"><i class="pi" data-ic="check"></i> Создать пользователя</button>
+      </div>
+    </div>
+    <div class="section-title" style="margin-top:24px">Существующие пользователи</div>
+    <div class="mc-card inset" id="users-list"></div>
+  </section>
+
   <!-- ЭКРАН: СЕРВЕР -->
   <section id="screen-server" class="screen hidden">
 
@@ -234,6 +269,7 @@
       <button class="mc-tab" data-tab="settings"><i class="pi" data-ic="sliders-2"></i> Настройки</button>
       <button class="mc-tab" data-tab="files"><i class="pi" data-ic="folder"></i> Файлы</button>
       <button class="mc-tab" data-tab="players"><i class="pi" data-ic="users"></i> Игроки</button>
+      <button class="mc-tab" data-tab="backups"><i class="pi" data-ic="save"></i> Бэкапы</button>
       <button class="mc-tab" data-tab="info"><i class="pi" data-ic="info-box"></i> Информация</button>
       <span class="tab-ind" id="tab-ind"></span>
     </nav>
@@ -357,6 +393,21 @@
       <div class="mc-card form-panel">
         <div class="section-title">Игроки сервера</div>
         <div class="mc-card inset players-list" id="players-list"></div>
+      </div>
+    </div>
+
+    <!-- Вкладка: бэкапы -->
+    <div class="tab-pane hidden" id="tab-backups">
+      <div class="mc-card form-panel">
+        <div class="bk-head">
+          <div class="section-title" style="margin:0">Бэкапы сервера</div>
+          <div class="bk-create">
+            <input class="fld" id="bk-label" placeholder="Метка (необяз.)" maxlength="40" autocomplete="off">
+            <button class="mc-btn sm primary" id="bk-create-btn"><i class="pi" data-ic="save"></i> Создать бэкап</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:8px">Архив всего каталога сервера (.tar.gz). У работающего сервера мир сохраняется перед бэкапом. Восстановление — только на остановленном.</div>
+        <div class="mc-card inset bk-list" id="bk-list"></div>
       </div>
     </div>
 
