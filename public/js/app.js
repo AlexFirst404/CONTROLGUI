@@ -417,7 +417,7 @@
     const panel = $('#server-list');
     Array.from(panel.querySelectorAll('.srv-card')).forEach((el) => el.remove());
     $('#list-empty').classList.toggle('hidden', state.servers.length > 0);
-    panel.classList.toggle('single', state.servers.length === 1);
+    panel.classList.toggle('column', state.servers.length > 4);
     renderHomeStats();
 
     for (const server of state.servers) {
@@ -1832,10 +1832,11 @@
     if (animate === false) {
       bar.style.transition = 'none';
     } else if (movingRight) {
-      // вправо: правый край стартует сразу, левый догоняет
-      bar.style.transition = 'right .26s ' + ease + ', left .26s ' + ease + ' .08s';
+      // вправо: задний (левый) край стартует первым, ведущий догоняет —
+      // полоска сжимается в полёте и распрямляется на месте
+      bar.style.transition = 'left .26s ' + ease + ', right .26s ' + ease + ' .1s';
     } else {
-      bar.style.transition = 'left .26s ' + ease + ', right .26s ' + ease + ' .08s';
+      bar.style.transition = 'right .26s ' + ease + ', left .26s ' + ease + ' .1s';
     }
     bar.style.left = left + 'px';
     bar.style.right = right + 'px';
