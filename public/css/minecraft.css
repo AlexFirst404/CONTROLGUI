@@ -482,6 +482,26 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 /* выход в меню — красноватый акцент */
 .menu-item.danger .pi { color: #ff7a6a; }
 
+/* --------------------------------------------- админ-панель --------------- */
+.admin-head { display: flex; align-items: center; gap: 14px; padding: 8px 0 4px; flex-wrap: wrap; }
+.admin-head .mc-btn { margin-bottom: 0; }
+.admin-srv { margin-bottom: 14px; }
+.admin-srv-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.admin-srv-name { font-size: 17px; color: #fff; }
+.admin-srv-meta { font-size: 12px; color: #a9a9a9; }
+.admin-srv .info-grid { grid-template-columns: max-content 1fr; gap: 12px 22px; align-items: center; }
+.links { display: flex; flex-direction: column; gap: 6px; }
+.link-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.link-row code, .info-grid code { font-family: Consolas, monospace; font-size: 13px;
+  background: #161616; border: 1px solid #353535; padding: 3px 8px; color: #d6e0d8; }
+.copy-btn { padding: 5px 8px; min-width: 0; margin-bottom: 0; }
+.copy-btn .pi { width: 13px; height: 13px; }
+.secret { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.secret-val { font-family: Consolas, monospace; font-size: 14px; color: #ffd24a;
+  background: #161616; border: 1px solid #353535; padding: 3px 10px; min-width: 90px; }
+.secret-val.masked { color: transparent; text-shadow: 0 0 8px rgba(255,210,74,.85); user-select: none; }
+.secret .mc-btn { margin-bottom: 0; }
+
 /* ----------------------------------------------------- о панели ----------- */
 .about-body { text-align: center; }
 .about-logo { width: 64px; height: 64px; image-rendering: pixelated; margin: 6px auto 12px; display: block; }

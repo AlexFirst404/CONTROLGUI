@@ -78,6 +78,9 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/login') {
     return serveStatic(Object.assign(req, { url: '/login.html' }), res);
   }
+  if (urlPath === '/admin') {
+    return serveStatic(Object.assign(req, { url: '/admin.html' }), res);
+  }
   if (req.url.startsWith('/api/')) return handleApi(req, res);
   serveStatic(req, res);
 });

@@ -43,6 +43,7 @@ window.API = (function () {
 
   return {
     status: () => call('GET', '/api/status'),
+    adminOverview: () => call('GET', '/api/admin/overview'),
     versions: (type) => call('GET', '/api/versions/' + type),
     servers: () => call('GET', '/api/servers'),
     server: (id) => call('GET', '/api/servers/' + id),
