@@ -1,12 +1,38 @@
 'use strict';
 const http = require('http');
+const crypto = require('crypto');
 const { handleApi } = require('./lib/api');
 const { serveStatic } = require('./lib/static');
 const manager = require('./lib/manager');
 
 const PORT = parseInt(process.env.PORT, 10) || 8400;
 
+/* Если задан CONTROLGUI_PASSWORD — вся панель за HTTP Basic Auth
+   (логин любой, например admin). Для удалённых серверов обязательно. */
+const PASSWORD = process.env.CONTROLGUI_PASSWORD || '';
+
+function checkAuth(req, res) {
+  if (!PASSWORD) return true;
+  const header = req.headers.authorization || '';
+  const m = header.match(/^Basic (.+)$/);
+  if (m) {
+    let decoded = '';
+    try { decoded = Buffer.from(m[1], 'base64').toString('utf8'); } catch (e) { /* мусор */ }
+    const pass = decoded.slice(decoded.indexOf(':') + 1);
+    const a = Buffer.from(pass);
+    const b = Buffer.from(PASSWORD);
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
+  }
+  res.writeHead(401, {
+    'WWW-Authenticate': 'Basic realm="CONTROLGUI", charset="UTF-8"',
+    'Content-Type': 'text/plain; charset=utf-8',
+  });
+  res.end('Требуется авторизация: логин admin и пароль из установки.');
+  return false;
+}
+
 const server = http.createServer((req, res) => {
+  if (!checkAuth(req, res)) return;
   if (req.url.startsWith('/api/')) return handleApi(req, res);
   serveStatic(req, res);
 });

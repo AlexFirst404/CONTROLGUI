@@ -69,6 +69,24 @@ docs/specs/        — проектная спецификация
 Чтобы сменить акцент с зелёного на синий — поменяйте класс `theme-lime`
 на `theme-blue` у `<body>` в `public/index.html`.
 
+## Установка на Linux-сервер (Ubuntu / Debian)
+
+Один скрипт разворачивает всё: Node.js 20, Java 21/17, панель в `/opt/controlgui`,
+systemd-сервис с автозапуском, пароль и порты в ufw (8400 + 25565–25600):
+
+```bash
+git clone https://github.com/AlexFirst404/CONTROLGUI.git
+cd CONTROLGUI
+sudo bash scripts/install-linux.sh
+```
+
+В конце скрипт печатает **ссылку на сайт, логин (admin) и пароль** — заходите
+и создавайте серверы прямо с сайта, они разворачиваются на этой машине.
+Пароль включается переменной `CONTROLGUI_PASSWORD` (HTTP Basic Auth) и хранится
+в `/opt/controlgui/data/panel.env`; без неё (локально на Windows) панель
+работает без пароля, как раньше. Повторный запуск скрипта обновляет панель,
+пароль сохраняется. Логи: `journalctl -u controlgui -f`.
+
 ## Осиротевшие процессы
 
 Если панель была завершена аварийно (kill процесса node, а не Ctrl+C), запущенные
