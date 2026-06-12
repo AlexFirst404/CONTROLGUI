@@ -44,6 +44,9 @@ window.API = (function () {
   return {
     status: () => call('GET', '/api/status'),
     adminOverview: () => call('GET', '/api/admin/overview'),
+    adminRemotes: () => call('GET', '/api/admin/remotes'),
+    adminRemoteAdd: (url, password, label) => call('POST', '/api/admin/remotes', { url: url, password: password, label: label }),
+    adminRemoteRemove: (url) => call('DELETE', '/api/admin/remotes?url=' + encodeURIComponent(url)),
     versions: (type) => call('GET', '/api/versions/' + type),
     servers: () => call('GET', '/api/servers'),
     server: (id) => call('GET', '/api/servers/' + id),

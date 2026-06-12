@@ -22,11 +22,23 @@
   </div>
   <div class="hint" style="margin-top:0">Доступы видны только после входа в панель. Не показывайте экран посторонним.</div>
 
-  <div class="section-title" style="margin-top:18px">Доступ к панели</div>
+  <div class="section-title" style="margin-top:18px">Эта панель</div>
   <div class="mc-card form-panel" id="panel-card"></div>
 
-  <div class="section-title" style="margin-top:26px">Серверы — ссылки и доступы</div>
+  <div class="section-title" style="margin-top:26px">Серверы этой панели</div>
   <div id="servers-box"></div>
+
+  <div class="section-title" style="margin-top:30px">Удалённые панели (другие машины)</div>
+  <div class="mc-card form-panel" id="remote-add-card">
+    <div class="remote-form">
+      <input class="fld" id="r-url" placeholder="Адрес: http://1.2.3.4:8400" autocomplete="off">
+      <input class="fld" id="r-pass" type="password" placeholder="Пароль панели" autocomplete="off">
+      <input class="fld" id="r-label" placeholder="Название (необяз.)" autocomplete="off">
+      <button class="mc-btn sm primary" id="r-add"><i class="pi" data-ic="plus"></i> Добавить</button>
+    </div>
+    <div class="hint" style="margin:10px 0 0">Адрес и пароль печатает скрипт установки на Linux-сервере. Дашборд сам опросит их.</div>
+  </div>
+  <div id="remotes-box" style="margin-top:14px"></div>
 </div>
 
 <script src="js/api.js"></script>
@@ -111,6 +123,37 @@
     card.appendChild(grid);
   }
 
+  function serverCard(s) {
+    var card = document.createElement('div');
+    card.className = 'mc-card form-panel admin-srv';
+
+    var head = document.createElement('div');
+    head.className = 'admin-srv-head';
+    var name = document.createElement('div');
+    name.className = 'admin-srv-name';
+    name.textContent = s.name;
+    var meta = document.createElement('div');
+    meta.className = 'admin-srv-meta';
+    meta.textContent = (s.type[0].toUpperCase() + s.type.slice(1)) + ' ' + s.version +
+      ' · ' + s.status + (s.status === 'running' ? ' · игроков ' + s.online : '');
+    head.appendChild(name);
+    head.appendChild(meta);
+    card.appendChild(head);
+
+    var grid = document.createElement('div');
+    grid.className = 'info-grid';
+    kv(grid, 'Подключение (Minecraft)', linksNode(s.links));
+    if (s.rcon && s.rcon.enabled) {
+      kv(grid, 'RCON порт', String(s.rcon.port));
+      kv(grid, 'RCON пароль', s.rcon.password ? secret(s.rcon.password) : 'пусто (задайте в настройках)');
+    } else {
+      kv(grid, 'RCON', 'выключен — включите enable-rcon в настройках для удалённого доступа');
+    }
+    if (s.query) kv(grid, 'Query порт', String(s.query.port));
+    card.appendChild(grid);
+    return card;
+  }
+
   function renderServers(servers) {
     var box = $('#servers-box');
     box.innerHTML = '';
@@ -122,36 +165,88 @@
       box.appendChild(empty);
       return;
     }
-    servers.forEach(function (s) {
+    servers.forEach(function (s) { box.appendChild(serverCard(s)); });
+  }
+
+  function renderRemotes(remotes) {
+    var box = $('#remotes-box');
+    box.innerHTML = '';
+    if (!remotes || !remotes.length) {
+      var empty = document.createElement('div');
+      empty.className = 'hint';
+      empty.style.margin = '0';
+      empty.textContent = 'Удалённых панелей нет. Добавьте адрес и пароль Linux-сервера выше.';
+      box.appendChild(empty);
+      return;
+    }
+    remotes.forEach(function (r) {
       var card = document.createElement('div');
-      card.className = 'mc-card form-panel admin-srv';
+      card.className = 'mc-card form-panel remote-card';
 
       var head = document.createElement('div');
-      head.className = 'admin-srv-head';
-      var name = document.createElement('div');
-      name.className = 'admin-srv-name';
-      name.textContent = s.name;
-      var meta = document.createElement('div');
-      meta.className = 'admin-srv-meta';
-      meta.textContent = (s.type[0].toUpperCase() + s.type.slice(1)) + ' ' + s.version +
-        ' · ' + s.status + (s.status === 'running' ? ' · игроков ' + s.online : '');
-      head.appendChild(name);
-      head.appendChild(meta);
+      head.className = 'remote-head';
+      var dot = document.createElement('span');
+      dot.className = 'status-dot' + (r.online ? ' on' : ' err');
+      var title = document.createElement('span');
+      title.className = 'remote-title';
+      title.textContent = r.label || r.url;
+      var del = document.createElement('button');
+      del.className = 'mc-btn sm danger';
+      del.appendChild(icon('trash'));
+      del.addEventListener('click', async function () {
+        await API.adminRemoteRemove(r.url);
+        load();
+      });
+      head.appendChild(dot);
+      head.appendChild(title);
+      head.appendChild(del);
       card.appendChild(head);
+
+      if (!r.online) {
+        var err = document.createElement('div');
+        err.className = 'remote-err';
+        err.textContent = (r.url) + ' — ' + (r.error || 'недоступна');
+        card.appendChild(err);
+        box.appendChild(card);
+        return;
+      }
 
       var grid = document.createElement('div');
       grid.className = 'info-grid';
-      kv(grid, 'Подключение (Minecraft)', linksNode(s.links));
-      if (s.rcon.enabled) {
-        kv(grid, 'RCON порт', String(s.rcon.port));
-        kv(grid, 'RCON пароль', s.rcon.password ? secret(s.rcon.password) : 'пусто (задайте в настройках)');
-      } else {
-        kv(grid, 'RCON', 'выключен — включите enable-rcon в настройках для удалённого доступа');
+      if (r.panel) {
+        kv(grid, 'Адрес сайта', linksNode(r.panel.urls || [r.url]));
+        kv(grid, 'Логин', r.panel.login || 'admin');
+        if (r.panel.password) kv(grid, 'Пароль', secret(r.panel.password));
       }
-      if (s.query) kv(grid, 'Query порт', String(s.query.port));
       card.appendChild(grid);
+
+      var sub = document.createElement('div');
+      sub.className = 'remote-sub';
+      sub.textContent = 'Серверы (' + (r.servers ? r.servers.length : 0) + ')';
+      card.appendChild(sub);
+      (r.servers || []).forEach(function (s) {
+        var sc = serverCard(s);
+        sc.classList.add('nested');
+        card.appendChild(sc);
+      });
       box.appendChild(card);
     });
+  }
+
+  async function addRemote() {
+    var url = $('#r-url').value.trim();
+    if (!url) return;
+    var btn = $('#r-add');
+    btn.disabled = true;
+    try {
+      await API.adminRemoteAdd(url, $('#r-pass').value, $('#r-label').value.trim());
+      $('#r-url').value = ''; $('#r-pass').value = ''; $('#r-label').value = '';
+      await load();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function load() {
@@ -159,6 +254,7 @@
       var data = await API.adminOverview();
       renderPanel(data.panel);
       renderServers(data.servers);
+      renderRemotes(data.remotes);
     } catch (e) {
       $('#servers-box').textContent = e.message;
     }
@@ -168,6 +264,9 @@
     el.style.setProperty('--i', "url('/icons/" + el.dataset.ic + ".svg')");
   });
   $('#reload').addEventListener('click', load);
+  $('#r-add').addEventListener('click', addRemote);
+  $('#r-url').addEventListener('keydown', function (e) { if (e.key === 'Enter') addRemote(); });
+  $('#r-pass').addEventListener('keydown', function (e) { if (e.key === 'Enter') addRemote(); });
   load();
 })();
 </script>

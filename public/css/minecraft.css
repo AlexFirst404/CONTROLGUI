@@ -502,6 +502,18 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 .secret-val.masked { color: transparent; text-shadow: 0 0 8px rgba(255,210,74,.85); user-select: none; }
 .secret .mc-btn { margin-bottom: 0; }
 
+/* удалённые панели */
+.remote-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
+.remote-form .fld { flex: 1; min-width: 160px; }
+.remote-form .mc-btn { margin-bottom: 0; flex: none; }
+.remote-card { margin-bottom: 14px; }
+.remote-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.remote-title { flex: 1; font-size: 16px; color: #fff; word-break: break-all; }
+.remote-head .mc-btn { margin-bottom: 0; }
+.remote-err { color: #ff9a8a; font-size: 13px; }
+.remote-sub { margin: 16px 0 10px; color: #9fb0a4; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; }
+.admin-srv.nested { background: var(--card-inset); margin-bottom: 10px; }
+
 /* ----------------------------------------------------- о панели ----------- */
 .about-body { text-align: center; }
 .about-logo { width: 64px; height: 64px; image-rendering: pixelated; margin: 6px auto 12px; display: block; }

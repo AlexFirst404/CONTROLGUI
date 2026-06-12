@@ -156,3 +156,6 @@ c_dim "  Логи:          journalctl -u $SERVICE_NAME -f"
 c_dim "  Перезапуск:    systemctl restart $SERVICE_NAME"
 c_dim "  Серверы Minecraft создавайте на сайте — файлы лягут в $INSTALL_DIR/servers"
 echo
+c_dim "  Чтобы видеть этот сервер в общей админ-панели (раздел «Удалённые панели»),"
+c_dim "  добавьте там адрес  http://$IP:$PANEL_PORT  и пароль выше."
+echo
