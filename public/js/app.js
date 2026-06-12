@@ -1826,17 +1826,17 @@
     const left = active.offsetLeft + inset;
     const right = barParentWidth - (active.offsetLeft + active.offsetWidth - inset);
 
+    bar.style.width = 'auto';
     const prevLeft = parseFloat(bar.style.left) || 0;
     const movingRight = left >= prevLeft;
     const ease = 'cubic-bezier(.3, 0, .2, 1)';
     if (animate === false) {
       bar.style.transition = 'none';
     } else if (movingRight) {
-      // вправо: задний (левый) край стартует первым, ведущий догоняет —
-      // полоска сжимается в полёте и распрямляется на месте
-      bar.style.transition = 'left .26s ' + ease + ', right .26s ' + ease + ' .1s';
+      // вправо: правый край стартует сразу, левый догоняет
+      bar.style.transition = 'right .26s ' + ease + ', left .26s ' + ease + ' .08s';
     } else {
-      bar.style.transition = 'right .26s ' + ease + ', left .26s ' + ease + ' .1s';
+      bar.style.transition = 'left .26s ' + ease + ', right .26s ' + ease + ' .08s';
     }
     bar.style.left = left + 'px';
     bar.style.right = right + 'px';
