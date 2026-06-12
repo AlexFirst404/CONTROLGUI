@@ -78,5 +78,18 @@ window.API = (function () {
     backupDelete: (id, name) => call('DELETE', '/api/servers/' + id + '/backup?name=' + encodeURIComponent(name)),
     backupRestore: (id, name) => call('POST', '/api/servers/' + id + '/backup?name=' + encodeURIComponent(name)),
     backupDownloadUrl: (id, name) => '/api/servers/' + id + '/backup?name=' + encodeURIComponent(name),
+
+    logs: (id) => call('GET', '/api/servers/' + id + '/logs'),
+    log: (id, name) => call('GET', '/api/servers/' + id + '/log?name=' + encodeURIComponent(name)),
+
+    coreUpload: async (id, file) => {
+      let res;
+      try { res = await fetch('/api/servers/' + id + '/core', { method: 'PUT', body: file }); }
+      catch (e) { throw new Error('Загрузка ядра прервалась: ' + e.message); }
+      let data = {};
+      try { data = await res.json(); } catch (e) { /* пусто */ }
+      if (!res.ok) throw new Error(data.error || ('Ошибка HTTP ' + res.status));
+      return data;
+    },
   };
 })();

@@ -108,6 +108,11 @@
     me: null,            // текущий пользователь {username, admin, perms}
     permissions: [],     // список всех прав (из бэкенда)
     openMode: true,      // нет пользователей — полный доступ
+    editUser: null,      // редактируемый пользователь (null — режим создания)
+    logName: null,       // выбранный лог-файл
+    logContent: '',      // загруженный текст лога
+    logTimer: null,      // таймер live-обновления логов
+    customCoreFile: null, // выбранный пользователем jar для своего ядра
   };
 
   // ---------- права ----------
@@ -163,12 +168,18 @@
       settings: ['settings.edit'],
       files: ['files.read'],
       players: ['players.kick', 'players.ban', 'players.whitelist', 'players.delete'],
+      logs: ['console.view'],
       backups: ['backups.create', 'backups.restore', 'backups.delete'],
     };
     $$('.mc-tab').forEach((btn) => {
       const p = tabPerm[btn.dataset.tab];
       btn.classList.toggle('hidden', p ? !canAny(p) : false);
     });
+    // файловый тулбар по правам
+    const fb = (sel, ok) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !ok); };
+    fb('#btn-new-file', can('files.write'));
+    fb('#btn-new-dir', can('files.write'));
+    fb('#btn-upload', can('files.upload'));
     // кнопки питания — каждая по своему праву
     const toggleBtn = (sel, perm) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !can(perm)); };
     toggleBtn('#btn-start', 'server.start');
@@ -514,11 +525,33 @@
       nameEl.textContent = server.name;
       const subEl = document.createElement('div');
       subEl.className = 'srv-card-sub';
-      subEl.textContent = (CORE_NAMES[server.type] || server.type) + ' ' + server.version + ' · порт ' + server.port;
+      subEl.textContent = (CORE_NAMES[server.type] || server.type) + ' ' + (server.version || '–');
       id.appendChild(nameEl);
       id.appendChild(subEl);
       top.appendChild(icon);
       top.appendChild(id);
+
+      // адрес для подключения + копирование
+      const addrRow = document.createElement('div');
+      addrRow.className = 'srv-card-addr';
+      const host = (state.lanIps && state.lanIps.length ? state.lanIps[0] : 'localhost');
+      const address = host + ':' + server.port;
+      const code = document.createElement('code');
+      code.textContent = address;
+      addrRow.appendChild(code);
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'mc-btn sm copy-btn';
+      copyBtn.title = 'Скопировать адрес';
+      copyBtn.appendChild(picon('copy'));
+      copyBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (navigator.clipboard) navigator.clipboard.writeText(address);
+        const old = copyBtn.querySelector('.pi');
+        copyBtn.replaceChild(picon('check'), old);
+        showToast('Адрес скопирован: ' + address, 'ok');
+        setTimeout(() => { const c = copyBtn.querySelector('.pi'); if (c) copyBtn.replaceChild(picon('copy'), c); }, 1200);
+      });
+      addrRow.appendChild(copyBtn);
 
       const line = document.createElement('div');
       line.className = 'srv-card-line';
@@ -565,6 +598,7 @@
       actions.appendChild(open);
 
       card.appendChild(top);
+      card.appendChild(addrRow);
       card.appendChild(line);
       card.appendChild(actions);
       card.addEventListener('click', () => openServer(server.id));
@@ -596,6 +630,7 @@
 
   async function loadVersions() {
     const type = $('#core-select').value || 'vanilla';
+    if (type === 'custom') return; // у своего ядра версии не из репозитория
     const select = $('#version-select');
     select.innerHTML = '<option value="">Загрузка версий...</option>';
     try {
@@ -628,11 +663,14 @@
       return;
     }
     const form = $('#create-form');
+    const type = $('#core-select').value;
+    const isCustom = type === 'custom';
+    const coreFile = $('#custom-core-file').files[0];
     const body = {
       name: form.name.value,
       motd: form.motd.value,
-      type: $('#core-select').value,
-      version: form.version.value,
+      type: type,
+      version: isCustom ? '-' : form.version.value,
       port: form.port.value,
       memoryMb: state.memCreateSlider.value,
       gamemode: $('#cycle-gamemode').dataset.value,
@@ -643,15 +681,21 @@
       pvp: $('#toggle-pvp').classList.contains('on'),
       eulaAccepted: true,
     };
-    if (!body.version) {
-      showToast('Выберите версию');
-      return;
-    }
+    if (isCustom && !coreFile) { showToast('Выберите файл ядра (.jar)'); return; }
+    if (!isCustom && !body.version) { showToast('Выберите версию'); return; }
     $('#btn-create').disabled = true;
     try {
       const created = await API.create(body);
-      showToast('Сервер «' + created.name + '» создан, устанавливаю ядро...', 'ok');
+      if (isCustom) {
+        showToast('Сервер создан, загружаю ваше ядро…', 'ok');
+        await API.coreUpload(created.id, coreFile);
+        showToast('Своё ядро загружено.', 'ok');
+      } else {
+        showToast('Сервер «' + created.name + '» создан, устанавливаю ядро...', 'ok');
+      }
       form.reset();
+      $('#custom-core-file').value = '';
+      onCoreChange();
       $('#eula-check').classList.remove('on');
       await loadServers();
       openServer(created.id);
@@ -666,10 +710,14 @@
 
   function firstAllowedTab() {
     const order = [
-      ['console', 'console.view'], ['settings', 'settings.edit'], ['files', 'files.read'],
-      ['players', 'players.manage'], ['backups', 'backups.manage'], ['info', null],
+      ['console', () => can('console.view')], ['settings', () => can('settings.edit')],
+      ['files', () => can('files.read')],
+      ['players', () => canAny(['players.kick', 'players.ban', 'players.whitelist', 'players.delete'])],
+      ['logs', () => can('console.view')],
+      ['backups', () => canAny(['backups.create', 'backups.restore', 'backups.delete'])],
+      ['info', () => true],
     ];
-    for (const [tab, perm] of order) { if (!perm || can(perm)) return tab; }
+    for (const [tab, ok] of order) { if (ok()) return tab; }
     return 'info';
   }
 
@@ -1745,8 +1793,8 @@
         b.addEventListener('click', (event) => { event.stopPropagation(); handler(); });
         return b;
       };
-      actions.appendChild(mkBtn('edit', 'Переименовать', '', () => renameEntry(entry)));
-      actions.appendChild(mkBtn('trash', 'Удалить', 'danger', () => deleteEntry(entry)));
+      if (can('files.write')) actions.appendChild(mkBtn('edit', 'Переименовать', '', () => renameEntry(entry)));
+      if (can('files.delete')) actions.appendChild(mkBtn('trash', 'Удалить', 'danger', () => deleteEntry(entry)));
 
       row.appendChild(ic);
       row.appendChild(nameEl);
@@ -1948,12 +1996,18 @@
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
     $('#tab-files').classList.toggle('hidden', tab !== 'files');
     $('#tab-players').classList.toggle('hidden', tab !== 'players');
+    $('#tab-logs').classList.toggle('hidden', tab !== 'logs');
     $('#tab-backups').classList.toggle('hidden', tab !== 'backups');
     $('#tab-info').classList.toggle('hidden', tab !== 'info');
+    if (tab !== 'logs') stopLogLive();
     if (tab === 'settings') loadSettings();
     if (tab === 'console') loadStats();
     if (tab === 'players') fetchPlayTimes();
     if (tab === 'backups') loadBackups();
+    if (tab === 'logs') {
+      loadLogs();
+      if ($('#logs-live').classList.contains('on')) startLogLive();
+    }
     if (tab === 'files') {
       $('#file-editor').classList.add('hidden');
       $('#files-browser').classList.remove('hidden');
@@ -2119,11 +2173,8 @@
   function openUsers() {
     showScreen('users');
     $('#users-open-note').classList.toggle('hidden', !state.openMode);
-    $('#u-admin').classList.toggle('on', state.openMode); // первого по умолчанию админом
-    $('#u-perms').classList.toggle('hidden', state.openMode);
-    $('#u-name').value = '';
-    $('#u-pass').value = '';
-    buildPermsForm();
+    resetUserForm();
+    if (state.openMode) { $('#u-admin').classList.add('on'); $('#u-perms').classList.add('hidden'); }
     loadUsers();
   }
 
@@ -2152,7 +2203,13 @@
       main.className = 'user-main';
       const name = document.createElement('div');
       name.className = 'user-name';
-      name.textContent = u.username + (u.admin ? '  ★ админ' : '');
+      name.appendChild(document.createTextNode(u.username));
+      if (u.admin) {
+        const crown = picon('crown', '#ffd24a'); // жёлтая пиксельная корона оператора
+        crown.classList.add('op-crown');
+        crown.title = 'Администратор (оператор)';
+        name.appendChild(crown);
+      }
       const sub = document.createElement('div');
       sub.className = 'user-sub';
       sub.textContent = u.admin ? 'Все права' : (state.permissions.filter((p) => u.perms[p.key]).map((p) => p.label).join(', ') || 'Без прав');
@@ -2160,6 +2217,15 @@
       main.appendChild(sub);
       const actions = document.createElement('div');
       actions.className = 'file-actions';
+
+      const edit = document.createElement('button');
+      edit.className = 'mc-btn sm';
+      edit.appendChild(picon('edit'));
+      edit.appendChild(document.createTextNode(' Права'));
+      edit.title = 'Изменить права и пароль';
+      edit.addEventListener('click', () => startEditUser(u));
+      actions.appendChild(edit);
+
       const del = document.createElement('button');
       del.className = 'mc-btn sm danger';
       del.appendChild(picon('trash'));
@@ -2178,19 +2244,66 @@
     }
   }
 
-  async function createUserFromForm() {
-    const username = $('#u-name').value.trim();
+  function startEditUser(u) {
+    state.editUser = u.username;
+    $('#users-form-title').textContent = 'Изменение прав: ' + u.username;
+    $('#u-name').value = u.username;
+    $('#u-name').disabled = true;
+    $('#u-pass').value = '';
+    $('#u-pass').placeholder = 'оставьте пустым — пароль не меняется';
+    $('#u-admin').classList.toggle('on', !!u.admin);
+    $('#u-perms').classList.toggle('hidden', !!u.admin);
+    buildPermsForm();
+    for (const chk of $$('#u-perms .mc-check')) {
+      chk.classList.toggle('on', !!(u.perms && u.perms[chk.dataset.perm]));
+    }
+    $('#u-create').innerHTML = '';
+    $('#u-create').appendChild(picon('save'));
+    $('#u-create').appendChild(document.createTextNode(' Сохранить изменения'));
+    $('#u-cancel-edit').classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function resetUserForm() {
+    state.editUser = null;
+    $('#users-form-title').textContent = 'Новый пользователь';
+    $('#u-name').value = '';
+    $('#u-name').disabled = false;
+    $('#u-pass').value = '';
+    $('#u-pass').placeholder = 'минимум 4 символа';
+    $('#u-admin').classList.remove('on');
+    $('#u-perms').classList.remove('hidden');
+    buildPermsForm();
+    $('#u-create').innerHTML = '';
+    $('#u-create').appendChild(picon('check'));
+    $('#u-create').appendChild(document.createTextNode(' Создать пользователя'));
+    $('#u-cancel-edit').classList.add('hidden');
+  }
+
+  async function submitUserForm() {
     const password = $('#u-pass').value;
     const admin = $('#u-admin').classList.contains('on');
+    const perms = collectPerms();
+    if (state.editUser) {
+      // редактирование: пароль необязателен
+      await guard(async () => {
+        await API.userUpdate(state.editUser, { password: password || undefined, admin, perms });
+        showToast('Права пользователя «' + state.editUser + '» обновлены.', 'ok');
+        resetUserForm();
+        loadUsers();
+      });
+      return;
+    }
+    const username = $('#u-name').value.trim();
     if (!username || !password) { showToast('Введите логин и пароль'); return; }
     await guard(async () => {
-      const res = await API.userCreate({ username, password, admin, perms: collectPerms() });
+      const res = await API.userCreate({ username, password, admin, perms });
       showToast('Пользователь «' + username + '» создан.', 'ok');
       if (res && res.loggedIn) {
-        // создали первого админа в открытом режиме — перезагружаем под входом
         await loadMe();
         state.openMode = false;
       }
+      resetUserForm();
       openUsers();
     });
   }
@@ -2199,6 +2312,154 @@
     if (!(await confirmDialog('Выйти из панели?', { title: 'Выход', yesText: 'Выйти' }))) return;
     try { await API.logout(); } catch (e) { /* всё равно уходим */ }
     location.href = '/login';
+  }
+
+  // ---------- своё ядро при создании ----------
+
+  function onCoreChange() {
+    const custom = $('#core-select').value === 'custom';
+    $('#version-label').classList.toggle('hidden', custom);
+    $('#custom-core-label').classList.toggle('hidden', !custom);
+    $('#version-select').required = !custom;
+    if (!custom) loadVersions();
+  }
+
+  // ---------- логи ----------
+
+  async function loadLogs() {
+    if (!state.currentId) return;
+    await guard(async () => {
+      const data = await API.logs(state.currentId);
+      const sel = $('#logs-file');
+      const prev = sel.value;
+      sel.innerHTML = '';
+      if (!data.logs.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Логов пока нет';
+        sel.appendChild(opt);
+        $('#logs-view').textContent = '';
+        $('#logs-meta').textContent = '';
+        return;
+      }
+      for (const l of data.logs) {
+        const opt = document.createElement('option');
+        opt.value = l.name;
+        opt.textContent = l.name + (l.live ? ' (активный)' : '') + ' · ' + fmtBytes(l.size);
+        sel.appendChild(opt);
+      }
+      sel.value = data.logs.some((l) => l.name === prev) ? prev : data.logs[0].name;
+      loadLogContent();
+    });
+  }
+
+  async function loadLogContent() {
+    const name = $('#logs-file').value;
+    if (!name) return;
+    state.logName = name;
+    await guard(async () => {
+      const data = await API.log(state.currentId, name);
+      state.logContent = data.content || '';
+      $('#logs-meta').textContent = (data.truncated ? 'Показаны последние 5 МБ · ' : '') +
+        state.logContent.split('\n').length + ' строк';
+      renderLogView();
+    });
+  }
+
+  function renderLogView() {
+    const view = $('#logs-view');
+    const q = $('#logs-query').value.trim().toLowerCase();
+    const atBottom = view.scrollTop + view.clientHeight >= view.scrollHeight - 40;
+    const lines = state.logContent.split('\n');
+    const shown = q ? lines.filter((l) => l.toLowerCase().includes(q)) : lines;
+    view.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    const MAX = 4000;
+    const slice = shown.slice(-MAX);
+    for (const line of slice) {
+      const el = document.createElement('span');
+      el.className = 'ln';
+      if (/ERROR|SEVERE|Exception|FAILED/i.test(line)) el.classList.add('ln-error');
+      else if (/WARN/.test(line)) el.classList.add('ln-warn');
+      else if (q && line.toLowerCase().includes(q)) el.classList.add('ln-cmd');
+      el.textContent = line;
+      frag.appendChild(el);
+    }
+    view.appendChild(frag);
+    if (q) $('#logs-meta').textContent = 'Найдено строк: ' + shown.length + (shown.length > MAX ? ' (показаны последние ' + MAX + ')' : '');
+    if (atBottom || q) view.scrollTop = view.scrollHeight;
+  }
+
+  function startLogLive() {
+    stopLogLive();
+    state.logTimer = setInterval(() => {
+      if (state.screen !== 'server' || state.currentTab !== 'logs') { stopLogLive(); return; }
+      // обновляем только активный лог
+      if (state.logName === 'latest.log') loadLogContent();
+    }, 3000);
+  }
+  function stopLogLive() {
+    if (state.logTimer) { clearInterval(state.logTimer); state.logTimer = null; }
+  }
+
+  // ---------- перетаскивание файлов (drag & drop) ----------
+
+  function setupFileDrop() {
+    const overlay = $('#drop-overlay');
+    let depth = 0;
+    const onFilesTab = () => state.screen === 'server' && state.currentTab === 'files' &&
+      !$('#files-browser').classList.contains('hidden');
+
+    window.addEventListener('dragenter', (e) => {
+      if (!onFilesTab() || !can('files.upload')) return;
+      if (!e.dataTransfer || Array.from(e.dataTransfer.types || []).indexOf('Files') < 0) return;
+      e.preventDefault();
+      depth++;
+      $('#drop-sub').textContent = 'в папку: ' + (state.filesPath || 'корень');
+      overlay.classList.remove('hidden');
+    });
+    window.addEventListener('dragover', (e) => {
+      if (!overlay.classList.contains('hidden')) e.preventDefault();
+    });
+    window.addEventListener('dragleave', (e) => {
+      if (overlay.classList.contains('hidden')) return;
+      depth--;
+      if (depth <= 0) { depth = 0; overlay.classList.add('hidden'); }
+    });
+    window.addEventListener('drop', (e) => {
+      if (overlay.classList.contains('hidden')) return;
+      e.preventDefault();
+      depth = 0;
+      overlay.classList.add('hidden');
+      const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+      if (files.length) openDropConfirm(files);
+    });
+  }
+
+  function openDropConfirm(files) {
+    $('#dropconfirm-path').textContent = 'Папка назначения: ' + (state.filesPath || 'корень');
+    const box = $('#dropconfirm-list');
+    box.innerHTML = '';
+    for (const f of files) {
+      const row = document.createElement('div');
+      row.className = 'drop-file';
+      row.appendChild(picon('file', 'var(--accent-bright)'));
+      const nm = document.createElement('span');
+      nm.className = 'drop-file-name';
+      nm.textContent = f.name;
+      const sz = document.createElement('span');
+      sz.className = 'drop-file-size';
+      sz.textContent = fmtBytes(f.size);
+      row.appendChild(nm);
+      row.appendChild(sz);
+      box.appendChild(row);
+    }
+    $('#dropconfirm-root').classList.remove('hidden');
+    $('#dropconfirm-ok').onclick = async () => {
+      $('#dropconfirm-root').classList.add('hidden');
+      for (const f of files) await uploadFile(f);
+    };
+    $('#dropconfirm-cancel').onclick = () => $('#dropconfirm-root').classList.add('hidden');
   }
 
   // ---------- удаление сервера ----------
@@ -2280,10 +2541,26 @@
       const adminOn = $('#u-admin').classList.contains('on');
       $('#u-perms').classList.toggle('hidden', adminOn);
     });
-    $('#u-create').addEventListener('click', createUserFromForm);
+    $('#u-create').addEventListener('click', submitUserForm);
+    $('#u-cancel-edit').addEventListener('click', resetUserForm);
 
     // бэкапы
     $('#bk-create-btn').addEventListener('click', createBackup);
+
+    // логи
+    $('#logs-file').addEventListener('change', () => loadLogContent());
+    $('#logs-query').addEventListener('input', renderLogView);
+    $('#logs-refresh').addEventListener('click', () => loadLogs());
+    mkToggle($('#logs-live'), false);
+    $('#logs-live').addEventListener('click', () => {
+      if ($('#logs-live').classList.contains('on')) startLogLive(); else stopLogLive();
+    });
+
+    // создание сервера: переключение «своё ядро»
+    $('#core-select').addEventListener('change', onCoreChange);
+
+    // перетаскивание файлов из проводника на вкладке «Файлы»
+    setupFileDrop();
 
     $('#about-close').addEventListener('click', () => $('#about-root').classList.add('hidden'));
     $('#about-root').addEventListener('click', (event) => {

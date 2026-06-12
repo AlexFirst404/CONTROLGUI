@@ -153,12 +153,17 @@
             <option value="folia">Folia — многопоточный Paper</option>
             <option value="mohist">Mohist — Forge-моды + плагины</option>
             <option value="forge">Forge — моды</option>
+            <option value="custom">Своё ядро — загрузить .jar из файлов</option>
           </select>
         </label>
-        <label class="mc-label">Версия
+        <label class="mc-label" id="version-label">Версия
           <select class="fld" name="version" id="version-select" required>
             <option value="">Загрузка версий...</option>
           </select>
+        </label>
+        <label class="mc-label hidden" id="custom-core-label" style="grid-column: 1 / -1">Свой server.jar (выберите файл ядра)
+          <input class="fld" type="file" id="custom-core-file" accept=".jar">
+          <span class="hint" style="margin:4px 0 0">Версия определится сама — из jar при загрузке или из лога при первом запуске (до этого показывается «–»).</span>
         </label>
 
         <label class="mc-label">Порт
@@ -236,6 +241,7 @@
       <div id="u-perms" class="perms-wrap"></div>
       <div class="btn-row btn-row-left" style="margin-top:16px">
         <button class="mc-btn primary" id="u-create"><i class="pi" data-ic="check"></i> Создать пользователя</button>
+        <button class="mc-btn hidden" id="u-cancel-edit">Отмена</button>
       </div>
     </div>
     <div class="section-title" style="margin-top:24px">Существующие пользователи</div>
@@ -259,7 +265,7 @@
       <div class="sh-actions">
         <button class="mc-btn sm primary" id="btn-start"><i class="pi" data-ic="play"></i> Запустить</button>
         <button class="mc-btn sm" id="btn-restart"><i class="pi" data-ic="reload"></i> Перезапуск</button>
-        <button class="mc-btn sm" id="btn-stop"><i class="pi" data-ic="pause"></i> Остановить</button>
+        <button class="mc-btn sm accent" id="btn-stop"><i class="pi" data-ic="pause"></i> Остановить</button>
         <button class="mc-btn sm danger" id="btn-kill"><i class="pi" data-ic="close-box"></i> Убить</button>
         <button class="mc-btn sm accent hidden" id="btn-redownload"><i class="pi" data-ic="download"></i> Установить ядро</button>
       </div>
@@ -275,6 +281,7 @@
       <button class="mc-tab" data-tab="settings"><i class="pi" data-ic="sliders-2"></i> Настройки</button>
       <button class="mc-tab" data-tab="files"><i class="pi" data-ic="folder"></i> Файлы</button>
       <button class="mc-tab" data-tab="players"><i class="pi" data-ic="users"></i> Игроки</button>
+      <button class="mc-tab" data-tab="logs"><i class="pi" data-ic="script-text"></i> Логи</button>
       <button class="mc-tab" data-tab="backups"><i class="pi" data-ic="save"></i> Бэкапы</button>
       <button class="mc-tab" data-tab="info"><i class="pi" data-ic="info-box"></i> Информация</button>
       <span class="tab-ind" id="tab-ind"></span>
@@ -402,6 +409,23 @@
       </div>
     </div>
 
+    <!-- Вкладка: логи -->
+    <div class="tab-pane hidden" id="tab-logs">
+      <div class="mc-card form-panel">
+        <div class="logs-head">
+          <select class="fld" id="logs-file"></select>
+          <div class="logs-search">
+            <input class="fld" id="logs-query" placeholder="Поиск по словам, игрокам…" autocomplete="off">
+            <button class="mc-btn sm" id="logs-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
+            <span class="toggle-label" style="white-space:nowrap">Live</span>
+            <div class="mc-toggle" id="logs-live"></div>
+          </div>
+        </div>
+        <div class="logs-meta" id="logs-meta"></div>
+        <div class="console logs-view" id="logs-view"></div>
+      </div>
+    </div>
+
     <!-- Вкладка: бэкапы -->
     <div class="tab-pane hidden" id="tab-backups">
       <div class="mc-card form-panel">
@@ -460,6 +484,30 @@
         <button class="mc-btn sm" id="inv-close"><i class="pi" data-ic="close"></i></button>
       </div>
       <div class="modal-body" id="inv-body"></div>
+    </div>
+  </div>
+
+  <!-- ОВЕРЛЕЙ ПЕРЕТАСКИВАНИЯ ФАЙЛОВ -->
+  <div id="drop-overlay" class="drop-overlay hidden">
+    <div class="drop-box">
+      <i class="pi drop-ic" data-ic="upload"></i>
+      <div class="drop-title">Отпустите, чтобы загрузить</div>
+      <div class="drop-sub" id="drop-sub">в текущую папку сервера</div>
+    </div>
+  </div>
+
+  <!-- МОДАЛКА ПОДТВЕРЖДЕНИЯ ЗАГРУЗКИ ФАЙЛОВ -->
+  <div id="dropconfirm-root" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head"><span><i class="pi" data-ic="upload"></i> Загрузка файлов</span></div>
+      <div class="modal-body">
+        <div id="dropconfirm-path" class="hint" style="margin:0 0 10px"></div>
+        <div id="dropconfirm-list" class="drop-files"></div>
+      </div>
+      <div class="btn-row">
+        <button class="mc-btn primary" id="dropconfirm-ok"><i class="pi" data-ic="check"></i> Загрузить</button>
+        <button class="mc-btn" id="dropconfirm-cancel">Отмена</button>
+      </div>
     </div>
   </div>
 
