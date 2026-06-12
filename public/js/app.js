@@ -130,7 +130,7 @@
 
   function accountLabel() {
     if (state.openMode || !state.me || !state.me.username) return 'Локальный режим';
-    return state.me.username + (state.me.admin ? ' · админ' : '');
+    return state.me.username;
   }
 
   async function loadMe() {
@@ -516,8 +516,9 @@
       top.className = 'srv-card-top';
       const icon = document.createElement('img');
       icon.className = 'server-icon';
-      icon.src = iconFor(server.id);
+      icon.src = server.hasIcon ? API.iconUrl(server.id, server.hasIcon) : iconFor(server.id);
       icon.alt = '';
+      icon.onerror = () => { icon.onerror = null; icon.src = iconFor(server.id); };
       const id = document.createElement('div');
       id.className = 'srv-card-id';
       const nameEl = document.createElement('div');
@@ -752,10 +753,13 @@
     const server = state.current;
     if (!server) return;
     $('#server-title').textContent = server.name;
+    const headIcon = $('#server-head-icon');
+    if (server.hasIcon) { headIcon.src = API.iconUrl(server.id, server.hasIcon); headIcon.classList.remove('hidden'); }
+    else { headIcon.classList.add('hidden'); }
     const st = $('#server-status');
     st.className = 'status-badge st-' + server.status;
     st.textContent = statusText(server);
-    $('#server-addr').textContent = (CORE_NAMES[server.type] || server.type) + ' ' + server.version + ' · localhost:' + server.port;
+    $('#server-addr').textContent = (CORE_NAMES[server.type] || server.type) + ' ' + (server.version || '–') + ' · localhost:' + server.port;
 
     const dlWrap = $('#download-wrap');
     const dl = server.download;
@@ -1521,9 +1525,74 @@
     try {
       const data = await API.properties(state.currentId);
       renderSettings(data);
+      renderIconCard();
     } catch (e) {
       showToast(e.message);
     }
+  }
+
+  // ---------- иконка сервера ----------
+
+  function renderIconCard() {
+    const srv = state.current || {};
+    const prev = $('#icon-preview');
+    const has = !!srv.hasIcon;
+    if (has) { prev.src = API.iconUrl(srv.id, srv.hasIcon); prev.classList.remove('empty'); }
+    else { prev.removeAttribute('src'); prev.classList.add('empty'); }
+    $('#icon-remove-btn').classList.toggle('hidden', !has);
+    // только при праве на изменение настроек
+    $('#icon-card').classList.toggle('hidden', !can('settings.edit'));
+  }
+
+  /* Сжать выбранную картинку до 64×64 PNG (формат server-icon.png) на canvas. */
+  function resizeIcon(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        canvas.width = 64; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.clearRect(0, 0, 64, 64);
+        // вписываем картинку целиком (contain) по центру
+        const scale = Math.min(64 / img.width, 64 / img.height);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        ctx.drawImage(img, (64 - w) / 2, (64 - h) / 2, w, h);
+        canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Не удалось обработать картинку')), 'image/png');
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось прочитать картинку')); };
+      img.src = url;
+    });
+  }
+
+  async function uploadServerIcon(file) {
+    if (!file || !state.currentId) return;
+    await guard(async () => {
+      const blob = await resizeIcon(file);
+      await API.iconUpload(state.currentId, blob);
+      showToast('Иконка сервера обновлена (64×64).', 'ok');
+      state.current = await API.server(state.currentId);
+      renderServerHead();
+      renderIconCard();
+      loadServers();
+    });
+  }
+
+  async function removeServerIcon() {
+    if (!state.currentId) return;
+    if (!(await confirmDialog('Убрать иконку сервера?', { title: 'Иконка', yesText: 'Убрать' }))) return;
+    await guard(async () => {
+      await API.iconDelete(state.currentId);
+      showToast('Иконка убрана.', 'ok');
+      state.current = await API.server(state.currentId);
+      renderServerHead();
+      renderIconCard();
+      loadServers();
+    });
   }
 
   function renderSettings(data) {
@@ -2170,11 +2239,47 @@
     return perms;
   }
 
-  function openUsers() {
+  function buildServersForm(allowed) {
+    const box = $('#u-servers');
+    box.innerHTML = '';
+    const list = state.servers || [];
+    if (!list.length) {
+      const e = document.createElement('span');
+      e.className = 'label-dim';
+      e.textContent = 'Серверов пока нет.';
+      box.appendChild(e);
+      return;
+    }
+    for (const s of list) {
+      const row = document.createElement('label');
+      row.className = 'perm-row';
+      const chk = document.createElement('span');
+      chk.className = 'mc-check';
+      chk.dataset.sid = s.id;
+      if (allowed && allowed.indexOf(s.id) >= 0) chk.classList.add('on');
+      const tick = document.createElement('span');
+      tick.className = 'tick';
+      chk.appendChild(tick);
+      chk.addEventListener('click', () => chk.classList.toggle('on'));
+      const lbl = document.createElement('span');
+      lbl.textContent = s.name + ' (' + (CORE_NAMES[s.type] || s.type) + ', порт ' + s.port + ')';
+      row.appendChild(chk);
+      row.appendChild(lbl);
+      box.appendChild(row);
+    }
+  }
+
+  function collectServers() {
+    if ($('#u-all-servers').classList.contains('on')) return null; // все
+    return $$('#u-servers .mc-check').filter((c) => c.classList.contains('on')).map((c) => c.dataset.sid);
+  }
+
+  async function openUsers() {
     showScreen('users');
     $('#users-open-note').classList.toggle('hidden', !state.openMode);
+    await guard(loadServers); // для списка серверов в «Доступ к серверам»
     resetUserForm();
-    if (state.openMode) { $('#u-admin').classList.add('on'); $('#u-perms').classList.add('hidden'); }
+    if (state.openMode) { $('#u-admin').classList.add('on'); $('#u-perms').classList.add('hidden'); $('#u-access').classList.add('hidden'); }
     loadUsers();
   }
 
@@ -2212,7 +2317,8 @@
       }
       const sub = document.createElement('div');
       sub.className = 'user-sub';
-      sub.textContent = u.admin ? 'Все права' : (state.permissions.filter((p) => u.perms[p.key]).map((p) => p.label).join(', ') || 'Без прав');
+      const access = u.admin ? 'все серверы' : (u.servers == null ? 'все серверы' : 'серверов: ' + u.servers.length);
+      sub.textContent = (u.admin ? 'Все права' : (state.permissions.filter((p) => u.perms[p.key]).map((p) => p.label).join(', ') || 'Без прав')) + ' · ' + access;
       main.appendChild(name);
       main.appendChild(sub);
       const actions = document.createElement('div');
@@ -2253,10 +2359,16 @@
     $('#u-pass').placeholder = 'оставьте пустым — пароль не меняется';
     $('#u-admin').classList.toggle('on', !!u.admin);
     $('#u-perms').classList.toggle('hidden', !!u.admin);
+    $('#u-access').classList.toggle('hidden', !!u.admin);
     buildPermsForm();
     for (const chk of $$('#u-perms .mc-check')) {
       chk.classList.toggle('on', !!(u.perms && u.perms[chk.dataset.perm]));
     }
+    // доступ к серверам: null/'all' — все; массив — выбранные
+    const allServers = u.servers == null;
+    $('#u-all-servers').classList.toggle('on', allServers);
+    $('#u-servers').classList.toggle('hidden', allServers);
+    buildServersForm(Array.isArray(u.servers) ? u.servers : null);
     $('#u-create').innerHTML = '';
     $('#u-create').appendChild(picon('save'));
     $('#u-create').appendChild(document.createTextNode(' Сохранить изменения'));
@@ -2273,7 +2385,11 @@
     $('#u-pass').placeholder = 'минимум 4 символа';
     $('#u-admin').classList.remove('on');
     $('#u-perms').classList.remove('hidden');
+    $('#u-access').classList.remove('hidden');
+    $('#u-all-servers').classList.add('on');
+    $('#u-servers').classList.add('hidden');
     buildPermsForm();
+    buildServersForm(null);
     $('#u-create').innerHTML = '';
     $('#u-create').appendChild(picon('check'));
     $('#u-create').appendChild(document.createTextNode(' Создать пользователя'));
@@ -2284,10 +2400,11 @@
     const password = $('#u-pass').value;
     const admin = $('#u-admin').classList.contains('on');
     const perms = collectPerms();
+    const servers = collectServers();
     if (state.editUser) {
       // редактирование: пароль необязателен
       await guard(async () => {
-        await API.userUpdate(state.editUser, { password: password || undefined, admin, perms });
+        await API.userUpdate(state.editUser, { password: password || undefined, admin, perms, servers });
         showToast('Права пользователя «' + state.editUser + '» обновлены.', 'ok');
         resetUserForm();
         loadUsers();
@@ -2297,7 +2414,7 @@
     const username = $('#u-name').value.trim();
     if (!username || !password) { showToast('Введите логин и пароль'); return; }
     await guard(async () => {
-      const res = await API.userCreate({ username, password, admin, perms });
+      const res = await API.userCreate({ username, password, admin, perms, servers });
       showToast('Пользователь «' + username + '» создан.', 'ok');
       if (res && res.loggedIn) {
         await loadMe();
@@ -2540,9 +2657,28 @@
     $('#u-admin').addEventListener('click', () => {
       const adminOn = $('#u-admin').classList.contains('on');
       $('#u-perms').classList.toggle('hidden', adminOn);
+      $('#u-access').classList.toggle('hidden', adminOn);
+    });
+    $('#u-all-servers').addEventListener('click', () => {
+      $('#u-servers').classList.toggle('hidden', $('#u-all-servers').classList.contains('on'));
     });
     $('#u-create').addEventListener('click', submitUserForm);
     $('#u-cancel-edit').addEventListener('click', resetUserForm);
+    // глаз пароля в форме пользователя
+    $('#u-eye').addEventListener('click', () => {
+      const p = $('#u-pass');
+      p.type = p.type === 'password' ? 'text' : 'password';
+      $('#u-eye').style.setProperty('--i', "url('/icons/" + (p.type === 'text' ? 'eye-closed' : 'eye') + ".svg')");
+    });
+
+    // иконка сервера (настройки)
+    $('#icon-upload-btn').addEventListener('click', () => $('#icon-file').click());
+    $('#icon-file').addEventListener('change', (event) => {
+      const f = event.target.files[0];
+      event.target.value = '';
+      uploadServerIcon(f);
+    });
+    $('#icon-remove-btn').addEventListener('click', removeServerIcon);
 
     // бэкапы
     $('#bk-create-btn').addEventListener('click', createBackup);
@@ -2684,6 +2820,8 @@
   mkToggle($('#toggle-online'), true);
   mkToggle($('#toggle-pvp'), true);
   mkToggle($('#u-admin'), false);
+  mkToggle($('#u-all-servers'), true);
+  $('#u-eye').style.setProperty('--i', "url('/icons/eye.svg')");
   state.memCreateSlider = mkSlider($('#mem-create'), {
     min: 1024, max: state.maxMemMb, step: 512, value: 2048,
     format: fmtMem, labelEl: $('#mem-create-val'),

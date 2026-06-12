@@ -231,14 +231,25 @@
           <input class="fld" id="u-name" maxlength="24" placeholder="например stas" autocomplete="off">
         </label>
         <label class="mc-label">Пароль
-          <input class="fld" id="u-pass" type="text" maxlength="64" placeholder="минимум 4 символа" autocomplete="off">
+          <span class="pass-wrap">
+            <input class="fld" id="u-pass" type="password" maxlength="64" placeholder="минимум 4 символа" autocomplete="off">
+            <button type="button" class="pass-eye" id="u-eye" title="Показать пароль"></button>
+          </span>
         </label>
       </div>
       <div class="opt-card toggle-row" style="margin-top:14px">
-        <span class="toggle-label">Администратор (все права)</span>
+        <span class="toggle-label">Администратор (все права + все серверы)</span>
         <div class="mc-toggle" id="u-admin"></div>
       </div>
       <div id="u-perms" class="perms-wrap"></div>
+      <div id="u-access" class="perms-wrap">
+        <div class="perm-group">Доступ к серверам</div>
+        <div class="opt-card toggle-row">
+          <span class="toggle-label">Все серверы (в т.ч. будущие)</span>
+          <div class="mc-toggle on" id="u-all-servers"></div>
+        </div>
+        <div id="u-servers" class="perms-grid hidden"></div>
+      </div>
       <div class="btn-row btn-row-left" style="margin-top:16px">
         <button class="mc-btn primary" id="u-create"><i class="pi" data-ic="check"></i> Создать пользователя</button>
         <button class="mc-btn hidden" id="u-cancel-edit">Отмена</button>
@@ -254,6 +265,7 @@
     <div class="mc-card server-head">
       <div class="sh-left">
         <button class="mc-btn sm" id="btn-back" title="К списку серверов"><i class="pi" data-ic="chevron-left"></i></button>
+        <img class="sh-icon" id="server-head-icon" alt="">
         <div class="sh-id">
           <div class="sh-name" id="server-title">Сервер</div>
           <div class="sh-sub">
@@ -364,6 +376,21 @@
           <button type="submit" class="mc-btn primary"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
         </div>
       </form>
+
+      <div class="mc-card form-panel" id="icon-card">
+        <div class="section-title">Иконка сервера</div>
+        <div class="icon-row">
+          <img class="icon-preview" id="icon-preview" alt="">
+          <div class="icon-controls">
+            <div class="hint" style="margin:0 0 8px">Любая картинка — автоматически сожмётся до 64×64 (формат иконки Minecraft). Видна в списке серверов и в самой игре.</div>
+            <div class="btn-row btn-row-left" style="margin:0">
+              <button class="mc-btn sm primary" id="icon-upload-btn"><i class="pi" data-ic="image"></i> Выбрать картинку</button>
+              <button class="mc-btn sm danger hidden" id="icon-remove-btn"><i class="pi" data-ic="trash"></i> Убрать</button>
+              <input type="file" id="icon-file" class="hidden" accept="image/*">
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="mc-card form-panel danger-card">
         <div class="danger-title">Опасная зона</div>

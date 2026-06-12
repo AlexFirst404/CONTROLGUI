@@ -24,7 +24,10 @@
         <input class="fld" id="login-user" autocomplete="username" autofocus required>
       </label>
       <label class="mc-label" style="margin-top:14px">Пароль
-        <input class="fld" id="login-pass" type="password" autocomplete="current-password" required>
+        <span class="pass-wrap">
+          <input class="fld" id="login-pass" type="password" autocomplete="current-password" required>
+          <button type="button" class="pass-eye" id="login-eye" title="Показать пароль" aria-label="Показать пароль"></button>
+        </span>
       </label>
       <div class="login-error hidden" id="login-error"></div>
       <button type="submit" class="mc-btn primary login-btn" id="login-btn">Войти</button>
@@ -34,6 +37,21 @@
 
 <script>
 (function () {
+  // глаз показа/скрытия пароля (иконки eye / eye-closed из Pixelarticons)
+  var pass = document.getElementById('login-pass');
+  var eye = document.getElementById('login-eye');
+  function setEye() {
+    var shown = pass.type === 'text';
+    eye.style.setProperty('--i', "url('/icons/" + (shown ? 'eye-closed' : 'eye') + ".svg')");
+    eye.title = shown ? 'Скрыть пароль' : 'Показать пароль';
+  }
+  eye.addEventListener('click', function () {
+    pass.type = pass.type === 'password' ? 'text' : 'password';
+    setEye();
+    pass.focus();
+  });
+  setEye();
+
   var form = document.getElementById('login-form');
   var err = document.getElementById('login-error');
   var btn = document.getElementById('login-btn');

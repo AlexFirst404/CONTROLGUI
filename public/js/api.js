@@ -82,6 +82,18 @@ window.API = (function () {
     logs: (id) => call('GET', '/api/servers/' + id + '/logs'),
     log: (id, name) => call('GET', '/api/servers/' + id + '/log?name=' + encodeURIComponent(name)),
 
+    iconUpload: async (id, blob) => {
+      let res;
+      try { res = await fetch('/api/servers/' + id + '/icon', { method: 'PUT', body: blob }); }
+      catch (e) { throw new Error('Загрузка иконки прервалась: ' + e.message); }
+      let data = {};
+      try { data = await res.json(); } catch (e) { /* пусто */ }
+      if (!res.ok) throw new Error(data.error || ('Ошибка HTTP ' + res.status));
+      return data;
+    },
+    iconDelete: (id) => call('DELETE', '/api/servers/' + id + '/icon'),
+    iconUrl: (id, mtime) => '/api/servers/' + id + '/icon?t=' + (mtime || 0),
+
     coreUpload: async (id, file) => {
       let res;
       try { res = await fetch('/api/servers/' + id + '/core', { method: 'PUT', body: file }); }
