@@ -64,7 +64,10 @@ public sealed class PanelLauncher
         try
         {
             using var response = await Http.GetAsync(PanelUrl + "api/status");
-            return response.IsSuccessStatusCode;
+            // 200 — открытая панель; 401 — панель под паролем (требует входа),
+            // но УЖЕ работает на этом порту, поэтому второй node запускать нельзя
+            return response.IsSuccessStatusCode
+                || response.StatusCode == System.Net.HttpStatusCode.Unauthorized;
         }
         catch
         {
