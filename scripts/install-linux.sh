@@ -13,6 +13,7 @@
 #  Повторный запуск безопасен: обновляет файлы, пароль сохраняется.
 # ============================================================
 set -euo pipefail
+trap 'printf "\033[1;31mОшибка на строке %s — установка прервана.\033[0m\n" "$LINENO"' ERR
 
 REPO_URL="${CONTROLGUI_REPO:-https://github.com/AlexFirst404/CONTROLGUI.git}"
 INSTALL_DIR="${CONTROLGUI_DIR:-/opt/controlgui}"
@@ -64,14 +65,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$INSTALL_DIR"
 if [ -f "$SCRIPT_DIR/../server.js" ]; then
   # скрипт запущен из каталога репозитория — копируем локальные файлы
+  # (слеш в конце источника обязателен: копируем содержимое, а не саму папку)
   rsync -a --delete \
     --exclude 'servers/' --exclude 'data/' --exclude '.git/' \
     --exclude 'desktop/' --exclude 'node_modules/' \
-    "$SCRIPT_DIR/.." "$INSTALL_DIR/" >/dev/null 2>&1 || \
-  rsync -a \
-    --exclude 'servers/' --exclude 'data/' --exclude '.git/' \
-    --exclude 'desktop/' --exclude 'node_modules/' \
     "$SCRIPT_DIR/../" "$INSTALL_DIR/"
+  # подчистка после старой версии скрипта, копировавшей папку внутрь папки
+  for stray in "$INSTALL_DIR"/CONTROLGUI*; do
+    if [ -d "$stray" ] && [ -f "$stray/server.js" ]; then rm -rf "$stray"; fi
+  done
 elif [ -d "$INSTALL_DIR/.git" ]; then
   git -C "$INSTALL_DIR" pull --ff-only
 else
@@ -88,7 +90,10 @@ if [ -f "$ENV_FILE" ] && grep -q CONTROLGUI_PASSWORD "$ENV_FILE"; then
   PASSWORD="$(grep CONTROLGUI_PASSWORD "$ENV_FILE" | cut -d= -f2-)"
   c_dim "Пароль уже задан — оставляю прежний ($ENV_FILE)."
 else
-  PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)"
+  # `|| true` обязателен: head обрывает пайп, tr ловит SIGPIPE (код 141),
+  # и при set -o pipefail скрипт без этого молча умирает на этой строке
+  PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16 || true)"
+  if [ -z "$PASSWORD" ]; then PASSWORD="$(date +%s%N | sha256sum | head -c 16 || true)"; fi
   {
     echo "PORT=$PANEL_PORT"
     echo "CONTROLGUI_PASSWORD=$PASSWORD"
