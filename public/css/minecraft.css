@@ -231,9 +231,14 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
   transition: color .12s; white-space: nowrap; }
 .mc-tab .pi { width: 14px; height: 14px; opacity: .85; }
 .mc-tab:hover { color: #e6f0e8; }
-.mc-tab.sel { color: var(--accent-bright); }
-.mc-tab.sel::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0;
-  height: 3px; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.mc-tab.sel { color: var(--accent-bright); transition: color .2s; }
+
+/* скользящая зелёная черта: края анимируются с разной задержкой,
+   поэтому полоска растягивается к цели и сжимается на месте */
+.tabbar { position: relative; }
+.tab-ind { position: absolute; bottom: 0; height: 3px;
+  background: var(--accent); box-shadow: 0 0 6px var(--accent);
+  pointer-events: none; }
 
 .tab-pane { margin-top: 4px; }
 
@@ -430,6 +435,142 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 ::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-track { background: #1a1a1a; }
 ::-webkit-scrollbar-thumb { background: #b3ac9d; border: 2px solid #26231d; border-radius: 0; }
+
+/* -------------------------------------------------- бургер-меню ----------- */
+.app-burger { position: fixed; top: 12px; right: 12px; z-index: 80; min-width: 0; padding: 11px 12px; }
+.burger-ic { position: relative; display: block; width: 16px; height: 12px; }
+.burger-ic i { position: absolute; left: 0; width: 100%; height: 2px; background: currentColor;
+  transition: top .2s cubic-bezier(.4,0,.2,1), transform .2s cubic-bezier(.4,0,.2,1), opacity .14s ease; }
+.burger-ic i:nth-child(1) { top: 0; }
+.burger-ic i:nth-child(2) { top: 5px; }
+.burger-ic i:nth-child(3) { top: 10px; }
+.burger-ic.open i:nth-child(1) { top: 5px; transform: rotate(45deg); }
+.burger-ic.open i:nth-child(2) { opacity: 0; transform: scaleX(.4); }
+.burger-ic.open i:nth-child(3) { top: 5px; transform: rotate(-45deg); }
+
+.app-scrim { position: fixed; inset: 0; z-index: 78; background: rgba(0,0,0,.35);
+  opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+.app-scrim.open { opacity: 1; pointer-events: auto; }
+
+.app-menu { position: fixed; top: 58px; right: 12px; z-index: 79; width: 252px;
+  background: #1c1c1c; border: 2px solid #4a4a4a; box-shadow: 0 14px 36px rgba(0,0,0,.6);
+  transform: translateY(-10px); opacity: 0; pointer-events: none;
+  transition: transform .18s cubic-bezier(.2,.7,.2,1), opacity .14s ease; }
+.app-menu.open { transform: none; opacity: 1; pointer-events: auto; }
+.menu-item { display: flex; align-items: center; gap: 11px; padding: 13px 16px;
+  color: #d6e0d8; font-size: 14px; cursor: pointer; text-decoration: none; user-select: none; }
+.menu-item:hover { background: #353535; color: #fff; }
+.menu-item .pi { width: 14px; height: 14px; color: var(--accent-bright); }
+.menu-sep { height: 1px; background: #3a3a3a; }
+.menu-item.danger .pi { color: #ff7a6a; }
+
+/* ------------------------------------------- настройки панели ------------- */
+.no-bganim .bg-pattern::before { animation: none; }
+.hide-graphs .stat-graph { display: none; }
+.perm-hidden { display: none !important; }
+
+/* --------------------------------------------- страница входа ------------- */
+.login-wrap { position: relative; z-index: 5; min-height: 100vh;
+  display: flex; align-items: center; justify-content: center; padding: 20px; }
+.login-card { width: min(420px, 100%); padding: 30px 28px 26px; }
+.login-title { font-family: var(--font-head); font-size: 30px; font-weight: normal;
+  color: #e6e6e6; letter-spacing: 1.5px; text-align: center; margin: 0 0 6px;
+  text-shadow: 3px 3px 0 rgba(0,0,0,.55); }
+.login-sub { text-align: center; color: #a9b4ab; font-size: 13px; margin-bottom: 22px; }
+.login-btn { width: 100%; margin-top: 18px; }
+.login-error { margin-top: 14px; padding: 10px 12px; background: #241a1a;
+  border: 1px solid #a33; color: #ff9a8a; font-size: 13px; }
+
+/* ------------------------------------------------ текущий аккаунт --------- */
+.menu-account { display: flex; align-items: center; gap: 10px; padding: 13px 16px;
+  color: #e6f0e8; font-size: 13px; background: #242424; }
+.menu-account .pi { width: 14px; height: 14px; color: var(--accent-bright); }
+.menu-account #menu-account-name { font-weight: 500; word-break: break-all; }
+.home-account { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px;
+  color: #a9b4ab; font-size: 13px; background: var(--card); border: 1px solid var(--bd); padding: 7px 13px; }
+.home-account .pi { width: 13px; height: 13px; color: var(--accent-bright); }
+
+/* --------------------------------------------- пользователи --------------- */
+.perms-wrap { margin-top: 8px; }
+.perm-group { font-family: var(--font-head); font-size: 12px; letter-spacing: 1px; color: var(--accent-bright);
+  text-transform: uppercase; margin: 16px 0 8px; }
+.perms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-top: 4px; }
+@media (max-width: 640px) { .perms-grid { grid-template-columns: 1fr; } }
+.perm-row { display: flex; align-items: center; gap: 11px; cursor: pointer; font-size: 13px; color: #c8c8c8; user-select: none; }
+.user-row { padding: 13px 16px; }
+.user-main { flex: 1; min-width: 0; }
+.user-name { font-size: 15px; color: #fff; }
+.user-sub { font-size: 12px; color: #a9a9a9; margin-top: 3px; }
+
+/* ------------------------------------------------- бэкапы ------------------ */
+.bk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.bk-create { display: flex; gap: 10px; align-items: stretch; }
+.bk-create .fld { max-width: 220px; }
+.bk-create .mc-btn { margin-bottom: 0; }
+.bk-list { margin-top: 12px; max-height: 56vh; overflow-y: auto; }
+.bk-row .file-actions a.mc-btn { text-decoration: none; }
+
+/* ----------------------------------------------------- о панели ----------- */
+.about-body { text-align: center; }
+.about-logo { width: 64px; height: 64px; image-rendering: pixelated; margin: 6px auto 12px; display: block; }
+.about-name { font-family: var(--font-head); font-size: 20px; color: var(--accent-bright);
+  letter-spacing: 1px; margin-bottom: 12px; }
+.about-text { margin: 0 0 12px; line-height: 1.7; font-size: 13.5px; }
+.about-text.dim { color: #8b968d; font-size: 12px; }
+
+/* ------------------------------------------------- главный экран ---------- */
+.home-hero { text-align: center; padding: 26px 0 30px; }
+.hero-logo { width: 76px; height: 76px; image-rendering: pixelated; margin-bottom: 14px; }
+.hero-title { font-family: var(--font-head); font-size: 42px; font-weight: normal; color: #e6e6e6;
+  letter-spacing: 2px; margin: 0; text-shadow: 4px 4px 0 rgba(0,0,0,.55); }
+.hero-accent { color: var(--accent-bright); }
+.hero-sub { color: #a9b4ab; font-size: 14px; margin-top: 10px; }
+.hero-stats { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.stat-chip { background: var(--card); border: 1px solid var(--bd); padding: 8px 14px;
+  font-size: 12px; color: #a9b4ab; display: inline-flex; align-items: center; gap: 7px; }
+.stat-chip b { color: #fff; font-weight: normal; }
+.stat-chip .pi { width: 12px; height: 12px; color: var(--accent-bright); }
+
+/* карточки серверов: всегда по центру; больше четырёх — в столбик */
+.srv-grid { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; min-height: 180px; }
+.srv-grid .list-empty { width: 100%; }
+.srv-grid.column { flex-direction: column; align-items: center; flex-wrap: nowrap; }
+.srv-grid.column .srv-card { width: min(620px, 100%); }
+.srv-card { background: var(--card); border: 1px solid var(--bd); padding: 16px;
+  width: 380px; max-width: 100%;
+  cursor: pointer; transition: background .1s, border-color .1s; }
+.srv-card:hover { background: #333333; border-color: #5a5a5a; }
+.srv-card-top { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.srv-card .server-icon { width: 52px; height: 52px; }
+.srv-card-id { min-width: 0; flex: 1; }
+.srv-card-name { font-size: 17px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srv-card-sub { font-size: 12px; color: #a9a9a9; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srv-card-line { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 13px; font-size: 12.5px; }
+.srv-card-line .right { color: #a9a9a9; }
+.status-dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; background: #9aa0a6; vertical-align: 1px; }
+.status-dot.on { background: #7ed957; box-shadow: 0 0 6px #7ed957; }
+.status-dot.warn { background: #e0a72a; }
+.status-dot.err { background: #ff7a6a; }
+.status-dot.dl { background: #6fb1e8; }
+.srv-card-actions { display: flex; gap: 8px; margin-top: 14px; }
+.srv-card-actions .mc-btn { margin-bottom: 2px; flex: 1; }
+
+/* --------------------------- адаптация по высоте окна ---------------------
+   при нехватке высоты сначала ужимаются графики, затем консоль */
+@media (max-height: 920px) {
+  .stat-graph { height: 54px; }
+  .console { height: max(430px, calc(100vh - 470px)); }
+}
+@media (max-height: 780px) {
+  .stat-graph { height: 36px; }
+  .stat-card { padding: 8px 12px 6px; }
+  .console { height: max(330px, calc(100vh - 420px)); }
+}
+@media (max-height: 640px) {
+  .stat-graph { display: none; }
+  .console { height: max(220px, calc(100vh - 330px)); }
+}
 
 /* ---------------------------------------------------------- адаптив ------- */
 @media (max-width: 900px) {

@@ -65,5 +65,18 @@ window.API = (function () {
     filesCreate: (id, path, type) => call('POST', '/api/servers/' + id + '/files-create', { path: path, type: type }),
     filesRename: (id, from, to) => call('POST', '/api/servers/' + id + '/files-rename', { from: from, to: to }),
     upload: upload,
+
+    me: () => call('GET', '/api/auth/me'),
+    logout: () => call('POST', '/api/auth/logout'),
+    usersList: () => call('GET', '/api/users'),
+    userCreate: (body) => call('POST', '/api/users', body),
+    userUpdate: (name, body) => call('PUT', '/api/users/' + encodeURIComponent(name), body),
+    userDelete: (name) => call('DELETE', '/api/users/' + encodeURIComponent(name)),
+
+    backups: (id) => call('GET', '/api/servers/' + id + '/backups'),
+    backupCreate: (id, label) => call('POST', '/api/servers/' + id + '/backups', { label: label }),
+    backupDelete: (id, name) => call('DELETE', '/api/servers/' + id + '/backup?name=' + encodeURIComponent(name)),
+    backupRestore: (id, name) => call('POST', '/api/servers/' + id + '/backup?name=' + encodeURIComponent(name)),
+    backupDownloadUrl: (id, name) => '/api/servers/' + id + '/backup?name=' + encodeURIComponent(name),
   };
 })();

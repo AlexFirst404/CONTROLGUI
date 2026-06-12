@@ -105,7 +105,83 @@
     sugItems: [],
     sugIndex: -1,
     cm: null, // CodeMirror instance
+    me: null,            // текущий пользователь {username, admin, perms}
+    permissions: [],     // список всех прав (из бэкенда)
+    openMode: true,      // нет пользователей — полный доступ
   };
+
+  // ---------- права ----------
+
+  function can(perm) {
+    const m = state.me;
+    if (!m) return true; // ещё не загрузили — не блокируем заранее
+    if (m.admin || (m.perms && m.perms.admin)) return true;
+    return !!(m.perms && m.perms[perm]);
+  }
+
+  function canAny(perms) {
+    return perms.some((p) => can(p));
+  }
+
+  function accountLabel() {
+    if (state.openMode || !state.me || !state.me.username) return 'Локальный режим';
+    return state.me.username + (state.me.admin ? ' · админ' : '');
+  }
+
+  async function loadMe() {
+    try {
+      const data = await API.me();
+      state.me = data.user;
+      state.permissions = data.permissions || [];
+      state.openMode = !!data.openMode;
+      applyPermissions();
+    } catch (e) { /* при 401 клиент сам уведёт на /login */ }
+  }
+
+  /* Прячем вкладки/кнопки/пункты меню, недоступные пользователю. */
+  function applyPermissions() {
+    const isAdmin = state.me && (state.me.admin || (state.me.perms && state.me.perms.admin));
+    // текущий аккаунт — в меню и на главной
+    const accName = $('#menu-account-name'); if (accName) accName.textContent = accountLabel();
+    const homeAcc = $('#home-account');
+    if (homeAcc) {
+      homeAcc.innerHTML = '';
+      homeAcc.appendChild(picon('user'));
+      const t = document.createElement('span');
+      t.textContent = 'Вы вошли как: ' + accountLabel();
+      homeAcc.appendChild(t);
+    }
+    // пункт «Пользователи» — админу или в открытом режиме (создать первого)
+    $('#menu-users').classList.toggle('hidden', !(isAdmin || state.openMode));
+    // «Выйти» — только когда есть вход
+    $('#menu-logout').classList.toggle('hidden', state.openMode);
+    // создание сервера
+    $('#btn-goto-create').classList.toggle('hidden', !can('server.create'));
+    // вкладки сервера (по любому из соответствующих прав)
+    const tabPerm = {
+      console: ['console.view'],
+      settings: ['settings.edit'],
+      files: ['files.read'],
+      players: ['players.kick', 'players.ban', 'players.whitelist', 'players.delete'],
+      backups: ['backups.create', 'backups.restore', 'backups.delete'],
+    };
+    $$('.mc-tab').forEach((btn) => {
+      const p = tabPerm[btn.dataset.tab];
+      btn.classList.toggle('hidden', p ? !canAny(p) : false);
+    });
+    // кнопки питания — каждая по своему праву
+    const toggleBtn = (sel, perm) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !can(perm)); };
+    toggleBtn('#btn-start', 'server.start');
+    toggleBtn('#btn-restart', 'server.stop');
+    toggleBtn('#btn-stop', 'server.stop');
+    toggleBtn('#btn-kill', 'server.kill');
+    toggleBtn('#btn-redownload', 'server.install');
+    const noCmd = !can('console.command');
+    ['#command-input', '#btn-send'].forEach((s) => { const el = $(s); if (el) el.classList.toggle('perm-hidden', noCmd); });
+    // создание бэкапа
+    const bk = $('#bk-create-btn'); if (bk) bk.classList.toggle('perm-hidden', !can('backups.create'));
+    const bkLabel = $('#bk-label'); if (bkLabel) bkLabel.classList.toggle('perm-hidden', !can('backups.create'));
+  }
 
   // ---------- иконки ----------
 
@@ -267,6 +343,55 @@
     };
   }
 
+  // ---------- настройки панели (тема, масштаб и т.д.) ----------
+
+  const APPSET_KEY = 'controlgui-settings';
+  const APPSET_DEFAULTS = { theme: 'theme-lime', scale: 100, bgAnim: true, graphs: true };
+
+  function loadAppSettings() {
+    try { return Object.assign({}, APPSET_DEFAULTS, JSON.parse(localStorage.getItem(APPSET_KEY)) || {}); }
+    catch (e) { return Object.assign({}, APPSET_DEFAULTS); }
+  }
+
+  function saveAppSettings(settings) {
+    try { localStorage.setItem(APPSET_KEY, JSON.stringify(settings)); } catch (e) { /* приватный режим */ }
+  }
+
+  function applyAppSettings(settings) {
+    document.body.classList.remove('theme-lime', 'theme-blue');
+    document.body.classList.add(settings.theme === 'theme-blue' ? 'theme-blue' : 'theme-lime');
+    document.body.style.zoom = settings.scale === 100 ? '' : settings.scale + '%';
+    document.body.classList.toggle('no-bganim', settings.bgAnim === false);
+    document.body.classList.toggle('hide-graphs', settings.graphs === false);
+  }
+
+  let appSettings = loadAppSettings();
+  let scaleSlider = null;
+
+  function changeAppSettings(patch) {
+    appSettings = Object.assign({}, appSettings, patch);
+    saveAppSettings(appSettings);
+    applyAppSettings(appSettings);
+  }
+
+  function openAppSettings() {
+    $('#set-theme').value = appSettings.theme;
+    if (!scaleSlider) {
+      scaleSlider = mkSlider($('#set-scale'), {
+        min: 80, max: 140, step: 5, value: appSettings.scale,
+        format: (v) => v + '%', labelEl: $('#set-scale-val'),
+      });
+      // применяем масштаб по отпусканию ползунка
+      $('#set-scale').addEventListener('pointerup', () => changeAppSettings({ scale: scaleSlider.value }));
+    } else {
+      scaleSlider.set(appSettings.scale);
+    }
+    $('#set-bganim').classList.toggle('on', appSettings.bgAnim !== false);
+    $('#set-graphs').classList.toggle('on', appSettings.graphs !== false);
+    $('#appset-root').classList.remove('hidden');
+    setTimeout(() => scaleSlider.refresh(), 30);
+  }
+
   // ---------- экраны ----------
 
   function showScreen(name) {
@@ -274,6 +399,12 @@
     $('#screen-list').classList.toggle('hidden', name !== 'list');
     $('#screen-create').classList.toggle('hidden', name !== 'create');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
+    $('#screen-users').classList.toggle('hidden', name !== 'users');
+    // бургер-меню — на главном и экране пользователей
+    $('#btn-burger').classList.toggle('hidden', !(name === 'list' || name === 'users'));
+    $('#app-menu').classList.remove('open');
+    $('#app-scrim').classList.remove('open');
+    $('#burger-ic').classList.remove('open');
     if (name !== 'server' && state.sse) {
       state.sse.close();
       state.sse = null;
@@ -311,6 +442,7 @@
         state.maxMemMb = Math.max(2048, Math.min(32768, Math.floor((st.totalMemMb - 2048) / 512) * 512));
         if (state.memCreateSlider) state.memCreateSlider.setRange(1024, state.maxMemMb);
       }
+      $('#about-version').textContent = String(st.app || '').replace('CONTROLGUI', '').trim();
       const alert = $('#java-alert');
       if (st.java && st.java.available) {
         alert.classList.add('hidden');
@@ -331,60 +463,113 @@
     renderList();
   }
 
+  function statusDotClass(status) {
+    if (status === 'running') return ' on';
+    if (status === 'starting' || status === 'stopping' || status === 'orphaned') return ' warn';
+    if (status === 'error' || status === 'no-jar') return ' err';
+    if (status === 'downloading') return ' dl';
+    return '';
+  }
+
+  function renderHomeStats() {
+    const box = $('#home-stats');
+    box.innerHTML = '';
+    const running = state.servers.filter((s) => s.status === 'running').length;
+    const players = state.servers.reduce((sum, s) => sum + s.players.length, 0);
+    const chip = (icon, html) => {
+      const el = document.createElement('span');
+      el.className = 'stat-chip';
+      el.appendChild(picon(icon));
+      const span = document.createElement('span');
+      span.innerHTML = html;
+      el.appendChild(span);
+      box.appendChild(el);
+    };
+    chip('server', 'Серверов: <b>' + state.servers.length + '</b>');
+    chip('zap', 'Работает: <b>' + running + '</b>');
+    chip('users', 'Игроков онлайн: <b>' + players + '</b>');
+  }
+
   function renderList() {
     const panel = $('#server-list');
-    Array.from(panel.querySelectorAll('.server-row')).forEach((el) => el.remove());
+    Array.from(panel.querySelectorAll('.srv-card')).forEach((el) => el.remove());
     $('#list-empty').classList.toggle('hidden', state.servers.length > 0);
-
-    if (!state.servers.some((s) => s.id === state.selectedId)) state.selectedId = null;
+    panel.classList.toggle('column', state.servers.length > 4);
+    renderHomeStats();
 
     for (const server of state.servers) {
-      const row = document.createElement('div');
-      row.className = 'mc-row server-row' + (server.id === state.selectedId ? ' sel' : '');
+      const card = document.createElement('div');
+      card.className = 'srv-card';
 
+      const top = document.createElement('div');
+      top.className = 'srv-card-top';
       const icon = document.createElement('img');
       icon.className = 'server-icon';
       icon.src = iconFor(server.id);
       icon.alt = '';
-
-      const mid = document.createElement('div');
-      mid.className = 'server-row-mid';
+      const id = document.createElement('div');
+      id.className = 'srv-card-id';
       const nameEl = document.createElement('div');
-      nameEl.className = 'server-row-name';
+      nameEl.className = 'srv-card-name';
       nameEl.textContent = server.name;
       const subEl = document.createElement('div');
-      subEl.className = 'server-row-sub';
+      subEl.className = 'srv-card-sub';
       subEl.textContent = (CORE_NAMES[server.type] || server.type) + ' ' + server.version + ' · порт ' + server.port;
-      mid.appendChild(nameEl);
-      mid.appendChild(subEl);
+      id.appendChild(nameEl);
+      id.appendChild(subEl);
+      top.appendChild(icon);
+      top.appendChild(id);
 
-      const right = document.createElement('div');
-      right.className = 'server-row-right';
-      const statusEl = document.createElement('div');
-      statusEl.className = 'st-' + server.status;
-      statusEl.textContent = statusText(server);
-      right.appendChild(statusEl);
-      if (server.status === 'running') {
-        const playersEl = document.createElement('div');
-        playersEl.className = 'server-row-players';
-        playersEl.textContent = 'Игроки: ' + server.players.length;
-        right.appendChild(playersEl);
-      }
+      const line = document.createElement('div');
+      line.className = 'srv-card-line';
+      const st = document.createElement('span');
+      st.className = 'st-' + server.status;
+      const dot = document.createElement('span');
+      dot.className = 'status-dot' + statusDotClass(server.status);
+      st.appendChild(dot);
+      st.appendChild(document.createTextNode(statusText(server)));
+      const right = document.createElement('span');
+      right.className = 'right';
+      right.textContent = server.status === 'running' ? 'Игроки: ' + server.players.length : '';
+      line.appendChild(st);
+      line.appendChild(right);
 
-      row.appendChild(icon);
-      row.appendChild(mid);
-      row.appendChild(right);
-
-      row.addEventListener('click', () => {
-        state.selectedId = server.id;
-        renderList();
+      const actions = document.createElement('div');
+      actions.className = 'srv-card-actions';
+      const processAlive = ['starting', 'running', 'stopping'].includes(server.status);
+      const power = document.createElement('button');
+      power.className = 'mc-btn sm ' + (processAlive ? '' : 'primary');
+      power.appendChild(picon(processAlive ? 'pause' : 'play'));
+      power.appendChild(document.createTextNode(processAlive ? ' Остановить' : ' Запустить'));
+      power.disabled = !processAlive && (!server.jarReady || server.status === 'downloading' || server.status === 'orphaned');
+      power.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        if (processAlive) {
+          if (await confirmDialog('Остановить сервер «' + server.name + '»?' +
+                (server.players.length ? '\nОнлайн: ' + server.players.length + ' игрок(ов).' : ''),
+                { title: 'Остановка сервера', yesText: 'Остановить' })) {
+            await guard(() => API.stop(server.id));
+            guard(loadServers);
+          }
+        } else {
+          await guard(() => API.start(server.id));
+          guard(loadServers);
+        }
       });
-      row.addEventListener('dblclick', () => openServer(server.id));
-      panel.appendChild(row);
-    }
+      const open = document.createElement('button');
+      open.className = 'mc-btn sm';
+      open.appendChild(picon('arrow-right'));
+      open.appendChild(document.createTextNode(' Открыть'));
+      open.addEventListener('click', (event) => { event.stopPropagation(); openServer(server.id); });
+      actions.appendChild(power);
+      actions.appendChild(open);
 
-    $('#btn-manage').disabled = !state.selectedId;
-    $('#btn-delete').disabled = !state.selectedId;
+      card.appendChild(top);
+      card.appendChild(line);
+      card.appendChild(actions);
+      card.addEventListener('click', () => openServer(server.id));
+      panel.appendChild(card);
+    }
   }
 
   function iconFor(id) {
@@ -479,6 +664,15 @@
 
   // ---------- экран сервера ----------
 
+  function firstAllowedTab() {
+    const order = [
+      ['console', 'console.view'], ['settings', 'settings.edit'], ['files', 'files.read'],
+      ['players', 'players.manage'], ['backups', 'backups.manage'], ['info', null],
+    ];
+    for (const [tab, perm] of order) { if (!perm || can(perm)) return tab; }
+    return 'info';
+  }
+
   function openServer(id) {
     state.currentId = id;
     state.current = state.servers.find((s) => s.id === id) || null;
@@ -486,9 +680,10 @@
     state.editorPath = null;
     state.playTimes = {};
     showScreen('server');
-    switchTab('console');
+    applyPermissions();
+    switchTab(firstAllowedTab());
     renderServerHead();
-    connectConsole(id);
+    if (can('console.view')) connectConsole(id);
     refreshServer();
     loadSettings();
   }
@@ -547,6 +742,7 @@
 
     renderInfo(server);
     renderPlayers(server);
+    applyPermissions();
   }
 
   function renderInfo(server) {
@@ -752,50 +948,55 @@
       invBtn.addEventListener('click', () => openInventory(p.name));
       actions.appendChild(invBtn);
 
-      const kickBtn = document.createElement('button');
-      kickBtn.className = 'mc-btn sm';
-      kickBtn.appendChild(picon('close'));
-      kickBtn.appendChild(document.createTextNode(' Кик'));
-      kickBtn.disabled = !(p.online && running);
-      kickBtn.title = kickBtn.disabled ? 'Игрок не в сети' : 'Выгнать с сервера';
-      kickBtn.addEventListener('click', async () => {
-        if (await confirmDialog('Кикнуть игрока «' + p.name + '»?', { title: 'Кик', yesText: 'Кикнуть' })) {
-          await guard(() => API.moderate(state.currentId, 'kick', p.name));
-          showToast('Игрок «' + p.name + '» кикнут.', 'ok');
-          setTimeout(refreshServer, 800);
-        }
-      });
-      actions.appendChild(kickBtn);
-
-      if (banned) {
-        const pardonBtn = document.createElement('button');
-        pardonBtn.className = 'mc-btn sm primary';
-        pardonBtn.appendChild(picon('check'));
-        pardonBtn.appendChild(document.createTextNode(' Разбан'));
-        pardonBtn.addEventListener('click', async () => {
-          if (await confirmDialog('Разбанить игрока «' + p.name + '»?', { title: 'Разбан', yesText: 'Разбанить', danger: false })) {
-            await guard(() => API.moderate(state.currentId, 'pardon', p.name));
-            showToast('Игрок «' + p.name + '» разбанен.', 'ok');
+      if (can('players.kick')) {
+        const kickBtn = document.createElement('button');
+        kickBtn.className = 'mc-btn sm';
+        kickBtn.appendChild(picon('close'));
+        kickBtn.appendChild(document.createTextNode(' Кик'));
+        kickBtn.disabled = !(p.online && running);
+        kickBtn.title = kickBtn.disabled ? 'Игрок не в сети' : 'Выгнать с сервера';
+        kickBtn.addEventListener('click', async () => {
+          if (await confirmDialog('Кикнуть игрока «' + p.name + '»?', { title: 'Кик', yesText: 'Кикнуть' })) {
+            await guard(() => API.moderate(state.currentId, 'kick', p.name));
+            showToast('Игрок «' + p.name + '» кикнут.', 'ok');
             setTimeout(refreshServer, 800);
           }
         });
-        actions.appendChild(pardonBtn);
-      } else {
-        const banBtn = document.createElement('button');
-        banBtn.className = 'mc-btn sm danger';
-        banBtn.appendChild(picon('close-box'));
-        banBtn.appendChild(document.createTextNode(' Бан'));
-        banBtn.addEventListener('click', async () => {
-          if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн не сможет зайти, пока не разбанят.', { title: 'Бан' })) {
-            await guard(() => API.moderate(state.currentId, 'ban', p.name));
-            showToast('Игрок «' + p.name + '» забанен.', 'ok');
-            setTimeout(refreshServer, 800);
-          }
-        });
-        actions.appendChild(banBtn);
+        actions.appendChild(kickBtn);
       }
 
-      const delBtn = document.createElement('button');
+      if (can('players.ban')) {
+        if (banned) {
+          const pardonBtn = document.createElement('button');
+          pardonBtn.className = 'mc-btn sm primary';
+          pardonBtn.appendChild(picon('check'));
+          pardonBtn.appendChild(document.createTextNode(' Разбан'));
+          pardonBtn.addEventListener('click', async () => {
+            if (await confirmDialog('Разбанить игрока «' + p.name + '»?', { title: 'Разбан', yesText: 'Разбанить', danger: false })) {
+              await guard(() => API.moderate(state.currentId, 'pardon', p.name));
+              showToast('Игрок «' + p.name + '» разбанен.', 'ok');
+              setTimeout(refreshServer, 800);
+            }
+          });
+          actions.appendChild(pardonBtn);
+        } else {
+          const banBtn = document.createElement('button');
+          banBtn.className = 'mc-btn sm danger';
+          banBtn.appendChild(picon('close-box'));
+          banBtn.appendChild(document.createTextNode(' Бан'));
+          banBtn.addEventListener('click', async () => {
+            if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн не сможет зайти, пока не разбанят.', { title: 'Бан' })) {
+              await guard(() => API.moderate(state.currentId, 'ban', p.name));
+              showToast('Игрок «' + p.name + '» забанен.', 'ok');
+              setTimeout(refreshServer, 800);
+            }
+          });
+          actions.appendChild(banBtn);
+        }
+      }
+
+      const delBtn = can('players.delete') ? document.createElement('button') : null;
+      if (delBtn) {
       delBtn.className = 'mc-btn sm danger';
       delBtn.appendChild(picon('trash'));
       delBtn.disabled = p.online;
@@ -811,6 +1012,7 @@
         }
       });
       actions.appendChild(delBtn);
+      }
 
       row.appendChild(head);
       row.appendChild(main);
@@ -1706,25 +1908,297 @@
 
   // ---------- вкладки ----------
 
+  /* Скользящая черта под активной вкладкой. Ведущий край движется быстрее
+     (раздельные транзишены left/right с задержкой) — полоска растягивается
+     в сторону цели и плавно сжимается, скорость нелинейная. */
+  function moveTabIndicator(animate) {
+    const bar = $('#tab-ind');
+    const active = document.querySelector('.mc-tab.sel');
+    if (!bar || !active) return;
+    const inset = 10; // отступ черты от краёв кнопки (как у кита)
+    const barParentWidth = bar.parentElement.scrollWidth;
+    const left = active.offsetLeft + inset;
+    const right = barParentWidth - (active.offsetLeft + active.offsetWidth - inset);
+
+    bar.style.width = 'auto';
+    const prevLeft = parseFloat(bar.style.left) || 0;
+    const movingRight = left >= prevLeft;
+    const ease = 'cubic-bezier(.3, 0, .2, 1)';
+    if (animate === false) {
+      bar.style.transition = 'none';
+    } else if (movingRight) {
+      // вправо: правый край стартует сразу, левый догоняет
+      bar.style.transition = 'right .26s ' + ease + ', left .26s ' + ease + ' .08s';
+    } else {
+      bar.style.transition = 'left .26s ' + ease + ', right .26s ' + ease + ' .08s';
+    }
+    bar.style.left = left + 'px';
+    bar.style.right = right + 'px';
+  }
+
   function switchTab(tab) {
     state.currentTab = tab;
     if (state.currentId) {
       history.replaceState(null, '', '#server=' + state.currentId + '/tab/' + tab);
     }
     $$('.mc-tab').forEach((btn) => btn.classList.toggle('sel', btn.dataset.tab === tab));
+    moveTabIndicator(state.tabIndReady === true);
+    state.tabIndReady = true;
     $('#tab-console').classList.toggle('hidden', tab !== 'console');
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
     $('#tab-files').classList.toggle('hidden', tab !== 'files');
     $('#tab-players').classList.toggle('hidden', tab !== 'players');
+    $('#tab-backups').classList.toggle('hidden', tab !== 'backups');
     $('#tab-info').classList.toggle('hidden', tab !== 'info');
     if (tab === 'settings') loadSettings();
     if (tab === 'console') loadStats();
     if (tab === 'players') fetchPlayTimes();
+    if (tab === 'backups') loadBackups();
     if (tab === 'files') {
       $('#file-editor').classList.add('hidden');
       $('#files-browser').classList.remove('hidden');
       loadFiles();
     }
+  }
+
+  // ---------- бэкапы ----------
+
+  async function loadBackups() {
+    if (!state.currentId) return;
+    await guard(async () => {
+      const data = await API.backups(state.currentId);
+      renderBackups(data.backups || []);
+    });
+  }
+
+  function renderBackups(list) {
+    const box = $('#bk-list');
+    box.innerHTML = '';
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'files-empty';
+      empty.textContent = 'Бэкапов пока нет — создайте первый.';
+      box.appendChild(empty);
+      return;
+    }
+    for (const b of list) {
+      const row = document.createElement('div');
+      row.className = 'mc-row bk-row';
+      const ic = document.createElement('span');
+      ic.className = 'file-ic';
+      ic.appendChild(picon('save', 'var(--accent-bright)'));
+      const name = document.createElement('span');
+      name.className = 'file-name';
+      name.textContent = b.name.replace(/\.tar\.gz$/, '');
+      const meta = document.createElement('span');
+      meta.className = 'file-meta';
+      meta.textContent = fmtBytes(b.size) + ' · ' + new Date(b.mtime).toLocaleString('ru-RU');
+      const actions = document.createElement('span');
+      actions.className = 'file-actions';
+      const dl = document.createElement('a');
+      dl.className = 'mc-btn sm';
+      dl.href = API.backupDownloadUrl(state.currentId, b.name);
+      dl.title = 'Скачать';
+      dl.appendChild(picon('download'));
+      actions.appendChild(dl);
+      if (can('backups.restore')) {
+        const rest = document.createElement('button');
+        rest.className = 'mc-btn sm accent';
+        rest.title = 'Восстановить';
+        rest.appendChild(picon('reload'));
+        rest.addEventListener('click', () => restoreBackup(b));
+        actions.appendChild(rest);
+      }
+      if (can('backups.delete')) {
+        const del = document.createElement('button');
+        del.className = 'mc-btn sm danger';
+        del.title = 'Удалить';
+        del.appendChild(picon('trash'));
+        del.addEventListener('click', () => deleteBackup(b));
+        actions.appendChild(del);
+      }
+      row.appendChild(ic);
+      row.appendChild(name);
+      row.appendChild(meta);
+      row.appendChild(actions);
+      box.appendChild(row);
+    }
+  }
+
+  async function createBackup() {
+    if (!state.currentId) return;
+    const btn = $('#bk-create-btn');
+    btn.disabled = true;
+    const label = $('#bk-label').value.trim();
+    try {
+      showToast('Создаю бэкап…', 'ok');
+      await API.backupCreate(state.currentId, label);
+      $('#bk-label').value = '';
+      showToast('Бэкап создан.', 'ok');
+      loadBackups();
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function restoreBackup(b) {
+    const server = state.current || {};
+    if (server.status === 'running' || server.status === 'starting' || server.status === 'stopping') {
+      showToast('Сначала остановите сервер — восстановление только на остановленном.');
+      return;
+    }
+    const ok = await confirmDialog(
+      'Восстановить бэкап «' + b.name.replace(/\.tar\.gz$/, '') + '»?\nТекущие файлы сервера будут заменены. ' +
+      'Перед заменой панель сделает авто-бэкап текущего состояния.',
+      { title: 'Восстановление бэкапа', yesText: 'Восстановить' }
+    );
+    if (!ok) return;
+    await guard(async () => {
+      showToast('Восстанавливаю…', 'ok');
+      await API.backupRestore(state.currentId, b.name);
+      showToast('Бэкап восстановлен.', 'ok');
+      loadBackups();
+      refreshServer();
+    });
+  }
+
+  async function deleteBackup(b) {
+    const ok = await confirmDialog('Удалить бэкап «' + b.name.replace(/\.tar\.gz$/, '') + '»? Это действие необратимо.',
+      { title: 'Удаление бэкапа' });
+    if (!ok) return;
+    await guard(async () => {
+      await API.backupDelete(state.currentId, b.name);
+      showToast('Бэкап удалён.', 'ok');
+      loadBackups();
+    });
+  }
+
+  // ---------- пользователи ----------
+
+  function buildPermsForm() {
+    const box = $('#u-perms');
+    box.innerHTML = '';
+    let currentGroup = null;
+    let grid = null;
+    for (const p of state.permissions) {
+      if (p.group !== currentGroup) {
+        currentGroup = p.group;
+        const head = document.createElement('div');
+        head.className = 'perm-group';
+        head.textContent = p.group || 'Права';
+        box.appendChild(head);
+        grid = document.createElement('div');
+        grid.className = 'perms-grid';
+        box.appendChild(grid);
+      }
+      const row = document.createElement('label');
+      row.className = 'perm-row';
+      const chk = document.createElement('span');
+      chk.className = 'mc-check';
+      chk.dataset.perm = p.key;
+      const tick = document.createElement('span');
+      tick.className = 'tick';
+      chk.appendChild(tick);
+      chk.addEventListener('click', () => chk.classList.toggle('on'));
+      const lbl = document.createElement('span');
+      lbl.textContent = p.label;
+      row.appendChild(chk);
+      row.appendChild(lbl);
+      grid.appendChild(row);
+    }
+  }
+
+  function collectPerms() {
+    const perms = {};
+    for (const chk of $$('#u-perms .mc-check')) perms[chk.dataset.perm] = chk.classList.contains('on');
+    return perms;
+  }
+
+  function openUsers() {
+    showScreen('users');
+    $('#users-open-note').classList.toggle('hidden', !state.openMode);
+    $('#u-admin').classList.toggle('on', state.openMode); // первого по умолчанию админом
+    $('#u-perms').classList.toggle('hidden', state.openMode);
+    $('#u-name').value = '';
+    $('#u-pass').value = '';
+    buildPermsForm();
+    loadUsers();
+  }
+
+  async function loadUsers() {
+    if (state.openMode) { $('#users-list').innerHTML = ''; return; }
+    await guard(async () => {
+      const data = await API.usersList();
+      renderUsers(data.users || []);
+    });
+  }
+
+  function renderUsers(list) {
+    const box = $('#users-list');
+    box.innerHTML = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'files-empty';
+      e.textContent = 'Пользователей нет.';
+      box.appendChild(e);
+      return;
+    }
+    for (const u of list) {
+      const row = document.createElement('div');
+      row.className = 'mc-row user-row';
+      const main = document.createElement('div');
+      main.className = 'user-main';
+      const name = document.createElement('div');
+      name.className = 'user-name';
+      name.textContent = u.username + (u.admin ? '  ★ админ' : '');
+      const sub = document.createElement('div');
+      sub.className = 'user-sub';
+      sub.textContent = u.admin ? 'Все права' : (state.permissions.filter((p) => u.perms[p.key]).map((p) => p.label).join(', ') || 'Без прав');
+      main.appendChild(name);
+      main.appendChild(sub);
+      const actions = document.createElement('div');
+      actions.className = 'file-actions';
+      const del = document.createElement('button');
+      del.className = 'mc-btn sm danger';
+      del.appendChild(picon('trash'));
+      del.title = 'Удалить';
+      const self = state.me && state.me.username && state.me.username.toLowerCase() === u.username.toLowerCase();
+      del.disabled = self;
+      del.addEventListener('click', async () => {
+        if (await confirmDialog('Удалить пользователя «' + u.username + '»?', { title: 'Удаление пользователя' })) {
+          await guard(async () => { await API.userDelete(u.username); showToast('Удалён.', 'ok'); loadUsers(); });
+        }
+      });
+      actions.appendChild(del);
+      row.appendChild(main);
+      row.appendChild(actions);
+      box.appendChild(row);
+    }
+  }
+
+  async function createUserFromForm() {
+    const username = $('#u-name').value.trim();
+    const password = $('#u-pass').value;
+    const admin = $('#u-admin').classList.contains('on');
+    if (!username || !password) { showToast('Введите логин и пароль'); return; }
+    await guard(async () => {
+      const res = await API.userCreate({ username, password, admin, perms: collectPerms() });
+      showToast('Пользователь «' + username + '» создан.', 'ok');
+      if (res && res.loggedIn) {
+        // создали первого админа в открытом режиме — перезагружаем под входом
+        await loadMe();
+        state.openMode = false;
+      }
+      openUsers();
+    });
+  }
+
+  async function doLogout() {
+    if (!(await confirmDialog('Выйти из панели?', { title: 'Выход', yesText: 'Выйти' }))) return;
+    try { await API.logout(); } catch (e) { /* всё равно уходим */ }
+    location.href = '/login';
   }
 
   // ---------- удаление сервера ----------
@@ -1769,8 +2243,52 @@
       if (state.memCreateSlider) state.memCreateSlider.refresh();
     });
     $('#btn-refresh').addEventListener('click', () => guard(loadServers));
-    $('#btn-manage').addEventListener('click', () => state.selectedId && openServer(state.selectedId));
-    $('#btn-delete').addEventListener('click', () => state.selectedId && deleteServer(state.selectedId));
+
+    // бургер-меню
+    const menuToggle = (open) => {
+      const want = open != null ? open : !$('#app-menu').classList.contains('open');
+      $('#app-menu').classList.toggle('open', want);
+      $('#app-scrim').classList.toggle('open', want);
+      $('#burger-ic').classList.toggle('open', want);
+    };
+    $('#btn-burger').addEventListener('click', () => menuToggle());
+    $('#app-scrim').addEventListener('click', () => menuToggle(false));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') menuToggle(false);
+    });
+    $$('#app-menu .menu-item[data-menu]').forEach((item) => item.addEventListener('click', () => {
+      menuToggle(false);
+      const action = item.dataset.menu;
+      if (action === 'home') { showScreen('list'); guard(loadServers); }
+      if (action === 'create') {
+        showScreen('create');
+        suggestPort();
+        loadVersions();
+        if (state.memCreateSlider) state.memCreateSlider.refresh();
+      }
+      if (action === 'settings') openAppSettings();
+      if (action === 'about') $('#about-root').classList.remove('hidden');
+      if (action === 'users') openUsers();
+      if (action === 'logout') doLogout();
+    }));
+    Array.from(document.querySelectorAll('#app-menu a.menu-item')).forEach((a) =>
+      a.addEventListener('click', () => menuToggle(false)));
+
+    // экран пользователей
+    $('#users-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
+    $('#u-admin').addEventListener('click', () => {
+      const adminOn = $('#u-admin').classList.contains('on');
+      $('#u-perms').classList.toggle('hidden', adminOn);
+    });
+    $('#u-create').addEventListener('click', createUserFromForm);
+
+    // бэкапы
+    $('#bk-create-btn').addEventListener('click', createBackup);
+
+    $('#about-close').addEventListener('click', () => $('#about-root').classList.add('hidden'));
+    $('#about-root').addEventListener('click', (event) => {
+      if (event.target === $('#about-root')) $('#about-root').classList.add('hidden');
+    });
 
     $('#create-form').addEventListener('submit', submitCreate);
     $('#btn-create-cancel').addEventListener('click', () => showScreen('list'));
@@ -1850,18 +2368,52 @@
     $('#wl-input').addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); addToWhitelist(); }
     });
+
+    // настройки панели
+    $('#appset-close').addEventListener('click', () => $('#appset-root').classList.add('hidden'));
+    $('#appset-root').addEventListener('click', (event) => {
+      if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
+    });
+    $('#set-theme').addEventListener('change', () => changeAppSettings({ theme: $('#set-theme').value }));
+    mkToggle($('#set-bganim'), appSettings.bgAnim !== false);
+    $('#set-bganim').addEventListener('click', () =>
+      changeAppSettings({ bgAnim: $('#set-bganim').classList.contains('on') }));
+    mkToggle($('#set-graphs'), appSettings.graphs !== false);
+    $('#set-graphs').addEventListener('click', () =>
+      changeAppSettings({ graphs: $('#set-graphs').classList.contains('on') }));
+
+    // при изменении размера окна перерисовываем графики и черту вкладок
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (state.screen === 'server') {
+          moveTabIndicator(false);
+          if (state.currentTab === 'console') loadStats();
+        }
+      }, 200);
+    });
+    // после загрузки пиксельного шрифта ширины вкладок меняются — поправляем черту
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        if (state.screen === 'server') moveTabIndicator(false);
+      });
+    }
   }
 
+  applyAppSettings(appSettings);
   applyIcons(document);
   initCycleButtons(document);
   mkToggle($('#toggle-online'), true);
   mkToggle($('#toggle-pvp'), true);
+  mkToggle($('#u-admin'), false);
   state.memCreateSlider = mkSlider($('#mem-create'), {
     min: 1024, max: state.maxMemMb, step: 512, value: 2048,
     format: fmtMem, labelEl: $('#mem-create-val'),
   });
 
   bind();
+  loadMe();
   loadStatus();
   guard(loadServers);
   startPolling();
