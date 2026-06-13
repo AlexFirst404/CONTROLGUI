@@ -1789,23 +1789,32 @@
     const srv = state.current || {};
     const info = $('#pl-info');
     if (info) {
-      info.textContent = 'Поиск и установка плагинов под ' + (CORE_NAMES[srv.type] || srv.type) +
+      info.textContent = 'Листайте каталог или ищите плагины под ' + (CORE_NAMES[srv.type] || srv.type) +
         ' ' + (srv.version || '–') + ' — файл скачивается с Modrinth прямо в папку plugins/. Применяется после перезапуска.';
     }
+    state.plOffset = 0;
+    doPluginSearch(true);
     loadInstalledPlugins();
   }
 
   let plSearchSeq = 0;
-  async function searchPlugins() {
-    const q = $('#pl-query').value.trim();
+  async function doPluginSearch(reset) {
+    if (!state.currentId) return;
+    if (reset) state.plOffset = 0;
     const box = $('#pl-results');
-    if (!q) { box.innerHTML = '<div class="pl-empty">Введите название плагина и нажмите «Искать».</div>'; return; }
-    box.innerHTML = '<div class="pl-empty">Ищу на Modrinth…</div>';
+    box.innerHTML = '<div class="pl-empty">Загрузка плагинов с Modrinth…</div>';
+    $('#pl-pager').classList.add('hidden');
     const seq = ++plSearchSeq;
     try {
-      const data = await API.pluginsSearch(state.currentId, q);
+      const data = await API.pluginsSearch(state.currentId, {
+        q: $('#pl-query').value.trim(),
+        category: $('#pl-category').value,
+        sort: $('#pl-sort').value,
+        offset: state.plOffset || 0,
+      });
       if (seq !== plSearchSeq) return;
       renderPluginResults(data.hits || []);
+      updatePluginPager(data);
     } catch (e) {
       if (seq !== plSearchSeq) return;
       box.innerHTML = '';
@@ -1813,7 +1822,35 @@
       er.className = 'pl-empty';
       er.textContent = e.message;
       box.appendChild(er);
+      $('#pl-pager').classList.add('hidden');
     }
+  }
+
+  function updatePluginPager(data) {
+    const pager = $('#pl-pager');
+    const total = data.total || 0;
+    const offset = data.offset || 0;
+    const limit = data.limit || 20;
+    const shown = data.hits ? data.hits.length : 0;
+    state.plOffset = offset;
+    state.plLimit = limit;
+    state.plTotal = total;
+    if (!shown || total <= limit) { pager.classList.add('hidden'); return; }
+    pager.classList.remove('hidden');
+    $('#pl-count').textContent = (offset + 1) + '–' + (offset + shown) + ' из ' + total;
+    $('#pl-prev').disabled = offset <= 0;
+    $('#pl-next').disabled = offset + limit >= total;
+  }
+
+  function pluginPage(dir) {
+    const limit = state.plLimit || 20;
+    let next = (state.plOffset || 0) + dir * limit;
+    if (next < 0) next = 0;
+    if (state.plTotal != null && next >= state.plTotal) return;
+    state.plOffset = next;
+    doPluginSearch(false);
+    const res = $('#pl-results');
+    if (res && res.scrollIntoView) res.scrollIntoView({ block: 'nearest' });
   }
 
   function renderPluginResults(hits) {
@@ -2166,14 +2203,6 @@
     await guard(async () => {
       const data = await API.files(state.currentId, state.filesPath);
       renderFiles(data.entries || []);
-      // небольшая плавная анимация появления при переходах по папкам
-      const list = $('#files-list');
-      if (list && list.animate) {
-        list.animate(
-          [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }],
-          { duration: 190, easing: 'cubic-bezier(.2,.7,.3,1)' }
-        );
-      }
     });
   }
 
@@ -3103,11 +3132,15 @@
       window.open('/console.html?server=' + encodeURIComponent(state.currentId), '_blank');
     });
 
-    // плагины (Modrinth)
-    $('#pl-search-btn').addEventListener('click', searchPlugins);
+    // плагины (Modrinth) — поиск, фильтры, листание
+    $('#pl-search-btn').addEventListener('click', () => doPluginSearch(true));
     $('#pl-query').addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') { event.preventDefault(); searchPlugins(); }
+      if (event.key === 'Enter') { event.preventDefault(); doPluginSearch(true); }
     });
+    $('#pl-category').addEventListener('change', () => doPluginSearch(true));
+    $('#pl-sort').addEventListener('change', () => doPluginSearch(true));
+    $('#pl-prev').addEventListener('click', () => pluginPage(-1));
+    $('#pl-next').addEventListener('click', () => pluginPage(1));
     $('#pl-refresh').addEventListener('click', loadInstalledPlugins);
 
     // бэкапы

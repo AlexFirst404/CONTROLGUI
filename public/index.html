@@ -464,11 +464,47 @@
         <div class="section-title">Плагины с Modrinth</div>
         <div class="hint" id="pl-info" style="margin:0 0 10px">Поиск и установка плагинов под версию и ядро вашего сервера — файл скачивается с Modrinth прямо в папку <code>plugins/</code>. Применяется после перезапуска сервера.</div>
         <div class="pl-search">
-          <input class="fld" id="pl-query" placeholder="Название плагина: WorldEdit, EssentialsX, LuckPerms…" autocomplete="off">
+          <input class="fld" id="pl-query" placeholder="Поиск по названию (необязательно): WorldEdit, EssentialsX…" autocomplete="off">
           <button class="mc-btn sm primary" id="pl-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
         </div>
+        <div class="pl-filters">
+          <label class="pl-fl">Категория
+            <select class="fld" id="pl-category">
+              <option value="">Все категории</option>
+              <option value="utility">Утилиты</option>
+              <option value="management">Управление</option>
+              <option value="admintools">Админ-инструменты</option>
+              <option value="economy">Экономика</option>
+              <option value="chat">Чат</option>
+              <option value="social">Социальное</option>
+              <option value="game-mechanics">Игровые механики</option>
+              <option value="minigame">Мини-игры</option>
+              <option value="mobs">Мобы</option>
+              <option value="world-generation">Генерация мира</option>
+              <option value="optimization">Оптимизация</option>
+              <option value="storage">Хранилище</option>
+              <option value="transportation">Транспорт</option>
+              <option value="equipment">Снаряжение</option>
+              <option value="library">Библиотеки</option>
+            </select>
+          </label>
+          <label class="pl-fl">Сортировка
+            <select class="fld" id="pl-sort">
+              <option value="relevance">По релевантности</option>
+              <option value="downloads">По загрузкам</option>
+              <option value="follows">По подписчикам</option>
+              <option value="newest">Сначала новые</option>
+              <option value="updated">Недавно обновлённые</option>
+            </select>
+          </label>
+        </div>
         <div class="pl-results" id="pl-results">
-          <div class="pl-empty">Введите название плагина и нажмите «Искать».</div>
+          <div class="pl-empty">Загрузка плагинов…</div>
+        </div>
+        <div class="pl-pager hidden" id="pl-pager">
+          <button class="mc-btn sm" id="pl-prev"><i class="pi" data-ic="chevron-left"></i> Назад</button>
+          <span class="pl-count" id="pl-count"></span>
+          <button class="mc-btn sm" id="pl-next">Вперёд <i class="pi" data-ic="chevron-right"></i></button>
         </div>
       </div>
 

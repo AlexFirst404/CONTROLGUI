@@ -95,7 +95,14 @@ window.API = (function () {
     iconUrl: (id, mtime) => '/api/servers/' + id + '/icon?t=' + (mtime || 0),
 
     pluginsList: (id) => call('GET', '/api/servers/' + id + '/plugins'),
-    pluginsSearch: (id, q) => call('GET', '/api/servers/' + id + '/plugins/search?q=' + encodeURIComponent(q || '')),
+    pluginsSearch: (id, opts) => {
+      opts = opts || {};
+      const qs = 'q=' + encodeURIComponent(opts.q || '') +
+        '&category=' + encodeURIComponent(opts.category || '') +
+        '&sort=' + encodeURIComponent(opts.sort || 'relevance') +
+        '&offset=' + (opts.offset || 0);
+      return call('GET', '/api/servers/' + id + '/plugins/search?' + qs);
+    },
     pluginInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId }),
     pluginDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/plugins?file=' + encodeURIComponent(file)),
 
