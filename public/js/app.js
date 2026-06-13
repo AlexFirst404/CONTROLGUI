@@ -168,7 +168,7 @@
       settings: ['settings.edit'],
       files: ['files.read'],
       players: ['players.kick', 'players.ban', 'players.whitelist', 'players.delete'],
-      logs: ['console.view'],
+      logs: ['logs.view'],
       backups: ['backups.create', 'backups.restore', 'backups.delete'],
     };
     $$('.mc-tab').forEach((btn) => {
@@ -296,6 +296,13 @@
 
   function fmtMem(v) {
     return v + ' МБ (' + (v / 1024).toFixed(1).replace('.0', '') + ' ГБ)';
+  }
+
+  function fmtCpu(v) {
+    if (v >= 100) return 'без лимита (все ядра)';
+    const cores = navigator.hardwareConcurrency || 0;
+    const k = cores ? Math.max(1, Math.round(cores * v / 100)) : 0;
+    return v + '%' + (k ? ' (≈ ' + k + ' из ' + cores + ' ядер)' : '');
   }
 
   // ---------- компоненты кита ----------
@@ -674,6 +681,7 @@
       version: isCustom ? '-' : form.version.value,
       port: form.port.value,
       memoryMb: state.memCreateSlider.value,
+      cpuPercent: state.cpuCreateSlider ? state.cpuCreateSlider.value : 100,
       gamemode: $('#cycle-gamemode').dataset.value,
       difficulty: $('#cycle-difficulty').dataset.value,
       maxPlayers: form.maxPlayers.value,
@@ -714,7 +722,7 @@
       ['console', () => can('console.view')], ['settings', () => can('settings.edit')],
       ['files', () => can('files.read')],
       ['players', () => canAny(['players.kick', 'players.ban', 'players.whitelist', 'players.delete'])],
-      ['logs', () => can('console.view')],
+      ['logs', () => can('logs.view')],
       ['backups', () => canAny(['backups.create', 'backups.restore', 'backups.delete'])],
       ['info', () => true],
     ];
@@ -1526,6 +1534,7 @@
       const data = await API.properties(state.currentId);
       renderSettings(data);
       renderIconCard();
+      loadRpCard();
     } catch (e) {
       showToast(e.message);
     }
@@ -1595,6 +1604,54 @@
     });
   }
 
+  // ---------- текстурпак (ресурспак) ----------
+
+  async function loadRpCard() {
+    const card = $('#rp-card');
+    if (!card) return;
+    card.classList.toggle('hidden', !can('settings.edit'));
+    if (!can('settings.edit') || !state.currentId) return;
+    try {
+      const info = await API.resourcePack(state.currentId);
+      const stateEl = $('#rp-state');
+      if (info.has) {
+        stateEl.textContent = 'Текстурпак задан · ' + fmtBytes(info.size) +
+          (info.url ? ' · раздаётся по ' + info.url : '');
+        $('#rp-remove-btn').classList.remove('hidden');
+        $('#rp-require').classList.toggle('on', !!info.required);
+        $('#rp-drop-title').textContent = 'Перетащите другой .zip, чтобы заменить';
+      } else {
+        stateEl.textContent = 'Текстурпак не задан';
+        $('#rp-remove-btn').classList.add('hidden');
+        $('#rp-drop-title').textContent = 'Перетащите .zip сюда или нажмите, чтобы выбрать';
+      }
+    } catch (e) { /* статус не критичен */ }
+  }
+
+  async function uploadResourcePack(file) {
+    if (!file || !state.currentId) return;
+    if (!/\.zip$/i.test(file.name)) { showToast('Нужен .zip-архив текстурпака'); return; }
+    const required = $('#rp-require').classList.contains('on');
+    await guard(async () => {
+      $('#rp-state').textContent = 'Загрузка текстурпака…';
+      await API.resourcePackUpload(state.currentId, file, required);
+      showToast('Текстурпак применён. Перезапустите сервер, чтобы он раздавался игрокам.', 'ok');
+      loadRpCard();
+      loadSettings();
+    });
+  }
+
+  async function removeResourcePack() {
+    if (!state.currentId) return;
+    if (!(await confirmDialog('Убрать текстурпак с сервера?', { title: 'Текстурпак', yesText: 'Убрать' }))) return;
+    await guard(async () => {
+      await API.resourcePackDelete(state.currentId);
+      showToast('Текстурпак убран.', 'ok');
+      loadRpCard();
+      loadSettings();
+    });
+  }
+
   function renderSettings(data) {
     const grid = $('#settings-known');
     grid.innerHTML = '';
@@ -1620,6 +1677,25 @@
       min: 1024, max: state.maxMemMb, step: 512,
       value: parseInt(data.memoryMb, 10) || 2048,
       format: fmtMem, labelEl: memVal,
+    });
+
+    const cpuWrap = document.createElement('div');
+    cpuWrap.className = 'opt-card slider-block';
+    const cpuLabel = document.createElement('span');
+    cpuLabel.className = 'opt-label';
+    const cpuVal = document.createElement('span');
+    cpuVal.className = 'slider-val';
+    cpuLabel.appendChild(document.createTextNode('Макс. нагрузка на CPU: '));
+    cpuLabel.appendChild(cpuVal);
+    const cpuSlider = document.createElement('div');
+    cpuSlider.className = 'mc-slider';
+    cpuWrap.appendChild(cpuLabel);
+    cpuWrap.appendChild(cpuSlider);
+    grid.appendChild(cpuWrap);
+    state.cpuSettingsSlider = mkSlider(cpuSlider, {
+      min: 10, max: 100, step: 5,
+      value: parseInt(data.cpuPercent, 10) || 100,
+      format: fmtCpu, labelEl: cpuVal,
     });
 
     // известные ключи в порядке словаря, затем остальные по алфавиту
@@ -1756,6 +1832,7 @@
     const properties = {};
     let name = null;
     const memoryMb = state.memSettingsSlider ? state.memSettingsSlider.value : null;
+    const cpuPercent = state.cpuSettingsSlider ? state.cpuSettingsSlider.value : 100;
 
     for (const el of $$('#settings-known [data-prop-key]')) {
       const key = el.dataset.propKey;
@@ -1765,7 +1842,7 @@
     }
 
     await guard(async () => {
-      state.current = await API.saveProperties(state.currentId, { properties, name, memoryMb });
+      state.current = await API.saveProperties(state.currentId, { properties, name, memoryMb, cpuPercent });
       renderServerHead();
       showToast(isRunning
         ? 'Сохранено. Перезапустите сервер, чтобы применить изменения.'
@@ -2680,6 +2757,38 @@
     });
     $('#icon-remove-btn').addEventListener('click', removeServerIcon);
 
+    // текстурпак (ресурспак)
+    $('#rp-upload-btn').addEventListener('click', () => $('#rp-file').click());
+    $('#rp-file').addEventListener('change', (event) => {
+      const f = event.target.files[0];
+      event.target.value = '';
+      uploadResourcePack(f);
+    });
+    $('#rp-remove-btn').addEventListener('click', removeResourcePack);
+    $('#rp-require').addEventListener('click', () => $('#rp-require').classList.toggle('on'));
+    const rpDrop = $('#rp-drop');
+    rpDrop.addEventListener('click', () => $('#rp-file').click());
+    ['dragenter', 'dragover'].forEach((ev) => rpDrop.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation(); rpDrop.classList.add('drag');
+    }));
+    ['dragleave', 'dragend'].forEach((ev) => rpDrop.addEventListener(ev, (e) => {
+      e.stopPropagation(); rpDrop.classList.remove('drag');
+    }));
+    rpDrop.addEventListener('drop', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      rpDrop.classList.remove('drag');
+      const f = e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files[0] : null;
+      if (f) uploadResourcePack(f);
+    });
+
+    // вынос консоли в отдельное окно
+    const pop = $('#console-pop');
+    if (pop) pop.addEventListener('click', () => {
+      if (!state.currentId) return;
+      window.open('/console.html?server=' + encodeURIComponent(state.currentId),
+        'cg-console-' + state.currentId, 'width=920,height=620,menubar=no,toolbar=no,location=no,status=no');
+    });
+
     // бэкапы
     $('#bk-create-btn').addEventListener('click', createBackup);
 
@@ -2825,6 +2934,10 @@
   state.memCreateSlider = mkSlider($('#mem-create'), {
     min: 1024, max: state.maxMemMb, step: 512, value: 2048,
     format: fmtMem, labelEl: $('#mem-create-val'),
+  });
+  state.cpuCreateSlider = mkSlider($('#cpu-create'), {
+    min: 10, max: 100, step: 5, value: 100,
+    format: fmtCpu, labelEl: $('#cpu-create-val'),
   });
 
   bind();

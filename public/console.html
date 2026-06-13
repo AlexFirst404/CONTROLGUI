@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Консоль — CONTROLGUI</title>
+<link rel="icon" type="image/png" href="/assets/controlgui.png">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/minecraft.css">
+<style>
+  html, body { height: 100%; }
+  body.pop { margin: 0; padding: 0; overflow: hidden; }
+  .pop-wrap { display: flex; flex-direction: column; height: 100vh; padding: 10px; box-sizing: border-box; gap: 8px; }
+  .pop-head { display: flex; align-items: center; gap: 10px; flex: none; }
+  .pop-head .sh-name { font-size: 16px; }
+  .pop-head .status-badge { font-size: 11px; }
+  .pop-wrap .console { flex: 1; height: auto; min-height: 0; }
+</style>
+</head>
+<body class="theme-lime pop">
+<div class="bg-pattern"></div>
+<div class="pop-wrap">
+  <div class="pop-head">
+    <img class="sh-icon" id="pop-icon" alt="" hidden>
+    <div class="sh-name" id="pop-title">Консоль</div>
+    <span class="status-badge" id="pop-status"></span>
+  </div>
+  <div class="console" id="console"></div>
+  <div class="console-input-row">
+    <input class="fld console-input" id="command-input"
+           placeholder="Команда… (Enter — отправить)" autocomplete="off" spellcheck="false">
+    <button class="mc-btn" id="btn-send"><i class="pi" data-ic="arrow-right" style="--i:url('/icons/arrow-right.svg')"></i> Отправить</button>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+(function () {
+  var id = new URLSearchParams(location.search).get('server') ||
+           (location.hash.indexOf('server=') >= 0 ? location.hash.split('server=')[1] : '');
+  id = (id || '').replace(/[^a-f0-9]/gi, '');
+  var consoleEl = document.getElementById('console');
+  var input = document.getElementById('command-input');
+  var statusEl = document.getElementById('pop-status');
+  var history = [];
+  var historyIdx = 0;
+
+  function appendLine(line) {
+    line = String(line).replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+    var atBottom = consoleEl.scrollTop + consoleEl.clientHeight >= consoleEl.scrollHeight - 40;
+    var el = document.createElement('span');
+    el.className = 'ln';
+    if (line.indexOf('> ') === 0) el.classList.add('ln-cmd');
+    else if (line.indexOf('[ПАНЕЛЬ]') >= 0) el.classList.add('ln-panel');
+    else if (/ERROR|SEVERE|Exception|FAILED/i.test(line)) el.classList.add('ln-error');
+    else if (/WARN/.test(line)) el.classList.add('ln-warn');
+    el.textContent = line;
+    consoleEl.appendChild(el);
+    while (consoleEl.childNodes.length > 1500) consoleEl.removeChild(consoleEl.firstChild);
+    if (atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+
+  function setStatus(s) {
+    statusEl.className = 'status-badge st-' + (s.status || '');
+    var names = { running: 'Работает', starting: 'Запускается', stopping: 'Останавливается',
+      stopped: 'Остановлен', error: 'Ошибка', orphaned: 'Завис процесс', 'no-jar': 'Нет ядра', downloading: 'Загрузка' };
+    statusEl.textContent = names[s.status] || s.status || '';
+  }
+
+  function connect() {
+    var sse = API.consoleStream(id);
+    sse.onmessage = function (event) {
+      var line; try { line = JSON.parse(event.data); } catch (e) { return; }
+      appendLine(line);
+    };
+    sse.onerror = function () { consoleEl.innerHTML = ''; };
+  }
+
+  async function refresh() {
+    try {
+      var s = await API.server(id);
+      document.getElementById('pop-title').textContent = s.name + ' — консоль';
+      document.title = s.name + ' — консоль';
+      var icon = document.getElementById('pop-icon');
+      if (s.hasIcon) { icon.src = API.iconUrl(id, s.hasIcon); icon.hidden = false; }
+      setStatus(s);
+    } catch (e) { /* нет доступа/сервера */ }
+  }
+
+  function send() {
+    var command = input.value.trim();
+    if (!command) return;
+    if (command.charAt(0) === '/') command = command.slice(1);
+    history.push(input.value.trim()); historyIdx = history.length;
+    input.value = '';
+    API.command(id, command).catch(function (e) { appendLine('[ПАНЕЛЬ] ' + e.message); });
+  }
+
+  document.getElementById('btn-send').addEventListener('click', send);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { send(); }
+    else if (e.key === 'ArrowUp') { if (historyIdx > 0) { historyIdx--; input.value = history[historyIdx] || ''; e.preventDefault(); } }
+    else if (e.key === 'ArrowDown') { if (historyIdx < history.length) { historyIdx++; input.value = history[historyIdx] || ''; } }
+  });
+
+  if (!id) { appendLine('[ПАНЕЛЬ] Не указан сервер.'); return; }
+  connect();
+  refresh();
+  setInterval(refresh, 4000);
+  input.focus();
+})();
+</script>
+</body>
+</html>

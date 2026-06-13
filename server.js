@@ -1,7 +1,10 @@
 'use strict';
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { handleApi } = require('./lib/api');
 const { serveStatic } = require('./lib/static');
+const { serverDir } = require('./lib/paths');
 const manager = require('./lib/manager');
 const users = require('./lib/users');
 
@@ -44,6 +47,23 @@ async function handleAuthRoutes(req, res, urlPath) {
 
 const server = http.createServer(async (req, res) => {
   const urlPath = (req.url || '/').split('?')[0];
+
+  // ресурспак сервера — без авторизации: его скачивают игровые клиенты Minecraft
+  if (urlPath.startsWith('/rp/')) {
+    const m = urlPath.match(/^\/rp\/([a-f0-9]+)\.zip$/i);
+    if (m) {
+      try {
+        const zp = path.join(serverDir(m[1]), 'resourcepack.zip');
+        const stat = fs.statSync(zp);
+        res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': stat.size });
+        fs.createReadStream(zp).pipe(res);
+        return;
+      } catch (e) { /* нет файла — 404 ниже */ }
+    }
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Resource pack not found');
+    return;
+  }
 
   if (await handleAuthRoutes(req, res, urlPath)) return;
 

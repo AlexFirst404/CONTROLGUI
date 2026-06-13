@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CONTROLGUI — Панель Minecraft-серверов</title>
-<link rel="icon" type="image/png" href="/assets/gear.png">
+<link rel="icon" type="image/png" href="/assets/controlgui.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -189,6 +189,10 @@
           <span class="opt-label">Память: <span class="slider-val" id="mem-create-val"></span></span>
           <div class="mc-slider" id="mem-create"></div>
         </div>
+        <div class="opt-card slider-block">
+          <span class="opt-label">Макс. нагрузка на CPU: <span class="slider-val" id="cpu-create-val"></span></span>
+          <div class="mc-slider" id="cpu-create"></div>
+        </div>
 
         <div class="opt-card toggle-row">
           <span class="toggle-label">Лицензия (online-mode)</span>
@@ -344,7 +348,11 @@
         </div>
       </div>
 
-      <div class="console" id="console"></div>
+      <div class="console-wrap">
+        <div class="console" id="console"></div>
+        <button class="console-pop" id="console-pop" type="button"
+                title="Открыть консоль в отдельном окне"><i class="pi" data-ic="app-window"></i></button>
+      </div>
 
       <div class="console-input-row">
         <div class="cmd-wrap">
@@ -389,6 +397,27 @@
               <input type="file" id="icon-file" class="hidden" accept="image/*">
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="mc-card form-panel" id="rp-card">
+        <div class="section-title">Текстурпак (ресурспак)</div>
+        <div class="hint" style="margin:0 0 10px">Перетащите сюда .zip с текстурпаком или выберите файл — панель раздаст его игрокам
+          (прописывает <code>resource-pack</code> и SHA-1 в server.properties). Работает для игроков в вашей локальной сети.
+          Применяется после перезапуска сервера.</div>
+        <div class="rp-drop" id="rp-drop">
+          <i class="pi rp-drop-ic" data-ic="image"></i>
+          <div class="rp-drop-title" id="rp-drop-title">Перетащите .zip сюда или нажмите, чтобы выбрать</div>
+          <div class="rp-drop-sub label-dim" id="rp-state">Текстурпак не задан</div>
+        </div>
+        <label class="check-row" id="rp-require-row" style="margin-top:10px">
+          <span class="mc-check" id="rp-require"><span class="tick"></span></span>
+          <span>Обязательный — игроки без принятого пака не смогут играть</span>
+        </label>
+        <div class="btn-row btn-row-left" style="margin-top:10px">
+          <button type="button" class="mc-btn sm primary" id="rp-upload-btn"><i class="pi" data-ic="upload"></i> Выбрать .zip</button>
+          <button type="button" class="mc-btn sm danger hidden" id="rp-remove-btn"><i class="pi" data-ic="trash"></i> Убрать</button>
+          <input type="file" id="rp-file" class="hidden" accept=".zip,application/zip">
         </div>
       </div>
 

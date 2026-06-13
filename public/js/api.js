@@ -94,6 +94,18 @@ window.API = (function () {
     iconDelete: (id) => call('DELETE', '/api/servers/' + id + '/icon'),
     iconUrl: (id, mtime) => '/api/servers/' + id + '/icon?t=' + (mtime || 0),
 
+    resourcePack: (id) => call('GET', '/api/servers/' + id + '/resourcepack'),
+    resourcePackDelete: (id) => call('DELETE', '/api/servers/' + id + '/resourcepack'),
+    resourcePackUpload: async (id, file, required) => {
+      let res;
+      try { res = await fetch('/api/servers/' + id + '/resourcepack?required=' + (required ? 'true' : 'false'), { method: 'PUT', body: file }); }
+      catch (e) { throw new Error('Загрузка текстурпака прервалась: ' + e.message); }
+      let data = {};
+      try { data = await res.json(); } catch (e) { /* пусто */ }
+      if (!res.ok) throw new Error(data.error || ('Ошибка HTTP ' + res.status));
+      return data;
+    },
+
     coreUpload: async (id, file) => {
       let res;
       try { res = await fetch('/api/servers/' + id + '/core', { method: 'PUT', body: file }); }
