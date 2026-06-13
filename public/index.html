@@ -68,7 +68,7 @@
         <button class="mc-btn sm" id="about-close"><i class="pi" data-ic="close"></i></button>
       </div>
       <div class="modal-body about-body">
-        <img src="/logo.png" class="about-logo" alt="">
+        <img src="/assets/controlgui.png" class="about-logo" alt="">
         <div class="about-name">CONTROLGUI <span id="about-version"></span></div>
         <p class="about-text">Локальная панель управления настоящими Minecraft-серверами:
           Vanilla, Paper, Purpur, Folia, Mohist и Forge. Консоль в реальном времени,
@@ -422,6 +422,16 @@
           <button type="submit" class="mc-btn primary"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
         </div>
       </form>
+
+      <div class="mc-card form-panel" id="core-card">
+        <div class="section-title">Ядро сервера</div>
+        <div class="hint" id="core-info" style="margin:0 0 10px">Текущее ядро: <b id="core-current">—</b>. Можно скачать его заново (если файлы повредились) или загрузить своё ядро .jar. Сервер должен быть остановлен.</div>
+        <div class="btn-row btn-row-left" style="margin:0">
+          <button type="button" class="mc-btn sm accent" id="core-redownload"><i class="pi" data-ic="download"></i> Скачать ядро заново</button>
+          <button type="button" class="mc-btn sm primary" id="core-upload-btn"><i class="pi" data-ic="upload"></i> Загрузить своё ядро (.jar)</button>
+          <input type="file" id="core-file" class="hidden" accept=".jar">
+        </div>
+      </div>
 
       <div class="mc-card form-panel danger-card">
         <div class="danger-title">Опасная зона</div>

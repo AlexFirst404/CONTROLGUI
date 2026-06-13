@@ -22,7 +22,7 @@
 
   const CORE_NAMES = {
     vanilla: 'Vanilla', paper: 'Paper', purpur: 'Purpur',
-    folia: 'Folia', mohist: 'Mohist', forge: 'Forge',
+    folia: 'Folia', mohist: 'Mohist', forge: 'Forge', custom: 'Своё ядро',
   };
 
   /* Иконки предметов «как в игре»:
@@ -1661,9 +1661,59 @@
       renderSettings(data);
       renderIconCard();
       loadRpCard();
+      renderCoreCard();
     } catch (e) {
       showToast(e.message);
     }
+  }
+
+  // ---------- ядро сервера (повторное скачивание / своё ядро) ----------
+
+  function renderCoreCard() {
+    const card = $('#core-card');
+    if (!card) return;
+    const srv = state.current || {};
+    const isCustom = srv.type === 'custom';
+    // карточка доступна тем, кто может ставить ядро или создавать серверы
+    const canManage = can('server.install') || can('server.create');
+    card.classList.toggle('hidden', !canManage);
+    $('#core-current').textContent = (CORE_NAMES[srv.type] || srv.type || '—') + ' ' + (srv.version || '–');
+    // «скачать заново» — только для скачиваемых ядер (не для своего jar)
+    $('#core-redownload').classList.toggle('hidden', isCustom || !can('server.install'));
+    $('#core-upload-btn').classList.toggle('hidden', !can('server.create'));
+  }
+
+  async function redownloadCore() {
+    if (!state.currentId) return;
+    const srv = state.current || {};
+    if (srv.status === 'running' || srv.status === 'starting') { showToast('Сначала остановите сервер'); return; }
+    const ok = await confirmDialog(
+      'Скачать ядро ' + (CORE_NAMES[srv.type] || srv.type) + ' ' + (srv.version || '') + ' заново? Текущий файл ядра будет заменён.',
+      { title: 'Скачать ядро заново', yesText: 'Скачать', danger: false });
+    if (!ok) return;
+    await guard(async () => {
+      state.current = await API.download(state.currentId);
+      renderServerHead();
+      renderCoreCard();
+      showToast('Скачивание ядра началось — следите в консоли/шапке.', 'ok');
+    });
+  }
+
+  async function uploadCore(file) {
+    if (!file || !state.currentId) return;
+    if (!/\.jar$/i.test(file.name)) { showToast('Нужен файл ядра .jar'); return; }
+    const srv = state.current || {};
+    if (srv.status === 'running' || srv.status === 'starting') { showToast('Сначала остановите сервер'); return; }
+    if (!(await confirmDialog('Заменить ядро сервера файлом «' + file.name + '»? Версия определится автоматически.',
+      { title: 'Своё ядро', yesText: 'Загрузить', danger: false }))) return;
+    await guard(async () => {
+      showToast('Загружаю ядро…', 'ok');
+      state.current = await API.coreUpload(state.currentId, file);
+      renderServerHead();
+      renderCoreCard();
+      loadServers();
+      showToast('Своё ядро загружено.', 'ok');
+    });
   }
 
   // ---------- иконка сервера ----------
@@ -3272,6 +3322,15 @@
       uploadServerIcon(f);
     });
     $('#icon-remove-btn').addEventListener('click', removeServerIcon);
+
+    // ядро сервера (повторное скачивание / своё ядро)
+    $('#core-redownload').addEventListener('click', redownloadCore);
+    $('#core-upload-btn').addEventListener('click', () => $('#core-file').click());
+    $('#core-file').addEventListener('change', (event) => {
+      const f = event.target.files[0];
+      event.target.value = '';
+      uploadCore(f);
+    });
 
     // текстурпак (ресурспак)
     $('#rp-upload-btn').addEventListener('click', () => $('#rp-file').click());
