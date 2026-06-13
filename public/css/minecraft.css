@@ -358,7 +358,22 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
   word-break: break-word; overflow: hidden; max-height: 100%; }
 .inv-cell .cnt { position: absolute; right: 4px; bottom: 2px; font-size: 14px; color: #fff;
   text-shadow: 2px 2px 0 #000; font-family: Consolas, monospace; z-index: 2; }
+.inv-cell { cursor: context-menu; }
+.inv-cell.empty { cursor: default; }
 .inv-empty-note { color: #a9a9a9; font-size: 13px; padding: 10px 0; }
+
+/* всплывающая карточка предмета по ПКМ — стиль подсказки Minecraft */
+.item-tip { position: fixed; z-index: 1000; pointer-events: none;
+  max-width: 320px; padding: 7px 10px; background: #100018f0;
+  border: 2px solid #270060; box-shadow: 0 0 0 1px #120024, 0 6px 18px rgba(0,0,0,.55);
+  font-family: 'Pixelify Sans', Consolas, monospace; line-height: 1.45; }
+.item-tip .it-name { color: #fff; font-size: 14px; margin-bottom: 2px; word-break: break-word; }
+.item-tip .it-name.custom { color: #ffe98a; font-style: italic; }
+.item-tip .it-ench { color: #aaaaaa; font-size: 12.5px; }
+.item-tip .it-ench.stored { color: #b9a7d6; }
+.item-tip .it-lore { color: #a35cff; font-size: 12.5px; font-style: italic; word-break: break-word; }
+.item-tip .it-attr { color: #9aa39c; font-size: 12px; }
+.item-tip .it-id { color: #4f4a5e; font-size: 11px; margin-top: 4px; word-break: break-all; }
 .inv-uuid { margin-top: 14px; font-size: 11px; color: #6f7a72; word-break: break-all; }
 @media (max-width: 900px) {
   .inv-flex { flex-direction: column; }

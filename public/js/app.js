@@ -1141,10 +1141,89 @@
         cnt.textContent = item.count;
         cell.appendChild(cnt);
       }
+      // ПКМ — показать карточку предмета (как всплывающая подсказка в Minecraft)
+      cell.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        showItemTooltip(item, event.clientX, event.clientY);
+      });
     } else if (label) {
       cell.title = label;
     }
     return cell;
+  }
+
+  // ---------- всплывающая карточка предмета (Minecraft-стиль) ----------
+
+  const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+  function roman(n) { return (n >= 1 && n <= 10) ? ROMAN[n] : String(n); }
+
+  function prettyItemName(id) {
+    return String(id).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  let itemTip = null;
+  function hideItemTooltip() { if (itemTip) { itemTip.remove(); itemTip = null; } }
+
+  function showItemTooltip(item, x, y) {
+    hideItemTooltip();
+    if (!item) return;
+    const tip = document.createElement('div');
+    tip.className = 'item-tip';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'it-name' + (item.name ? ' custom' : '');
+    nameEl.textContent = item.name || prettyItemName(item.id);
+    tip.appendChild(nameEl);
+
+    for (const e of item.enchants || []) {
+      const en = document.createElement('div');
+      en.className = 'it-ench' + (e.stored ? ' stored' : '');
+      en.textContent = e.name + (e.level ? ' ' + roman(e.level) : '');
+      tip.appendChild(en);
+    }
+
+    for (const l of item.lore || []) {
+      const lo = document.createElement('div');
+      lo.className = 'it-lore';
+      lo.textContent = l;
+      tip.appendChild(lo);
+    }
+
+    if (item.unbreakable) {
+      const u = document.createElement('div');
+      u.className = 'it-attr';
+      u.textContent = 'Неразрушимый';
+      tip.appendChild(u);
+    }
+    if (item.damage != null) {
+      const d = document.createElement('div');
+      d.className = 'it-attr';
+      d.textContent = 'Повреждение: ' + item.damage;
+      tip.appendChild(d);
+    }
+    if (item.count > 1) {
+      const c = document.createElement('div');
+      c.className = 'it-attr';
+      c.textContent = 'Количество: ' + item.count;
+      tip.appendChild(c);
+    }
+
+    const idEl = document.createElement('div');
+    idEl.className = 'it-id';
+    idEl.textContent = 'minecraft:' + item.id;
+    tip.appendChild(idEl);
+
+    document.body.appendChild(tip);
+    itemTip = tip;
+    // позиционируем у курсора, не вылезая за экран
+    const pad = 12;
+    const rect = tip.getBoundingClientRect();
+    let left = x + 14;
+    let top = y + 14;
+    if (left + rect.width + pad > window.innerWidth) left = Math.max(pad, x - rect.width - 14);
+    if (top + rect.height + pad > window.innerHeight) top = Math.max(pad, window.innerHeight - rect.height - pad);
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
   }
 
   function metaRow(grid, iconName, key, value) {
@@ -1162,6 +1241,7 @@
     $('#inv-root').classList.add('hidden');
     if (state.invTimer) { clearInterval(state.invTimer); state.invTimer = null; }
     state.invSnapshot = null;
+    hideItemTooltip();
   }
 
   /* снимок значимых данных: модалка перерисовывается ТОЛЬКО при изменении
@@ -2785,8 +2865,9 @@
     const pop = $('#console-pop');
     if (pop) pop.addEventListener('click', () => {
       if (!state.currentId) return;
-      window.open('/console.html?server=' + encodeURIComponent(state.currentId),
-        'cg-console-' + state.currentId, 'width=920,height=620,menubar=no,toolbar=no,location=no,status=no');
+      // в браузере '_blank' без параметров окна → новая вкладка; в десктоп-обёртке
+      // WebView2 перехватывает window.open и открывает отдельное окно приложения
+      window.open('/console.html?server=' + encodeURIComponent(state.currentId), '_blank');
     });
 
     // бэкапы
@@ -2885,6 +2966,10 @@
     $('#inv-root').addEventListener('click', (event) => {
       if (event.target === $('#inv-root')) closeInventory();
     });
+    // карточка предмета закрывается по клику/прокрутке/Esc
+    document.addEventListener('click', hideItemTooltip);
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') hideItemTooltip(); });
+    $('#inv-body').addEventListener('scroll', hideItemTooltip, true);
 
     $('#wl-add-btn').addEventListener('click', addToWhitelist);
     $('#wl-input').addEventListener('keydown', (event) => {
