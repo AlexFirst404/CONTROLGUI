@@ -168,6 +168,7 @@
       settings: ['settings.edit'],
       files: ['files.read'],
       plugins: ['files.read'],
+      mods: ['files.read'],
       players: ['players.kick', 'players.ban', 'players.whitelist', 'players.delete'],
       logs: ['logs.view'],
       backups: ['backups.create', 'backups.restore', 'backups.delete'],
@@ -176,8 +177,9 @@
       const tab = btn.dataset.tab;
       const p = tabPerm[tab];
       let hide = p ? !canAny(p) : false;
-      // вкладка «Плагины» — только для ядер с поддержкой плагинов
+      // вкладки «Плагины»/«Моды» — только для ядер с их поддержкой
       if (tab === 'plugins' && !(state.current && state.current.plugins)) hide = true;
+      if (tab === 'mods' && !(state.current && state.current.mods)) hide = true;
       btn.classList.toggle('hidden', hide);
     });
     // файловый тулбар по правам
@@ -556,7 +558,7 @@
     const panel = $('#server-list');
     Array.from(panel.querySelectorAll('.srv-card')).forEach((el) => el.remove());
     $('#list-empty').classList.toggle('hidden', state.servers.length > 0);
-    panel.classList.toggle('column', state.servers.length > 4);
+    panel.classList.toggle('cols3', state.servers.length > 3);
     renderHomeStats();
 
     for (const server of state.servers) {
@@ -1776,7 +1778,7 @@
     });
   }
 
-  // ---------- плагины (Modrinth) ----------
+  // ---------- плагины и моды (Modrinth) ----------
 
   function fmtCount(n) {
     n = Number(n) || 0;
@@ -1784,77 +1786,111 @@
     if (n >= 1e3) return (n / 1e3).toFixed(1).replace('.0', '') + 'k';
     return String(n);
   }
+  function cap(s) { return String(s).charAt(0).toUpperCase() + String(s).slice(1); }
 
-  function loadPlugins() {
+  const CONTENT = {
+    plugins: {
+      word: 'плагин', wordGen: 'плагинов', folder: 'plugins',
+      els: { q: '#pl-query', cat: '#pl-category', sort: '#pl-sort', results: '#pl-results',
+        pager: '#pl-pager', prev: '#pl-prev', next: '#pl-next', count: '#pl-count',
+        installed: '#pl-installed', info: '#pl-info' },
+      api: {
+        search: (id, opts) => API.pluginsSearch(id, opts),
+        install: (id, pid) => API.pluginInstall(id, pid),
+        list: (id) => API.pluginsList(id),
+        del: (id, f) => API.pluginDelete(id, f),
+      },
+    },
+    mods: {
+      word: 'мод', wordGen: 'модов', folder: 'mods',
+      els: { q: '#md-query', cat: '#md-category', sort: '#md-sort', results: '#md-results',
+        pager: '#md-pager', prev: '#md-prev', next: '#md-next', count: '#md-count',
+        installed: '#md-installed', info: '#md-info' },
+      api: {
+        search: (id, opts) => API.modsSearch(id, opts),
+        install: (id, pid) => API.modInstall(id, pid),
+        list: (id) => API.modsList(id),
+        del: (id, f) => API.modDelete(id, f),
+      },
+    },
+  };
+  const contentNav = { plugins: { offset: 0, limit: 20, total: 0, seq: 0 }, mods: { offset: 0, limit: 20, total: 0, seq: 0 } };
+
+  function loadContent(kind) {
+    const cfg = CONTENT[kind];
     const srv = state.current || {};
-    const info = $('#pl-info');
+    const info = $(cfg.els.info);
     if (info) {
-      info.textContent = 'Листайте каталог или ищите плагины под ' + (CORE_NAMES[srv.type] || srv.type) +
-        ' ' + (srv.version || '–') + ' — файл скачивается с Modrinth прямо в папку plugins/. Применяется после перезапуска.';
+      info.textContent = 'Листайте каталог или ищите ' + cfg.wordGen + ' под ' + (CORE_NAMES[srv.type] || srv.type) +
+        ' ' + (srv.version || '–') + ' — файл скачивается с Modrinth прямо в папку ' + cfg.folder + '/. Применяется после перезапуска.';
     }
-    state.plOffset = 0;
-    doPluginSearch(true);
-    loadInstalledPlugins();
+    contentNav[kind].offset = 0;
+    doContentSearch(kind, true);
+    loadInstalledContent(kind);
   }
 
-  let plSearchSeq = 0;
-  async function doPluginSearch(reset) {
+  async function doContentSearch(kind, reset) {
     if (!state.currentId) return;
-    if (reset) state.plOffset = 0;
-    const box = $('#pl-results');
-    box.innerHTML = '<div class="pl-empty">Загрузка плагинов с Modrinth…</div>';
-    $('#pl-pager').classList.add('hidden');
-    const seq = ++plSearchSeq;
+    const cfg = CONTENT[kind];
+    const nav = contentNav[kind];
+    if (reset) nav.offset = 0;
+    const box = $(cfg.els.results);
+    box.innerHTML = '<div class="pl-empty">Загрузка ' + cfg.wordGen + ' с Modrinth…</div>';
+    $(cfg.els.pager).classList.add('hidden');
+    const seq = ++nav.seq;
     try {
-      const data = await API.pluginsSearch(state.currentId, {
-        q: $('#pl-query').value.trim(),
-        category: $('#pl-category').value,
-        sort: $('#pl-sort').value,
-        offset: state.plOffset || 0,
+      const data = await cfg.api.search(state.currentId, {
+        q: $(cfg.els.q).value.trim(),
+        category: $(cfg.els.cat).value,
+        sort: $(cfg.els.sort).value,
+        offset: nav.offset || 0,
       });
-      if (seq !== plSearchSeq) return;
-      renderPluginResults(data.hits || []);
-      updatePluginPager(data);
+      if (seq !== nav.seq) return;
+      renderContentResults(kind, data.hits || []);
+      updateContentPager(kind, data);
     } catch (e) {
-      if (seq !== plSearchSeq) return;
+      if (seq !== nav.seq) return;
       box.innerHTML = '';
       const er = document.createElement('div');
       er.className = 'pl-empty';
       er.textContent = e.message;
       box.appendChild(er);
-      $('#pl-pager').classList.add('hidden');
+      $(cfg.els.pager).classList.add('hidden');
     }
   }
 
-  function updatePluginPager(data) {
-    const pager = $('#pl-pager');
+  function updateContentPager(kind, data) {
+    const cfg = CONTENT[kind];
+    const nav = contentNav[kind];
+    const pager = $(cfg.els.pager);
     const total = data.total || 0;
     const offset = data.offset || 0;
     const limit = data.limit || 20;
     const shown = data.hits ? data.hits.length : 0;
-    state.plOffset = offset;
-    state.plLimit = limit;
-    state.plTotal = total;
+    nav.offset = offset; nav.limit = limit; nav.total = total;
     if (!shown || total <= limit) { pager.classList.add('hidden'); return; }
     pager.classList.remove('hidden');
-    $('#pl-count').textContent = (offset + 1) + '–' + (offset + shown) + ' из ' + total;
-    $('#pl-prev').disabled = offset <= 0;
-    $('#pl-next').disabled = offset + limit >= total;
+    $(cfg.els.count).textContent = (offset + 1) + '–' + (offset + shown) + ' из ' + total;
+    $(cfg.els.prev).disabled = offset <= 0;
+    $(cfg.els.next).disabled = offset + limit >= total;
   }
 
-  function pluginPage(dir) {
-    const limit = state.plLimit || 20;
-    let next = (state.plOffset || 0) + dir * limit;
+  function contentPage(kind, dir) {
+    const cfg = CONTENT[kind];
+    const nav = contentNav[kind];
+    const limit = nav.limit || 20;
+    let next = (nav.offset || 0) + dir * limit;
     if (next < 0) next = 0;
-    if (state.plTotal != null && next >= state.plTotal) return;
-    state.plOffset = next;
-    doPluginSearch(false);
-    const res = $('#pl-results');
+    if (nav.total != null && next >= nav.total) return;
+    nav.offset = next;
+    doContentSearch(kind, false);
+    const res = $(cfg.els.results);
     if (res && res.scrollIntoView) res.scrollIntoView({ block: 'nearest' });
   }
 
-  function renderPluginResults(hits) {
-    const box = $('#pl-results');
+  function renderContentResults(kind, hits) {
+    const cfg = CONTENT[kind];
+    const box = $(cfg.els.results);
     box.innerHTML = '';
     if (!hits.length) {
       const e = document.createElement('div');
@@ -1904,7 +1940,7 @@
         btn.className = 'mc-btn sm primary pl-install';
         btn.appendChild(picon('download'));
         btn.appendChild(document.createTextNode(' Установить'));
-        btn.addEventListener('click', () => installPlugin(h, btn));
+        btn.addEventListener('click', () => installContent(kind, h, btn));
         card.appendChild(btn);
       }
 
@@ -1912,13 +1948,14 @@
     }
   }
 
-  async function installPlugin(hit, btn) {
+  async function installContent(kind, hit, btn) {
+    const cfg = CONTENT[kind];
     btn.disabled = true;
     btn.textContent = 'Скачиваю…';
     try {
-      const r = await API.pluginInstall(state.currentId, hit.projectId);
-      showToast('Плагин «' + hit.title + '» установлен (' + r.version + '). Перезапустите сервер.', 'ok');
-      loadInstalledPlugins();
+      const r = await cfg.api.install(state.currentId, hit.projectId);
+      showToast(cap(cfg.word) + ' «' + hit.title + '» установлен (' + r.version + '). Перезапустите сервер.', 'ok');
+      loadInstalledContent(kind);
     } catch (e) {
       showToast(e.message);
     } finally {
@@ -1929,12 +1966,13 @@
     }
   }
 
-  async function loadInstalledPlugins() {
+  async function loadInstalledContent(kind) {
     if (!state.currentId) return;
-    const box = $('#pl-installed');
+    const cfg = CONTENT[kind];
+    const box = $(cfg.els.installed);
     try {
-      const data = await API.pluginsList(state.currentId);
-      renderInstalledPlugins(data.installed || []);
+      const data = await cfg.api.list(state.currentId);
+      renderInstalledContent(kind, data.installed || []);
     } catch (e) {
       box.innerHTML = '';
       const er = document.createElement('div');
@@ -1944,13 +1982,14 @@
     }
   }
 
-  function renderInstalledPlugins(list) {
-    const box = $('#pl-installed');
+  function renderInstalledContent(kind, list) {
+    const cfg = CONTENT[kind];
+    const box = $(cfg.els.installed);
     box.innerHTML = '';
     if (!list.length) {
       const e = document.createElement('div');
       e.className = 'files-empty';
-      e.textContent = 'Плагинов пока нет — найдите и установите их выше.';
+      e.textContent = cap(cfg.wordGen) + ' пока нет — найдите и установите их выше.';
       box.appendChild(e);
       return;
     }
@@ -1973,22 +2012,23 @@
       if (canDelete) {
         const del = document.createElement('button');
         del.className = 'mc-btn sm danger';
-        del.title = 'Удалить плагин';
+        del.title = 'Удалить ' + cfg.word;
         del.appendChild(picon('trash'));
-        del.addEventListener('click', () => deletePlugin(p.name));
+        del.addEventListener('click', () => deleteContent(kind, p.name));
         row.appendChild(del);
       }
       box.appendChild(row);
     }
   }
 
-  async function deletePlugin(name) {
-    if (!(await confirmDialog('Удалить плагин «' + name + '»?\nФайл будет стёрт из папки plugins.',
-      { title: 'Удаление плагина', yesText: 'Удалить' }))) return;
+  async function deleteContent(kind, name) {
+    const cfg = CONTENT[kind];
+    if (!(await confirmDialog('Удалить ' + cfg.word + ' «' + name + '»?\nФайл будет стёрт из папки ' + cfg.folder + '.',
+      { title: 'Удаление', yesText: 'Удалить' }))) return;
     await guard(async () => {
-      await API.pluginDelete(state.currentId, name);
-      showToast('Плагин удалён. Перезапустите сервер.', 'ok');
-      loadInstalledPlugins();
+      await cfg.api.del(state.currentId, name);
+      showToast(cap(cfg.word) + ' удалён. Перезапустите сервер.', 'ok');
+      loadInstalledContent(kind);
     });
   }
 
@@ -2037,6 +2077,33 @@
       value: parseInt(data.cpuPercent, 10) || 100,
       format: fmtCpu, labelEl: cpuVal,
     });
+
+    // выбор версии Java (старые ядра/Forge 1.12.2 требуют Java 8)
+    const javaWrap = document.createElement('label');
+    javaWrap.className = 'mc-label';
+    javaWrap.appendChild(document.createTextNode('Java для запуска'));
+    const javaSel = document.createElement('select');
+    javaSel.className = 'fld';
+    const autoOpt = document.createElement('option');
+    autoOpt.value = '';
+    autoOpt.textContent = 'Авто — под версию сервера (рекомендуется)';
+    javaSel.appendChild(autoOpt);
+    for (const j of (data.javas || [])) {
+      const o = document.createElement('option');
+      o.value = j.path;
+      o.textContent = 'Java ' + j.major + ' (' + j.version + ')';
+      javaSel.appendChild(o);
+    }
+    if (data.javaPath && !(data.javas || []).some((j) => j.path === data.javaPath)) {
+      const o = document.createElement('option');
+      o.value = data.javaPath;
+      o.textContent = data.javaPath;
+      javaSel.appendChild(o);
+    }
+    javaSel.value = data.javaPath || '';
+    javaWrap.appendChild(javaSel);
+    grid.appendChild(javaWrap);
+    state.javaSelectEl = javaSel;
 
     // известные ключи в порядке словаря, затем остальные по алфавиту
     const knownKeys = Object.keys(PROPERTY_DEFS).filter((k) => k in properties);
@@ -2173,6 +2240,7 @@
     let name = null;
     const memoryMb = state.memSettingsSlider ? state.memSettingsSlider.value : null;
     const cpuPercent = state.cpuSettingsSlider ? state.cpuSettingsSlider.value : 100;
+    const javaPath = state.javaSelectEl ? state.javaSelectEl.value : '';
 
     for (const el of $$('#settings-known [data-prop-key]')) {
       const key = el.dataset.propKey;
@@ -2182,7 +2250,7 @@
     }
 
     await guard(async () => {
-      state.current = await API.saveProperties(state.currentId, { properties, name, memoryMb, cpuPercent });
+      state.current = await API.saveProperties(state.currentId, { properties, name, memoryMb, cpuPercent, javaPath });
       renderServerHead();
       showToast(isRunning
         ? 'Сохранено. Перезапустите сервер, чтобы применить изменения.'
@@ -2482,6 +2550,7 @@
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
     $('#tab-files').classList.toggle('hidden', tab !== 'files');
     $('#tab-plugins').classList.toggle('hidden', tab !== 'plugins');
+    $('#tab-mods').classList.toggle('hidden', tab !== 'mods');
     $('#tab-players').classList.toggle('hidden', tab !== 'players');
     $('#tab-logs').classList.toggle('hidden', tab !== 'logs');
     $('#tab-backups').classList.toggle('hidden', tab !== 'backups');
@@ -2489,7 +2558,8 @@
     if (tab !== 'logs') stopLogLive();
     if (tab === 'settings') loadSettings();
     if (tab === 'console') loadStats();
-    if (tab === 'plugins') loadPlugins();
+    if (tab === 'plugins') loadContent('plugins');
+    if (tab === 'mods') loadContent('mods');
     if (tab === 'players') fetchPlayTimes();
     if (tab === 'backups') loadBackups();
     if (tab === 'logs') {
@@ -3132,16 +3202,19 @@
       window.open('/console.html?server=' + encodeURIComponent(state.currentId), '_blank');
     });
 
-    // плагины (Modrinth) — поиск, фильтры, листание
-    $('#pl-search-btn').addEventListener('click', () => doPluginSearch(true));
-    $('#pl-query').addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') { event.preventDefault(); doPluginSearch(true); }
+    // плагины и моды (Modrinth) — поиск, фильтры, листание
+    ['plugins', 'mods'].forEach((kind) => {
+      const e = CONTENT[kind].els;
+      $(e.q.replace('-query', '-search-btn')).addEventListener('click', () => doContentSearch(kind, true));
+      $(e.q).addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); doContentSearch(kind, true); }
+      });
+      $(e.cat).addEventListener('change', () => doContentSearch(kind, true));
+      $(e.sort).addEventListener('change', () => doContentSearch(kind, true));
+      $(e.prev).addEventListener('click', () => contentPage(kind, -1));
+      $(e.next).addEventListener('click', () => contentPage(kind, 1));
+      $(e.installed.replace('-installed', '-refresh')).addEventListener('click', () => loadInstalledContent(kind));
     });
-    $('#pl-category').addEventListener('change', () => doPluginSearch(true));
-    $('#pl-sort').addEventListener('change', () => doPluginSearch(true));
-    $('#pl-prev').addEventListener('click', () => pluginPage(-1));
-    $('#pl-next').addEventListener('click', () => pluginPage(1));
-    $('#pl-refresh').addEventListener('click', loadInstalledPlugins);
 
     // бэкапы
     $('#bk-create-btn').addEventListener('click', createBackup);

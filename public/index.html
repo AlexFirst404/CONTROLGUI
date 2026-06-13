@@ -293,10 +293,11 @@
     </div>
 
     <nav class="mc-card tabbar">
-      <button class="mc-tab sel" data-tab="console"><i class="pi" data-ic="script-text"></i> Консоль</button>
+      <button class="mc-tab sel" data-tab="console"><i class="pi" data-ic="terminal-sharp"></i> Консоль</button>
       <button class="mc-tab" data-tab="settings"><i class="pi" data-ic="sliders-2"></i> Настройки</button>
       <button class="mc-tab" data-tab="files"><i class="pi" data-ic="folder"></i> Файлы</button>
       <button class="mc-tab" data-tab="plugins"><i class="pi" data-ic="box"></i> Плагины</button>
+      <button class="mc-tab" data-tab="mods"><i class="pi" data-ic="box"></i> Моды</button>
       <button class="mc-tab" data-tab="players"><i class="pi" data-ic="users"></i> Игроки</button>
       <button class="mc-tab" data-tab="logs"><i class="pi" data-ic="script-text"></i> Логи</button>
       <button class="mc-tab" data-tab="backups"><i class="pi" data-ic="save"></i> Бэкапы</button>
@@ -309,7 +310,7 @@
       <div class="stats-row" id="stats-row">
         <div class="mc-card stat-card">
           <div class="stat-top">
-            <i class="pi stat-ic" data-ic="zap"></i>
+            <i class="pi stat-ic" data-ic="cpu"></i>
             <span class="stat-name">Процессор</span>
             <span class="stat-val" id="stat-cpu">—</span>
           </div>
@@ -317,7 +318,7 @@
         </div>
         <div class="mc-card stat-card">
           <div class="stat-top">
-            <i class="pi stat-ic" data-ic="chart-bar"></i>
+            <i class="pi stat-ic" data-ic="memory-stick-sharp"></i>
             <span class="stat-name">Память</span>
             <span class="stat-val" id="stat-ram">—</span>
           </div>
@@ -514,6 +515,64 @@
           <button class="mc-btn sm" id="pl-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
         </div>
         <div class="mc-card inset pl-installed" id="pl-installed"></div>
+      </div>
+    </div>
+
+    <!-- Вкладка: моды -->
+    <div class="tab-pane hidden" id="tab-mods">
+      <div class="mc-card form-panel">
+        <div class="section-title">Моды с Modrinth</div>
+        <div class="hint" id="md-info" style="margin:0 0 10px">Поиск и установка модов под версию и ядро сервера — файл скачивается с Modrinth прямо в папку <code>mods/</code>. Применяется после перезапуска сервера.</div>
+        <div class="pl-search">
+          <input class="fld" id="md-query" placeholder="Поиск по названию (необязательно): JEI, Create, JourneyMap…" autocomplete="off">
+          <button class="mc-btn sm primary" id="md-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
+        </div>
+        <div class="pl-filters">
+          <label class="pl-fl">Категория
+            <select class="fld" id="md-category">
+              <option value="">Все категории</option>
+              <option value="technology">Технологии</option>
+              <option value="magic">Магия</option>
+              <option value="adventure">Приключения</option>
+              <option value="utility">Утилиты</option>
+              <option value="optimization">Оптимизация</option>
+              <option value="storage">Хранилище</option>
+              <option value="food">Еда</option>
+              <option value="equipment">Снаряжение</option>
+              <option value="decoration">Декорации</option>
+              <option value="mobs">Мобы</option>
+              <option value="world-generation">Генерация мира</option>
+              <option value="game-mechanics">Игровые механики</option>
+              <option value="management">Управление</option>
+              <option value="library">Библиотеки</option>
+            </select>
+          </label>
+          <label class="pl-fl">Сортировка
+            <select class="fld" id="md-sort">
+              <option value="relevance">По релевантности</option>
+              <option value="downloads">По загрузкам</option>
+              <option value="follows">По подписчикам</option>
+              <option value="newest">Сначала новые</option>
+              <option value="updated">Недавно обновлённые</option>
+            </select>
+          </label>
+        </div>
+        <div class="pl-results" id="md-results">
+          <div class="pl-empty">Загрузка модов…</div>
+        </div>
+        <div class="pl-pager hidden" id="md-pager">
+          <button class="mc-btn sm" id="md-prev"><i class="pi" data-ic="chevron-left"></i> Назад</button>
+          <span class="pl-count" id="md-count"></span>
+          <button class="mc-btn sm" id="md-next">Вперёд <i class="pi" data-ic="chevron-right"></i></button>
+        </div>
+      </div>
+
+      <div class="mc-card form-panel">
+        <div class="bk-head">
+          <div class="section-title" style="margin:0">Установленные моды</div>
+          <button class="mc-btn sm" id="md-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
+        </div>
+        <div class="mc-card inset pl-installed" id="md-installed"></div>
       </div>
     </div>
 

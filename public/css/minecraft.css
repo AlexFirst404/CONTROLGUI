@@ -653,11 +653,15 @@ input[type=password]::-ms-clear { display: none; }
 .stat-chip b { color: #fff; font-weight: normal; }
 .stat-chip .pi { width: 12px; height: 12px; color: var(--accent-bright); }
 
-/* карточки серверов: всегда по центру; больше четырёх — в столбик */
+/* карточки серверов: до 3 — по центру в ряд; больше 3 — раскладка в 3 столбца */
 .srv-grid { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; min-height: 180px; }
 .srv-grid .list-empty { width: 100%; }
-.srv-grid.column { flex-direction: column; align-items: center; flex-wrap: nowrap; }
-.srv-grid.column .srv-card { width: min(620px, 100%); }
+/* больше 3 серверов — раскладка ровно в 3 столбца (с адаптивом для узких экранов) */
+.srv-grid.cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.srv-grid.cols3 .srv-card { width: auto; }
+.srv-grid.cols3 .list-empty { grid-column: 1 / -1; }
+@media (max-width: 1080px) { .srv-grid.cols3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .srv-grid.cols3 { grid-template-columns: minmax(0, 1fr); } }
 .srv-card { background: var(--card); border: 1px solid var(--bd); padding: 16px;
   width: 380px; max-width: 100%;
   cursor: pointer; transition: background .1s, border-color .1s; }
