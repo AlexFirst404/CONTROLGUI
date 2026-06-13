@@ -1,42 +1,51 @@
 # CONTROLGUI для Linux (.deb)
 
 Та же панель, что и на Windows (Node.js без зависимостей), упакованная в `.deb`.
-WPF-обёртки на Linux нет — вместо неё панель открывается **отдельным окном-приложением**
-через Chromium в app-режиме (или в браузере по умолчанию).
+Два варианта пакета:
 
-## Сборка пакета
+- **`controlgui`** — открывает панель в браузере (Chromium в app-режиме или браузер по умолчанию);
+- **`controlgui-app`** — открывает панель **нативным окном** через WebKitGTK
+  (аналог десктоп-обёртки WebView2 на Windows), без браузера. Это отдельная запись
+  среди приложений. Пакет включает и `controlgui` (браузерный режим тоже доступен).
 
-Любой ОС, нужен только Node.js (как и сама панель):
+Ставится один из них (они взаимозаменяемы: `controlgui-app` заменяет `controlgui`).
+
+## Сборка пакетов
+
+Любая ОС, нужен только Node.js (как и сама панель):
 
 ```sh
-node linux/build-deb.js            # -> linux/controlgui_1.3.0_all.deb
-node linux/build-deb.js 1.3.1      # своя версия
+node linux/build-deb.js                 # оба: controlgui_*.deb и controlgui-app_*.deb
+node linux/build-deb.js 1.3.0 app       # только нативное приложение
+node linux/build-deb.js 1.3.0 browser   # только браузерный
 ```
 
-На Linux можно классически (нужен dpkg-deb):
-
-```sh
-sh linux/build-deb.sh
-```
+На Linux можно классически (нужен dpkg-deb): `sh linux/build-deb.sh`
 
 ## Установка
 
+Нативное приложение (рекомендуется):
+```sh
+sudo apt install ./controlgui-app_1.3.0_all.deb
+```
+Или браузерный вариант:
 ```sh
 sudo apt install ./controlgui_1.3.0_all.deb
 ```
 
 Зависимости ставятся автоматически:
 - **nodejs** (>= 16) — сама панель;
-- **libarchive-tools** (bsdtar) — чтение метаданных .jar (версия ядра, конфиги
-  плагинов/модов); на Linux обычный `tar` не умеет zip;
+- для `controlgui-app`: **python3-gi**, **gir1.2-gtk-3.0**, **gir1.2-webkit2-4.1** (или 4.0) — нативное окно;
+- **libarchive-tools** (bsdtar) — чтение метаданных .jar; на Linux обычный `tar` не умеет zip;
 - **iproute2** (`ss`) — поиск процессов серверов по портам;
 - **default-jre-headless** (Java) — для запуска Minecraft-серверов;
-- **chromium** (рекомендуется) — окно-приложение.
+- для `controlgui` — **chromium** (окно-приложение).
 
 ## Запуск
 
-- Меню приложений → **CONTROLGUI**, или команда `controlgui`.
-- Панель поднимается на `http://localhost:8400` и открывается окном.
+- Меню приложений → **CONTROLGUI**.
+- Или команды: `controlgui-app` (нативное окно), `controlgui` (браузер).
+- Панель поднимается на `http://localhost:8400`.
 
 ## Где данные
 

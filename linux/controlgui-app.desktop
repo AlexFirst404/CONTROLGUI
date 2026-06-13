@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=CONTROLGUI
+GenericName=Minecraft Server Panel
+Comment=Локальная панель управления Minecraft-серверами (нативное окно)
+Exec=controlgui-app
+Icon=controlgui
+Terminal=false
+Categories=Game;Utility;
+Keywords=minecraft;server;panel;mc;
+StartupWMClass=CONTROLGUI
+StartupNotify=true

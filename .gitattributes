@@ -1,6 +1,8 @@
 # Linux-скрипты и пакетные файлы — всегда LF (CRLF ломает шебанг и dpkg)
-linux/controlgui        text eol=lf
-linux/build-deb.sh      text eol=lf
-linux/DEBIAN/postinst   text eol=lf
-linux/DEBIAN/control    text eol=lf
-*.sh                    text eol=lf
+linux/controlgui          text eol=lf
+linux/controlgui-app      text eol=lf
+linux/build-deb.sh        text eol=lf
+linux/DEBIAN/postinst     text eol=lf
+linux/DEBIAN/control      text eol=lf
+linux/DEBIAN/control-app  text eol=lf
+*.sh                      text eol=lf
