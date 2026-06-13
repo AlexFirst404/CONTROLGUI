@@ -1,0 +1,21 @@
+Package: controlgui
+Version: __VERSION__
+Section: games
+Priority: optional
+Architecture: all
+Depends: nodejs (>= 16)
+Recommends: libarchive-tools, iproute2, default-jre-headless | java17-runtime-headless | java21-runtime-headless
+Suggests: chromium | google-chrome-stable | firefox
+Installed-Size: __SIZE__
+Maintainer: AlexFirst404 <alextorx2020@gmail.com>
+Homepage: https://github.com/AlexFirst404/CONTROLGUI
+Description: CONTROLGUI - local Minecraft server control panel
+ Web panel (Node.js, no npm dependencies) to manage real Minecraft servers:
+ Vanilla, Paper, Purpur, Folia, Mohist and Forge. Real-time console, resource
+ monitoring, file manager with editor, players with inventory, backups, and
+ plugin/mod install from Modrinth. Picks a matching Java per version.
+ .
+ Launching opens the panel in an app window (Chromium app mode) or the default
+ browser at http://localhost:8400. Server data is stored under the user's home
+ (~/.local/share/controlgui). Needs a Java runtime to run Minecraft servers and
+ libarchive-tools (bsdtar) to read .jar metadata.

@@ -8,3 +8,6 @@
 # временное
 node_modules/
 .claude/
+
+# собранный .deb (воспроизводится: node linux/build-deb.js)
+linux/*.deb

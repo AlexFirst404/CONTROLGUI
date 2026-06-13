@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+# лаунчер должен быть исполняемым
+chmod 0755 /usr/bin/controlgui 2>/dev/null || true
+
+# обновляем кэш ярлыков рабочего стола (не критично)
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database -q /usr/share/applications 2>/dev/null || true
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "CONTROLGUI: Node.js не найден. Установите его: sudo apt install nodejs" >&2
+fi
+
+echo "CONTROLGUI установлен. Запуск: меню приложений -> CONTROLGUI, или команда: controlgui"
+echo "Панель будет доступна на http://localhost:8400"
+exit 0

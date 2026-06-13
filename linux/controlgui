@@ -1,0 +1,42 @@
+#!/bin/sh
+# CONTROLGUI — запуск локальной панели и открытие её отдельным окном-приложением
+# (аналог десктоп-обёртки на Windows). Данные хранятся в домашнем каталоге.
+set -eu
+
+APP_DIR=/opt/controlgui
+PORT="${CONTROLGUI_PORT:-8400}"
+URL="http://127.0.0.1:${PORT}"
+# данные (серверы/настройки/бэкапы) — в каталоге пользователя, не в /opt
+export CONTROLGUI_DATA="${CONTROLGUI_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/controlgui}"
+mkdir -p "$CONTROLGUI_DATA"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "CONTROLGUI: требуется Node.js. Установите: sudo apt install nodejs" >&2
+  exit 1
+fi
+
+ping_panel() {
+  node -e "require('http').get('${URL}/login',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" 2>/dev/null
+}
+
+# поднимаем сервер, если он ещё не отвечает на этом порту
+if ! ping_panel; then
+  ( cd "$APP_DIR" && PORT="$PORT" node server.js >"$CONTROLGUI_DATA/panel.log" 2>&1 & )
+  i=0
+  while [ "$i" -lt 60 ]; do
+    if ping_panel; then break; fi
+    sleep 0.25
+    i=$((i + 1))
+  done
+fi
+
+# открываем окном-приложением (как десктоп-обёртка), иначе — обычной вкладкой/браузером
+for B in chromium chromium-browser google-chrome google-chrome-stable brave-browser microsoft-edge vivaldi; do
+  if command -v "$B" >/dev/null 2>&1; then
+    exec "$B" --app="$URL" --class=CONTROLGUI --window-size=1380,900 >/dev/null 2>&1
+  fi
+done
+if command -v xdg-open >/dev/null 2>&1; then
+  exec xdg-open "$URL"
+fi
+echo "CONTROLGUI запущен. Откройте в браузере: $URL"
