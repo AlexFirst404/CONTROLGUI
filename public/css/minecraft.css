@@ -561,6 +561,25 @@ input[type=password]::-ms-clear { display: none; }
 .rp-drop-title { font-size: 14px; color: #d6e0d8; margin-top: 6px; }
 .rp-drop-sub { font-size: 12px; margin-top: 4px; word-break: break-all; }
 
+/* --------------------------------------------- плагины (Modrinth) ----------- */
+.pl-search { display: flex; gap: 8px; margin-bottom: 12px; }
+.pl-search .fld { flex: 1; min-width: 0; }
+.pl-results { display: flex; flex-direction: column; gap: 8px; }
+.pl-empty { color: #a9a9a9; font-size: 13px; padding: 14px 4px; text-align: center; }
+.pl-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  background: var(--card-inset); border: 1px solid var(--bd); }
+.pl-icon { width: 46px; height: 46px; flex: none; object-fit: contain; image-rendering: auto;
+  background: #161616; border: 1px solid #353535; }
+.pl-icon.empty { background: #161616 var(--i, none) center / 24px no-repeat; }
+.pl-mid { flex: 1; min-width: 0; }
+.pl-title { font-size: 14px; color: #e6f0e8; }
+.pl-by { color: #7f8a82; font-size: 12px; }
+.pl-desc { font-size: 12.5px; color: #aab4ac; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pl-meta { font-size: 11.5px; color: #6f7a72; margin-top: 3px; }
+.pl-install { flex: none; }
+.pl-installed { min-height: 56px; }
+
 /* --------------------------------------------- адрес сервера на карточке --- */
 .srv-card-addr { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
 .srv-card-addr code { font-family: Consolas, monospace; font-size: 13px; background: #161616;

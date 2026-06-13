@@ -94,6 +94,11 @@ window.API = (function () {
     iconDelete: (id) => call('DELETE', '/api/servers/' + id + '/icon'),
     iconUrl: (id, mtime) => '/api/servers/' + id + '/icon?t=' + (mtime || 0),
 
+    pluginsList: (id) => call('GET', '/api/servers/' + id + '/plugins'),
+    pluginsSearch: (id, q) => call('GET', '/api/servers/' + id + '/plugins/search?q=' + encodeURIComponent(q || '')),
+    pluginInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId }),
+    pluginDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/plugins?file=' + encodeURIComponent(file)),
+
     resourcePack: (id) => call('GET', '/api/servers/' + id + '/resourcepack'),
     resourcePackDelete: (id) => call('DELETE', '/api/servers/' + id + '/resourcepack'),
     resourcePackUpload: async (id, file, required) => {

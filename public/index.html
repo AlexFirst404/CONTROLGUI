@@ -296,6 +296,7 @@
       <button class="mc-tab sel" data-tab="console"><i class="pi" data-ic="script-text"></i> Консоль</button>
       <button class="mc-tab" data-tab="settings"><i class="pi" data-ic="sliders-2"></i> Настройки</button>
       <button class="mc-tab" data-tab="files"><i class="pi" data-ic="folder"></i> Файлы</button>
+      <button class="mc-tab" data-tab="plugins"><i class="pi" data-ic="box"></i> Плагины</button>
       <button class="mc-tab" data-tab="players"><i class="pi" data-ic="users"></i> Игроки</button>
       <button class="mc-tab" data-tab="logs"><i class="pi" data-ic="script-text"></i> Логи</button>
       <button class="mc-tab" data-tab="backups"><i class="pi" data-ic="save"></i> Бэкапы</button>
@@ -366,25 +367,6 @@
 
     <!-- Вкладка: настройки -->
     <div class="tab-pane hidden" id="tab-settings">
-      <form id="settings-form" class="mc-card form-panel" autocomplete="off">
-        <div class="form-grid" id="settings-known"></div>
-
-        <div id="wl-card" class="opt-card wl-card hidden">
-          <div class="opt-label"><i class="pi" data-ic="users"></i> Белый список — допущенные игроки</div>
-          <div class="wl-chips" id="wl-chips"></div>
-          <div class="wl-add">
-            <input class="fld" id="wl-input" placeholder="Ник игрока" maxlength="16" autocomplete="off">
-            <button type="button" class="mc-btn sm primary" id="wl-add-btn"><i class="pi" data-ic="plus"></i> Добавить</button>
-          </div>
-          <div class="hint" style="margin:8px 0 0">На работающем сервере применяется сразу; на остановленном — правится whitelist.json.</div>
-        </div>
-
-        <div class="hint">Изменения применяются после перезапуска сервера.</div>
-        <div class="btn-row btn-row-left">
-          <button type="submit" class="mc-btn primary"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
-        </div>
-      </form>
-
       <div class="mc-card form-panel" id="icon-card">
         <div class="section-title">Иконка сервера</div>
         <div class="icon-row">
@@ -421,6 +403,25 @@
         </div>
       </div>
 
+      <form id="settings-form" class="mc-card form-panel" autocomplete="off">
+        <div class="form-grid" id="settings-known"></div>
+
+        <div id="wl-card" class="opt-card wl-card hidden">
+          <div class="opt-label"><i class="pi" data-ic="users"></i> Белый список — допущенные игроки</div>
+          <div class="wl-chips" id="wl-chips"></div>
+          <div class="wl-add">
+            <input class="fld" id="wl-input" placeholder="Ник игрока" maxlength="16" autocomplete="off">
+            <button type="button" class="mc-btn sm primary" id="wl-add-btn"><i class="pi" data-ic="plus"></i> Добавить</button>
+          </div>
+          <div class="hint" style="margin:8px 0 0">На работающем сервере применяется сразу; на остановленном — правится whitelist.json.</div>
+        </div>
+
+        <div class="hint">Изменения применяются после перезапуска сервера.</div>
+        <div class="btn-row btn-row-left">
+          <button type="submit" class="mc-btn primary"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
+        </div>
+      </form>
+
       <div class="mc-card form-panel danger-card">
         <div class="danger-title">Опасная зона</div>
         <button class="mc-btn danger" id="btn-delete-server"><i class="pi" data-ic="trash"></i> Удалить сервер и все его файлы</button>
@@ -454,6 +455,29 @@
         <div class="hint" style="margin:8px 0 10px">Ctrl+F — поиск, Ctrl+G — следующее совпадение, Ctrl+S — сохранить, Ctrl+Space — подсказки (работают и при вводе).</div>
         <div id="editor-cm"></div>
         <textarea class="fld hidden" id="editor-text" rows="20" spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <!-- Вкладка: плагины -->
+    <div class="tab-pane hidden" id="tab-plugins">
+      <div class="mc-card form-panel">
+        <div class="section-title">Плагины с Modrinth</div>
+        <div class="hint" id="pl-info" style="margin:0 0 10px">Поиск и установка плагинов под версию и ядро вашего сервера — файл скачивается с Modrinth прямо в папку <code>plugins/</code>. Применяется после перезапуска сервера.</div>
+        <div class="pl-search">
+          <input class="fld" id="pl-query" placeholder="Название плагина: WorldEdit, EssentialsX, LuckPerms…" autocomplete="off">
+          <button class="mc-btn sm primary" id="pl-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
+        </div>
+        <div class="pl-results" id="pl-results">
+          <div class="pl-empty">Введите название плагина и нажмите «Искать».</div>
+        </div>
+      </div>
+
+      <div class="mc-card form-panel">
+        <div class="bk-head">
+          <div class="section-title" style="margin:0">Установленные плагины</div>
+          <button class="mc-btn sm" id="pl-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
+        </div>
+        <div class="mc-card inset pl-installed" id="pl-installed"></div>
       </div>
     </div>
 

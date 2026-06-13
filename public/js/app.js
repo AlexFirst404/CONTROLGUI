@@ -167,13 +167,18 @@
       console: ['console.view'],
       settings: ['settings.edit'],
       files: ['files.read'],
+      plugins: ['files.read'],
       players: ['players.kick', 'players.ban', 'players.whitelist', 'players.delete'],
       logs: ['logs.view'],
       backups: ['backups.create', 'backups.restore', 'backups.delete'],
     };
     $$('.mc-tab').forEach((btn) => {
-      const p = tabPerm[btn.dataset.tab];
-      btn.classList.toggle('hidden', p ? !canAny(p) : false);
+      const tab = btn.dataset.tab;
+      const p = tabPerm[tab];
+      let hide = p ? !canAny(p) : false;
+      // вкладка «Плагины» — только для ядер с поддержкой плагинов
+      if (tab === 'plugins' && !(state.current && state.current.plugins)) hide = true;
+      btn.classList.toggle('hidden', hide);
     });
     // файловый тулбар по правам
     const fb = (sel, ok) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !ok); };
@@ -412,6 +417,16 @@
 
   // ---------- экраны ----------
 
+  /* Добавляем запись в историю браузера, чтобы кнопка «назад» переключала
+     экраны/вкладки ВНУТРИ панели, а не выкидывала из аккаунта. */
+  function pushHash(hash) {
+    if (state.navLock) return;
+    const target = hash || location.pathname;
+    const cur = (location.hash || '') ? location.hash : location.pathname;
+    if (cur === target) return;
+    history.pushState(null, '', target);
+  }
+
   function showScreen(name) {
     state.screen = name;
     $('#screen-list').classList.toggle('hidden', name !== 'list');
@@ -427,9 +442,38 @@
       state.sse.close();
       state.sse = null;
     }
-    // адрес отражает экран — после F5 возвращаемся туда же
-    if (name === 'list') history.replaceState(null, '', location.pathname);
-    else if (name === 'create') history.replaceState(null, '', '#create');
+    // адрес отражает экран — каждый экран отдельная запись истории
+    // (вкладки сервера пушит switchTab)
+    if (name === 'list') pushHash('');
+    else if (name === 'create') pushHash('#create');
+    else if (name === 'users') pushHash('#users');
+  }
+
+  /* Применяем состояние из адреса при нажатии «назад/вперёд» — без выхода из SPA. */
+  function routeFromHash() {
+    state.navLock = true;
+    try {
+      const hash = location.hash || '';
+      if (hash === '#create') {
+        if (state.screen !== 'create') { showScreen('create'); suggestPort(); loadVersions(); }
+      } else if (hash === '#users') {
+        if (state.screen !== 'users') openUsers();
+      } else if (hash.indexOf('#server=') === 0) {
+        const rest = hash.slice(8);
+        const id = rest.split('/tab/')[0].split('/player/')[0];
+        const tab = (rest.split('/tab/')[1] || '').split('/')[0] || null;
+        if ((state.servers || []).some((s) => s.id === id)) {
+          if (state.screen !== 'server' || state.currentId !== id) openServer(id);
+          if (tab && tab !== state.currentTab) switchTab(tab);
+        } else {
+          showScreen('list'); guard(loadServers);
+        }
+      } else if (state.screen !== 'list') {
+        showScreen('list'); guard(loadServers);
+      }
+    } finally {
+      state.navLock = false;
+    }
   }
 
   function initCycleButtons(root) {
@@ -1732,6 +1776,185 @@
     });
   }
 
+  // ---------- плагины (Modrinth) ----------
+
+  function fmtCount(n) {
+    n = Number(n) || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace('.0', '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace('.0', '') + 'k';
+    return String(n);
+  }
+
+  function loadPlugins() {
+    const srv = state.current || {};
+    const info = $('#pl-info');
+    if (info) {
+      info.textContent = 'Поиск и установка плагинов под ' + (CORE_NAMES[srv.type] || srv.type) +
+        ' ' + (srv.version || '–') + ' — файл скачивается с Modrinth прямо в папку plugins/. Применяется после перезапуска.';
+    }
+    loadInstalledPlugins();
+  }
+
+  let plSearchSeq = 0;
+  async function searchPlugins() {
+    const q = $('#pl-query').value.trim();
+    const box = $('#pl-results');
+    if (!q) { box.innerHTML = '<div class="pl-empty">Введите название плагина и нажмите «Искать».</div>'; return; }
+    box.innerHTML = '<div class="pl-empty">Ищу на Modrinth…</div>';
+    const seq = ++plSearchSeq;
+    try {
+      const data = await API.pluginsSearch(state.currentId, q);
+      if (seq !== plSearchSeq) return;
+      renderPluginResults(data.hits || []);
+    } catch (e) {
+      if (seq !== plSearchSeq) return;
+      box.innerHTML = '';
+      const er = document.createElement('div');
+      er.className = 'pl-empty';
+      er.textContent = e.message;
+      box.appendChild(er);
+    }
+  }
+
+  function renderPluginResults(hits) {
+    const box = $('#pl-results');
+    box.innerHTML = '';
+    if (!hits.length) {
+      const e = document.createElement('div');
+      e.className = 'pl-empty';
+      e.textContent = 'Ничего не найдено под версию вашего сервера.';
+      box.appendChild(e);
+      return;
+    }
+    const canInstall = can('files.upload');
+    for (const h of hits) {
+      const card = document.createElement('div');
+      card.className = 'pl-card';
+
+      const icon = document.createElement('img');
+      icon.className = 'pl-icon';
+      icon.alt = '';
+      icon.loading = 'lazy';
+      if (h.iconUrl) icon.src = h.iconUrl; else icon.classList.add('empty');
+      icon.onerror = () => { icon.onerror = null; icon.classList.add('empty'); icon.removeAttribute('src'); };
+      card.appendChild(icon);
+
+      const mid = document.createElement('div');
+      mid.className = 'pl-mid';
+      const title = document.createElement('div');
+      title.className = 'pl-title';
+      title.textContent = h.title;
+      if (h.author) {
+        const by = document.createElement('span');
+        by.className = 'pl-by';
+        by.textContent = ' · ' + h.author;
+        title.appendChild(by);
+      }
+      const desc = document.createElement('div');
+      desc.className = 'pl-desc';
+      desc.textContent = h.description || '';
+      const meta = document.createElement('div');
+      meta.className = 'pl-meta';
+      meta.textContent = fmtCount(h.downloads) + ' загрузок' +
+        (h.categories && h.categories.length ? ' · ' + h.categories.join(', ') : '');
+      mid.appendChild(title);
+      mid.appendChild(desc);
+      mid.appendChild(meta);
+      card.appendChild(mid);
+
+      if (canInstall) {
+        const btn = document.createElement('button');
+        btn.className = 'mc-btn sm primary pl-install';
+        btn.appendChild(picon('download'));
+        btn.appendChild(document.createTextNode(' Установить'));
+        btn.addEventListener('click', () => installPlugin(h, btn));
+        card.appendChild(btn);
+      }
+
+      box.appendChild(card);
+    }
+  }
+
+  async function installPlugin(hit, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Скачиваю…';
+    try {
+      const r = await API.pluginInstall(state.currentId, hit.projectId);
+      showToast('Плагин «' + hit.title + '» установлен (' + r.version + '). Перезапустите сервер.', 'ok');
+      loadInstalledPlugins();
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '';
+      btn.appendChild(picon('download'));
+      btn.appendChild(document.createTextNode(' Установить'));
+    }
+  }
+
+  async function loadInstalledPlugins() {
+    if (!state.currentId) return;
+    const box = $('#pl-installed');
+    try {
+      const data = await API.pluginsList(state.currentId);
+      renderInstalledPlugins(data.installed || []);
+    } catch (e) {
+      box.innerHTML = '';
+      const er = document.createElement('div');
+      er.className = 'files-empty';
+      er.textContent = e.message;
+      box.appendChild(er);
+    }
+  }
+
+  function renderInstalledPlugins(list) {
+    const box = $('#pl-installed');
+    box.innerHTML = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'files-empty';
+      e.textContent = 'Плагинов пока нет — найдите и установите их выше.';
+      box.appendChild(e);
+      return;
+    }
+    const canDelete = can('files.delete');
+    for (const p of list) {
+      const row = document.createElement('div');
+      row.className = 'mc-row file-row';
+      const ic = document.createElement('span');
+      ic.className = 'file-ic';
+      ic.appendChild(picon('box', 'var(--accent-bright)'));
+      const name = document.createElement('span');
+      name.className = 'file-name';
+      name.textContent = p.name;
+      const meta = document.createElement('span');
+      meta.className = 'file-meta';
+      meta.textContent = fmtBytes(p.size) + ' · ' + new Date(p.mtime).toLocaleString('ru-RU');
+      row.appendChild(ic);
+      row.appendChild(name);
+      row.appendChild(meta);
+      if (canDelete) {
+        const del = document.createElement('button');
+        del.className = 'mc-btn sm danger';
+        del.title = 'Удалить плагин';
+        del.appendChild(picon('trash'));
+        del.addEventListener('click', () => deletePlugin(p.name));
+        row.appendChild(del);
+      }
+      box.appendChild(row);
+    }
+  }
+
+  async function deletePlugin(name) {
+    if (!(await confirmDialog('Удалить плагин «' + name + '»?\nФайл будет стёрт из папки plugins.',
+      { title: 'Удаление плагина', yesText: 'Удалить' }))) return;
+    await guard(async () => {
+      await API.pluginDelete(state.currentId, name);
+      showToast('Плагин удалён. Перезапустите сервер.', 'ok');
+      loadInstalledPlugins();
+    });
+  }
+
   function renderSettings(data) {
     const grid = $('#settings-known');
     grid.innerHTML = '';
@@ -1943,6 +2166,14 @@
     await guard(async () => {
       const data = await API.files(state.currentId, state.filesPath);
       renderFiles(data.entries || []);
+      // небольшая плавная анимация появления при переходах по папкам
+      const list = $('#files-list');
+      if (list && list.animate) {
+        list.animate(
+          [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }],
+          { duration: 190, easing: 'cubic-bezier(.2,.7,.3,1)' }
+        );
+      }
     });
   }
 
@@ -2213,7 +2444,7 @@
   function switchTab(tab) {
     state.currentTab = tab;
     if (state.currentId) {
-      history.replaceState(null, '', '#server=' + state.currentId + '/tab/' + tab);
+      pushHash('#server=' + state.currentId + '/tab/' + tab);
     }
     $$('.mc-tab').forEach((btn) => btn.classList.toggle('sel', btn.dataset.tab === tab));
     moveTabIndicator(state.tabIndReady === true);
@@ -2221,6 +2452,7 @@
     $('#tab-console').classList.toggle('hidden', tab !== 'console');
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
     $('#tab-files').classList.toggle('hidden', tab !== 'files');
+    $('#tab-plugins').classList.toggle('hidden', tab !== 'plugins');
     $('#tab-players').classList.toggle('hidden', tab !== 'players');
     $('#tab-logs').classList.toggle('hidden', tab !== 'logs');
     $('#tab-backups').classList.toggle('hidden', tab !== 'backups');
@@ -2228,6 +2460,7 @@
     if (tab !== 'logs') stopLogLive();
     if (tab === 'settings') loadSettings();
     if (tab === 'console') loadStats();
+    if (tab === 'plugins') loadPlugins();
     if (tab === 'players') fetchPlayTimes();
     if (tab === 'backups') loadBackups();
     if (tab === 'logs') {
@@ -2870,6 +3103,13 @@
       window.open('/console.html?server=' + encodeURIComponent(state.currentId), '_blank');
     });
 
+    // плагины (Modrinth)
+    $('#pl-search-btn').addEventListener('click', searchPlugins);
+    $('#pl-query').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); searchPlugins(); }
+    });
+    $('#pl-refresh').addEventListener('click', loadInstalledPlugins);
+
     // бэкапы
     $('#bk-create-btn').addEventListener('click', createBackup);
 
@@ -2904,6 +3144,9 @@
       showScreen('list');
       guard(loadServers);
     });
+
+    // кнопка «назад» браузера/окна — навигация внутри панели, без выхода из аккаунта
+    window.addEventListener('popstate', routeFromHash);
 
     $$('.mc-tab').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
