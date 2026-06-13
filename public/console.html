@@ -8,9 +8,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/minecraft.css">
 <style>
-  html, body { height: 100%; }
-  body.pop { margin: 0; padding: 0; overflow: hidden; }
-  .pop-wrap { display: flex; flex-direction: column; height: 100vh; padding: 10px; box-sizing: border-box; gap: 8px; }
+  /* в отдельном окне — просто чёрный фон, без сетки и виньетки */
+  html, body { height: 100%; background: #000; }
+  body.pop { margin: 0; padding: 0; overflow: hidden; background: #000; }
+  .pop-wrap { position: relative; z-index: 1; display: flex; flex-direction: column;
+    height: 100vh; padding: 10px; box-sizing: border-box; gap: 8px; background: #000; }
   .pop-head { display: flex; align-items: center; gap: 10px; flex: none; }
   .pop-head .sh-name { font-size: 16px; }
   .pop-head .status-badge { font-size: 11px; }
@@ -18,7 +20,6 @@
 </style>
 </head>
 <body class="theme-lime pop">
-<div class="bg-pattern"></div>
 <div class="pop-wrap">
   <div class="pop-head">
     <img class="sh-icon" id="pop-icon" alt="" hidden>

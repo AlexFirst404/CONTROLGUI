@@ -105,6 +105,7 @@ window.API = (function () {
     },
     pluginInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId }),
     pluginDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/plugins?file=' + encodeURIComponent(file)),
+    pluginToggle: (id, file) => call('POST', '/api/servers/' + id + '/plugins/toggle', { file: file }),
 
     modsList: (id) => call('GET', '/api/servers/' + id + '/mods'),
     modsSearch: (id, opts) => {
@@ -117,6 +118,7 @@ window.API = (function () {
     },
     modInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/mods/install', { projectId: projectId }),
     modDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/mods?file=' + encodeURIComponent(file)),
+    modToggle: (id, file) => call('POST', '/api/servers/' + id + '/mods/toggle', { file: file }),
 
     resourcePack: (id) => call('GET', '/api/servers/' + id + '/resourcepack'),
     resourcePackDelete: (id) => call('DELETE', '/api/servers/' + id + '/resourcepack'),

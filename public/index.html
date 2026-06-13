@@ -461,51 +461,57 @@
 
     <!-- Вкладка: плагины -->
     <div class="tab-pane hidden" id="tab-plugins">
-      <div class="mc-card form-panel">
-        <div class="section-title">Плагины с Modrinth</div>
-        <div class="hint" id="pl-info" style="margin:0 0 10px">Поиск и установка плагинов под версию и ядро вашего сервера — файл скачивается с Modrinth прямо в папку <code>plugins/</code>. Применяется после перезапуска сервера.</div>
-        <div class="pl-search">
-          <input class="fld" id="pl-query" placeholder="Поиск по названию (необязательно): WorldEdit, EssentialsX…" autocomplete="off">
-          <button class="mc-btn sm primary" id="pl-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
+      <div class="mc-card form-panel mod-card">
+        <div class="mod-head" id="pl-collapse">
+          <span class="section-title" style="margin:0">Каталог плагинов · Modrinth</span>
+          <span class="mod-collapse-hint" id="pl-collapse-hint"></span>
+          <i class="pi mod-chevron" data-ic="chevron-down"></i>
         </div>
-        <div class="pl-filters">
-          <label class="pl-fl">Категория
-            <select class="fld" id="pl-category">
-              <option value="">Все категории</option>
-              <option value="utility">Утилиты</option>
-              <option value="management">Управление</option>
-              <option value="admintools">Админ-инструменты</option>
-              <option value="economy">Экономика</option>
-              <option value="chat">Чат</option>
-              <option value="social">Социальное</option>
-              <option value="game-mechanics">Игровые механики</option>
-              <option value="minigame">Мини-игры</option>
-              <option value="mobs">Мобы</option>
-              <option value="world-generation">Генерация мира</option>
-              <option value="optimization">Оптимизация</option>
-              <option value="storage">Хранилище</option>
-              <option value="transportation">Транспорт</option>
-              <option value="equipment">Снаряжение</option>
-              <option value="library">Библиотеки</option>
-            </select>
-          </label>
-          <label class="pl-fl">Сортировка
-            <select class="fld" id="pl-sort">
-              <option value="relevance">По релевантности</option>
-              <option value="downloads">По загрузкам</option>
-              <option value="follows">По подписчикам</option>
-              <option value="newest">Сначала новые</option>
-              <option value="updated">Недавно обновлённые</option>
-            </select>
-          </label>
-        </div>
-        <div class="pl-results" id="pl-results">
-          <div class="pl-empty">Загрузка плагинов…</div>
-        </div>
-        <div class="pl-pager hidden" id="pl-pager">
-          <button class="mc-btn sm" id="pl-prev"><i class="pi" data-ic="chevron-left"></i> Назад</button>
-          <span class="pl-count" id="pl-count"></span>
-          <button class="mc-btn sm" id="pl-next">Вперёд <i class="pi" data-ic="chevron-right"></i></button>
+        <div id="pl-body">
+          <div class="hint" id="pl-info" style="margin:10px 0 10px">Поиск и установка плагинов под версию и ядро вашего сервера — файл скачивается с Modrinth прямо в папку <code>plugins/</code>. Применяется после перезапуска сервера.</div>
+          <div class="pl-search">
+            <input class="fld" id="pl-query" placeholder="Поиск по названию (необязательно): WorldEdit, EssentialsX…" autocomplete="off">
+            <button class="mc-btn sm primary" id="pl-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
+          </div>
+          <div class="pl-filters">
+            <label class="pl-fl">Категория
+              <select class="fld" id="pl-category">
+                <option value="">Все категории</option>
+                <option value="utility">Утилиты</option>
+                <option value="management">Управление</option>
+                <option value="admintools">Админ-инструменты</option>
+                <option value="economy">Экономика</option>
+                <option value="chat">Чат</option>
+                <option value="social">Социальное</option>
+                <option value="game-mechanics">Игровые механики</option>
+                <option value="minigame">Мини-игры</option>
+                <option value="mobs">Мобы</option>
+                <option value="world-generation">Генерация мира</option>
+                <option value="optimization">Оптимизация</option>
+                <option value="storage">Хранилище</option>
+                <option value="transportation">Транспорт</option>
+                <option value="equipment">Снаряжение</option>
+                <option value="library">Библиотеки</option>
+              </select>
+            </label>
+            <label class="pl-fl">Сортировка
+              <select class="fld" id="pl-sort">
+                <option value="relevance">По релевантности</option>
+                <option value="downloads">По загрузкам</option>
+                <option value="follows">По подписчикам</option>
+                <option value="newest">Сначала новые</option>
+                <option value="updated">Недавно обновлённые</option>
+              </select>
+            </label>
+          </div>
+          <div class="pl-results" id="pl-results">
+            <div class="pl-empty">Загрузка плагинов…</div>
+          </div>
+          <div class="pl-pager hidden" id="pl-pager">
+            <button class="mc-btn sm" id="pl-prev"><i class="pi" data-ic="chevron-left"></i> Назад</button>
+            <span class="pl-count" id="pl-count"></span>
+            <button class="mc-btn sm" id="pl-next">Вперёд <i class="pi" data-ic="chevron-right"></i></button>
+          </div>
         </div>
       </div>
 
@@ -520,50 +526,56 @@
 
     <!-- Вкладка: моды -->
     <div class="tab-pane hidden" id="tab-mods">
-      <div class="mc-card form-panel">
-        <div class="section-title">Моды с Modrinth</div>
-        <div class="hint" id="md-info" style="margin:0 0 10px">Поиск и установка модов под версию и ядро сервера — файл скачивается с Modrinth прямо в папку <code>mods/</code>. Применяется после перезапуска сервера.</div>
-        <div class="pl-search">
-          <input class="fld" id="md-query" placeholder="Поиск по названию (необязательно): JEI, Create, JourneyMap…" autocomplete="off">
-          <button class="mc-btn sm primary" id="md-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
+      <div class="mc-card form-panel mod-card">
+        <div class="mod-head" id="md-collapse">
+          <span class="section-title" style="margin:0">Каталог модов · Modrinth</span>
+          <span class="mod-collapse-hint" id="md-collapse-hint"></span>
+          <i class="pi mod-chevron" data-ic="chevron-down"></i>
         </div>
-        <div class="pl-filters">
-          <label class="pl-fl">Категория
-            <select class="fld" id="md-category">
-              <option value="">Все категории</option>
-              <option value="technology">Технологии</option>
-              <option value="magic">Магия</option>
-              <option value="adventure">Приключения</option>
-              <option value="utility">Утилиты</option>
-              <option value="optimization">Оптимизация</option>
-              <option value="storage">Хранилище</option>
-              <option value="food">Еда</option>
-              <option value="equipment">Снаряжение</option>
-              <option value="decoration">Декорации</option>
-              <option value="mobs">Мобы</option>
-              <option value="world-generation">Генерация мира</option>
-              <option value="game-mechanics">Игровые механики</option>
-              <option value="management">Управление</option>
-              <option value="library">Библиотеки</option>
-            </select>
-          </label>
-          <label class="pl-fl">Сортировка
-            <select class="fld" id="md-sort">
-              <option value="relevance">По релевантности</option>
-              <option value="downloads">По загрузкам</option>
-              <option value="follows">По подписчикам</option>
-              <option value="newest">Сначала новые</option>
-              <option value="updated">Недавно обновлённые</option>
-            </select>
-          </label>
-        </div>
-        <div class="pl-results" id="md-results">
-          <div class="pl-empty">Загрузка модов…</div>
-        </div>
-        <div class="pl-pager hidden" id="md-pager">
-          <button class="mc-btn sm" id="md-prev"><i class="pi" data-ic="chevron-left"></i> Назад</button>
-          <span class="pl-count" id="md-count"></span>
-          <button class="mc-btn sm" id="md-next">Вперёд <i class="pi" data-ic="chevron-right"></i></button>
+        <div id="md-body">
+          <div class="hint" id="md-info" style="margin:10px 0 10px">Поиск и установка модов под версию и ядро сервера — файл скачивается с Modrinth прямо в папку <code>mods/</code>. Применяется после перезапуска сервера.</div>
+          <div class="pl-search">
+            <input class="fld" id="md-query" placeholder="Поиск по названию (необязательно): JEI, Create, JourneyMap…" autocomplete="off">
+            <button class="mc-btn sm primary" id="md-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
+          </div>
+          <div class="pl-filters">
+            <label class="pl-fl">Категория
+              <select class="fld" id="md-category">
+                <option value="">Все категории</option>
+                <option value="technology">Технологии</option>
+                <option value="magic">Магия</option>
+                <option value="adventure">Приключения</option>
+                <option value="utility">Утилиты</option>
+                <option value="optimization">Оптимизация</option>
+                <option value="storage">Хранилище</option>
+                <option value="food">Еда</option>
+                <option value="equipment">Снаряжение</option>
+                <option value="decoration">Декорации</option>
+                <option value="mobs">Мобы</option>
+                <option value="world-generation">Генерация мира</option>
+                <option value="game-mechanics">Игровые механики</option>
+                <option value="management">Управление</option>
+                <option value="library">Библиотеки</option>
+              </select>
+            </label>
+            <label class="pl-fl">Сортировка
+              <select class="fld" id="md-sort">
+                <option value="relevance">По релевантности</option>
+                <option value="downloads">По загрузкам</option>
+                <option value="follows">По подписчикам</option>
+                <option value="newest">Сначала новые</option>
+                <option value="updated">Недавно обновлённые</option>
+              </select>
+            </label>
+          </div>
+          <div class="pl-results" id="md-results">
+            <div class="pl-empty">Загрузка модов…</div>
+          </div>
+          <div class="pl-pager hidden" id="md-pager">
+            <button class="mc-btn sm" id="md-prev"><i class="pi" data-ic="chevron-left"></i> Назад</button>
+            <span class="pl-count" id="md-count"></span>
+            <button class="mc-btn sm" id="md-next">Вперёд <i class="pi" data-ic="chevron-right"></i></button>
+          </div>
         </div>
       </div>
 

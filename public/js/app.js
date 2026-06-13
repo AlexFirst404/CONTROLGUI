@@ -1793,28 +1793,46 @@
       word: 'плагин', wordGen: 'плагинов', folder: 'plugins',
       els: { q: '#pl-query', cat: '#pl-category', sort: '#pl-sort', results: '#pl-results',
         pager: '#pl-pager', prev: '#pl-prev', next: '#pl-next', count: '#pl-count',
-        installed: '#pl-installed', info: '#pl-info' },
+        installed: '#pl-installed', info: '#pl-info', body: '#pl-body', collapse: '#pl-collapse',
+        collapseHint: '#pl-collapse-hint' },
+      collapseKey: 'cg-collapse-plugins',
       api: {
         search: (id, opts) => API.pluginsSearch(id, opts),
         install: (id, pid) => API.pluginInstall(id, pid),
         list: (id) => API.pluginsList(id),
         del: (id, f) => API.pluginDelete(id, f),
+        toggle: (id, f) => API.pluginToggle(id, f),
       },
     },
     mods: {
       word: 'мод', wordGen: 'модов', folder: 'mods',
       els: { q: '#md-query', cat: '#md-category', sort: '#md-sort', results: '#md-results',
         pager: '#md-pager', prev: '#md-prev', next: '#md-next', count: '#md-count',
-        installed: '#md-installed', info: '#md-info' },
+        installed: '#md-installed', info: '#md-info', body: '#md-body', collapse: '#md-collapse',
+        collapseHint: '#md-collapse-hint' },
+      collapseKey: 'cg-collapse-mods',
       api: {
         search: (id, opts) => API.modsSearch(id, opts),
         install: (id, pid) => API.modInstall(id, pid),
         list: (id) => API.modsList(id),
         del: (id, f) => API.modDelete(id, f),
+        toggle: (id, f) => API.modToggle(id, f),
       },
     },
   };
-  const contentNav = { plugins: { offset: 0, limit: 20, total: 0, seq: 0 }, mods: { offset: 0, limit: 20, total: 0, seq: 0 } };
+  const contentNav = { plugins: { offset: 0, limit: 20, total: 0, seq: 0, hits: [], baseNames: [] }, mods: { offset: 0, limit: 20, total: 0, seq: 0, hits: [], baseNames: [] } };
+
+  function setContentCollapsed(kind, collapsed) {
+    const cfg = CONTENT[kind];
+    $(cfg.els.body).classList.toggle('hidden', collapsed);
+    $(cfg.els.collapse).classList.toggle('collapsed', collapsed);
+    const hint = $(cfg.els.collapseHint);
+    if (hint) hint.textContent = collapsed ? 'развернуть' : '';
+    try { localStorage.setItem(cfg.collapseKey, collapsed ? '1' : '0'); } catch (e) { /* приватный режим */ }
+  }
+  function isContentCollapsed(kind) {
+    try { return localStorage.getItem(CONTENT[kind].collapseKey) === '1'; } catch (e) { return false; }
+  }
 
   function loadContent(kind) {
     const cfg = CONTENT[kind];
@@ -1824,9 +1842,10 @@
       info.textContent = 'Листайте каталог или ищите ' + cfg.wordGen + ' под ' + (CORE_NAMES[srv.type] || srv.type) +
         ' ' + (srv.version || '–') + ' — файл скачивается с Modrinth прямо в папку ' + cfg.folder + '/. Применяется после перезапуска.';
     }
+    setContentCollapsed(kind, isContentCollapsed(kind));
     contentNav[kind].offset = 0;
-    doContentSearch(kind, true);
-    loadInstalledContent(kind);
+    // установленные грузим первыми (нужны их имена, чтобы помечать «Установлена» в каталоге)
+    loadInstalledContent(kind).then(() => doContentSearch(kind, true));
   }
 
   async function doContentSearch(kind, reset) {
@@ -1850,6 +1869,7 @@
       updateContentPager(kind, data);
     } catch (e) {
       if (seq !== nav.seq) return;
+      nav.hits = [];
       box.innerHTML = '';
       const er = document.createElement('div');
       er.className = 'pl-empty';
@@ -1857,6 +1877,15 @@
       box.appendChild(er);
       $(cfg.els.pager).classList.add('hidden');
     }
+  }
+
+  function baseFileName(n) { return String(n).replace(/\.disabled$/i, ''); }
+
+  /* установлен ли уже этот проект (эвристика: slug содержится в имени jar). */
+  function isHitInstalled(kind, hit) {
+    const bn = contentNav[kind].baseNames || [];
+    const slug = (hit.slug || '').toLowerCase();
+    return slug.length >= 3 && bn.some((b) => b.indexOf(slug) >= 0);
   }
 
   function updateContentPager(kind, data) {
@@ -1890,6 +1919,7 @@
 
   function renderContentResults(kind, hits) {
     const cfg = CONTENT[kind];
+    contentNav[kind].hits = hits;
     const box = $(cfg.els.results);
     box.innerHTML = '';
     if (!hits.length) {
@@ -1935,7 +1965,15 @@
       mid.appendChild(meta);
       card.appendChild(mid);
 
-      if (canInstall) {
+      if (isHitInstalled(kind, h)) {
+        // уже установлен — серая неактивная кнопка «Установлен»
+        const btn = document.createElement('button');
+        btn.className = 'mc-btn sm pl-install installed';
+        btn.disabled = true;
+        btn.appendChild(picon('check'));
+        btn.appendChild(document.createTextNode(' Установлен'));
+        card.appendChild(btn);
+      } else if (canInstall) {
         const btn = document.createElement('button');
         btn.className = 'mc-btn sm primary pl-install';
         btn.appendChild(picon('download'));
@@ -1972,7 +2010,10 @@
     const box = $(cfg.els.installed);
     try {
       const data = await cfg.api.list(state.currentId);
+      contentNav[kind].baseNames = data.baseNames || [];
       renderInstalledContent(kind, data.installed || []);
+      // обновляем пометки «Установлен» в открытом каталоге
+      if (contentNav[kind].hits && contentNav[kind].hits.length) renderContentResults(kind, contentNav[kind].hits);
     } catch (e) {
       box.innerHTML = '';
       const er = document.createElement('div');
@@ -1994,36 +2035,99 @@
       return;
     }
     const canDelete = can('files.delete');
+    const canEdit = can('files.read');
+    const canToggle = can('files.write');
     for (const p of list) {
       const row = document.createElement('div');
-      row.className = 'mc-row file-row';
+      row.className = 'mc-row file-row pl-inst-row' + (p.disabled ? ' off' : '');
       const ic = document.createElement('span');
       ic.className = 'file-ic';
-      ic.appendChild(picon('box', 'var(--accent-bright)'));
+      ic.appendChild(picon('box', p.disabled ? '#6e7a70' : 'var(--accent-bright)'));
       const name = document.createElement('span');
       name.className = 'file-name';
-      name.textContent = p.name;
+      name.textContent = baseFileName(p.name);
+      if (p.disabled) {
+        const badge = document.createElement('span');
+        badge.className = 'pl-off-badge';
+        badge.textContent = 'выключен';
+        name.appendChild(badge);
+      }
       const meta = document.createElement('span');
       meta.className = 'file-meta';
       meta.textContent = fmtBytes(p.size) + ' · ' + new Date(p.mtime).toLocaleString('ru-RU');
       row.appendChild(ic);
       row.appendChild(name);
       row.appendChild(meta);
+
+      const actions = document.createElement('span');
+      actions.className = 'pl-inst-actions';
+      // карандаш — редактировать (открыть в файлах), слева от корзины
+      if (canEdit) {
+        const edit = document.createElement('button');
+        edit.className = 'mc-btn sm';
+        edit.title = 'Открыть в файлах для настройки';
+        edit.appendChild(picon('edit'));
+        edit.addEventListener('click', () => editContent(kind, p));
+        actions.appendChild(edit);
+      }
+      // корзина — удалить
       if (canDelete) {
         const del = document.createElement('button');
         del.className = 'mc-btn sm danger';
-        del.title = 'Удалить ' + cfg.word;
+        del.title = 'Удалить ' + cfg.word + ' и его настройки';
         del.appendChild(picon('trash'));
-        del.addEventListener('click', () => deleteContent(kind, p.name));
-        row.appendChild(del);
+        del.addEventListener('click', () => deleteContent(kind, p));
+        actions.appendChild(del);
       }
+      // переключатель вкл/выкл, справа от корзины
+      if (canToggle) {
+        const tog = document.createElement('div');
+        tog.className = 'mc-toggle pl-tog' + (p.disabled ? '' : ' on');
+        tog.innerHTML = '<div class="fill"></div><div class="knob"><div class="face"></div></div>';
+        tog.title = p.disabled ? 'Включить ' + cfg.word : 'Выключить ' + cfg.word;
+        tog.addEventListener('click', () => toggleContent(kind, p));
+        actions.appendChild(tog);
+      }
+      row.appendChild(actions);
       box.appendChild(row);
     }
   }
 
-  async function deleteContent(kind, name) {
+  async function editContent(kind, item) {
     const cfg = CONTENT[kind];
-    if (!(await confirmDialog('Удалить ' + cfg.word + ' «' + name + '»?\nФайл будет стёрт из папки ' + cfg.folder + '.',
+    const ok = await confirmDialog(
+      'Сейчас откроется вкладка «Файлы» в папке ' + cfg.folder + '/ — там лежит ' + cfg.word + ' «' + baseFileName(item.name) + '» и его настройки' +
+      (kind === 'mods' ? ' (конфиги модов обычно в папке config/).' : ' (папка с конфигом плагина появляется после первого запуска сервера).'),
+      { title: 'Редактировать ' + cfg.word, yesText: 'Открыть в файлах', danger: false }
+    );
+    if (!ok) return;
+    state.filesPath = cfg.folder;
+    switchTab('files');
+  }
+
+  async function toggleContent(kind, item) {
+    const cfg = CONTENT[kind];
+    const disabling = !item.disabled;
+    const nm = baseFileName(item.name);
+    const ok = await confirmDialog(
+      disabling
+        ? cap(cfg.word) + ' «' + nm + '» будет ВЫКЛЮЧЕН (переименуется в .disabled) и перестанет работать на сервере. Применится после перезапуска. Продолжить?'
+        : cap(cfg.word) + ' «' + nm + '» снова будет ВКЛЮЧЁН. Применится после перезапуска. Продолжить?',
+      { title: disabling ? 'Выключить ' + cfg.word : 'Включить ' + cfg.word,
+        yesText: disabling ? 'Выключить' : 'Включить', danger: disabling }
+    );
+    if (!ok) return;
+    await guard(async () => {
+      await cfg.api.toggle(state.currentId, item.name);
+      showToast(cap(cfg.word) + (disabling ? ' выключен.' : ' включён.') + ' Перезапустите сервер.', 'ok');
+      loadInstalledContent(kind);
+    });
+  }
+
+  async function deleteContent(kind, item) {
+    const cfg = CONTENT[kind];
+    const name = typeof item === 'string' ? item : item.name;
+    if (!(await confirmDialog('Удалить ' + cfg.word + ' «' + baseFileName(name) + '»?\nБудут стёрты сам файл и его директория с настройками. Это необратимо.',
       { title: 'Удаление', yesText: 'Удалить' }))) return;
     await guard(async () => {
       await cfg.api.del(state.currentId, name);
@@ -3214,6 +3318,8 @@
       $(e.prev).addEventListener('click', () => contentPage(kind, -1));
       $(e.next).addEventListener('click', () => contentPage(kind, 1));
       $(e.installed.replace('-installed', '-refresh')).addEventListener('click', () => loadInstalledContent(kind));
+      // сворачивание/разворачивание каталога Modrinth
+      $(e.collapse).addEventListener('click', () => setContentCollapsed(kind, !$(e.collapse).classList.contains('collapsed')));
     });
 
     // бэкапы
