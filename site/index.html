@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONTROLGUI — панель для Minecraft-серверов</title>
+<meta name="description" content="Локальная панель для создания и управления Minecraft-серверами: Paper, Forge, прокси BungeeCord/Velocity, консоль, плагины, бэкапы. Windows и Linux.">
+<link rel="icon" href="img/controlgui.png">
+<style>
+  @font-face { font-family: 'Minecraft'; src: url('fonts/minecraft_0.ttf') format('truetype'); font-display: swap; }
+  @font-face { font-family: 'Minecraft Ten'; src: url('fonts/minecraft-ten.otf') format('opentype'); font-display: swap; }
+  :root { --acc: #5cb53d; --acc2: #80da5b; --bg: #0a0a0a; --card: #1b1b1b; --bd: #333; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Minecraft', system-ui, sans-serif; background: var(--bg); color: #e7e7e7;
+    -webkit-font-smoothing: antialiased; line-height: 1.6; overflow-x: hidden; }
+  .bg { position: fixed; inset: 0; z-index: -1;
+    background-color: #0a0a0a;
+    background-image: linear-gradient(#141414 1px, transparent 1px), linear-gradient(90deg, #141414 1px, transparent 1px);
+    background-size: 46px 46px;
+    -webkit-mask-image: radial-gradient(130% 110% at 50% 30%, #000 35%, transparent 100%);
+            mask-image: radial-gradient(130% 110% at 50% 30%, #000 35%, transparent 100%); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 22px; }
+  h1, h2, .word { font-family: 'Minecraft Ten', 'Minecraft', sans-serif; font-weight: normal; letter-spacing: 1px; }
+  a { color: var(--acc2); text-decoration: none; }
+
+  /* hero */
+  header { text-align: center; padding: 84px 0 64px; }
+  header img { width: 92px; height: 92px; image-rendering: pixelated; }
+  .word { font-size: clamp(42px, 9vw, 84px); margin: 14px 0 6px; color: #fff; }
+  .word b { color: var(--acc); font-weight: normal; }
+  .tag { font-size: clamp(15px, 2.4vw, 20px); color: #b9c2bb; max-width: 660px; margin: 0 auto 30px; }
+  .btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 26px; font-family: 'Minecraft', sans-serif;
+    font-size: 16px; border: 3px solid #1e1e1f; cursor: pointer; transition: transform .08s; }
+  .btn:hover { transform: translateY(-2px); }
+  .btn.primary { background: var(--acc); color: #0c1a06; border-color: var(--acc2); }
+  .btn.ghost { background: #2b2b2b; color: #fff; border-color: #555; }
+  .sub { margin-top: 14px; font-size: 13px; color: #8b948c; }
+
+  /* sections */
+  section { padding: 56px 0; }
+  .stitle { text-align: center; font-size: clamp(26px, 5vw, 40px); color: #fff; margin-bottom: 10px; }
+  .ssub { text-align: center; color: #9aa39c; margin-bottom: 40px; }
+
+  /* features */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .feat { background: var(--card); border: 1px solid var(--bd); padding: 22px; }
+  .feat .ic { font-size: 30px; }
+  .feat h3 { font-family: 'Minecraft', sans-serif; font-size: 17px; color: var(--acc2); margin: 10px 0 6px; letter-spacing: .3px; }
+  .feat p { font-size: 14px; color: #b6beb8; }
+
+  /* shots */
+  .shots { display: flex; flex-direction: column; gap: 28px; }
+  .shot { border: 1px solid var(--bd); box-shadow: 0 18px 50px rgba(0,0,0,.6); }
+  .shot img { width: 100%; display: block; }
+  .shot-cap { text-align: center; color: #9aa39c; font-size: 14px; margin-top: 10px; }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .step { background: var(--card); border: 1px solid var(--bd); padding: 22px; }
+  .step .n { font-family: 'Minecraft Ten', sans-serif; font-size: 34px; color: var(--acc); }
+  .step h3 { font-family: 'Minecraft', sans-serif; font-size: 16px; color: #fff; margin: 6px 0; }
+  .step p { font-size: 14px; color: #b6beb8; }
+
+  /* cta */
+  .cta { text-align: center; background: linear-gradient(180deg, #14210e, #0d1408); border: 1px solid #2c4a1c; padding: 50px 22px; }
+
+  footer { text-align: center; padding: 40px 0 60px; color: #8b948c; font-size: 14px; border-top: 1px solid #1c1c1c; margin-top: 30px; }
+  footer b { color: var(--acc2); }
+  .pills { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 28px 0 0; }
+  .pill { background: #1b1b1b; border: 1px solid var(--bd); color: #cfd6d0; padding: 6px 13px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+
+<header>
+  <div class="wrap">
+    <img src="img/controlgui.png" alt="CONTROLGUI">
+    <div class="word">CONTROL<b>GUI</b></div>
+    <p class="tag">Локальная панель для создания и управления Minecraft-серверами. Paper, Forge, прокси, консоль, плагины, бэкапы — в одном окне. Без облака и подписок.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/AlexFirst404/CONTROLGUI/releases/latest">⤓ Скачать для Windows</a>
+      <a class="btn ghost" href="https://github.com/AlexFirst404/CONTROLGUI/releases/latest">🐧 Скачать для Linux</a>
+    </div>
+    <div class="sub">Windows: установщик · Linux: .AppImage и .deb · бесплатно и с открытым кодом</div>
+    <div class="pills">
+      <span class="pill">Node.js без зависимостей</span>
+      <span class="pill">Windows + Linux</span>
+      <span class="pill">Интерфейс в стиле Minecraft</span>
+      <span class="pill">Java ставится сама</span>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <h2 class="stitle">Всё для своего сервера</h2>
+    <p class="ssub">Создавайте, настраивайте и управляйте — без правки конфигов вручную</p>
+    <div class="grid">
+      <div class="feat"><div class="ic">🧩</div><h3>Любое ядро</h3><p>Vanilla, Paper, Purpur, Folia, Mohist, Forge — скачиваются с официальных источников. Или загрузите свой .jar.</p></div>
+      <div class="feat"><div class="ic">🔀</div><h3>Прокси-сети</h3><p>BungeeCord и Velocity с авто-привязкой серверов «для чайников»: отметил галочками — всё настроилось само.</p></div>
+      <div class="feat"><div class="ic">🖥️</div><h3>Живая консоль</h3><p>Вывод сервера в реальном времени, команды, отдельное окно консоли, графики CPU и памяти.</p></div>
+      <div class="feat"><div class="ic">📁</div><h3>Файловый менеджер</h3><p>Просмотр и редактирование файлов прямо в панели, с подсветкой синтаксиса и загрузкой перетаскиванием.</p></div>
+      <div class="feat"><div class="ic">🧱</div><h3>Плагины и моды</h3><p>Поиск и установка с Modrinth в один клик — с автоматической докачкой нужных библиотек-зависимостей.</p></div>
+      <div class="feat"><div class="ic">💾</div><h3>Бэкапы</h3><p>Резервные копии сервера в один клик, восстановление и скачивание архивов.</p></div>
+      <div class="feat"><div class="ic">👥</div><h3>Игроки</h3><p>Список игроков, инвентарь в реальном времени, модерация: кик, бан, вайтлист, операторы.</p></div>
+      <div class="feat"><div class="ic">☕</div><h3>Java сама ставится</h3><p>Нет нужной Java? Панель сама скачает Eclipse Temurin под выбранную версию — Windows и Linux.</p></div>
+      <div class="feat"><div class="ic">🎮</div><h3>Ресурспаки и иконки</h3><p>Раздача ресурспака игрокам и иконка сервера — загружаются и применяются из панели.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="shots">
+  <div class="wrap">
+    <h2 class="stitle">Как это выглядит</h2>
+    <p class="ssub">Тёмный интерфейс в духе Minecraft Bedrock / Ore UI</p>
+    <div class="shots">
+      <div>
+        <div class="shot"><img src="img/servers.png" alt="Список серверов"></div>
+        <div class="shot-cap">Главный экран: все ваши серверы и прокси с одного места</div>
+      </div>
+      <div>
+        <div class="shot"><img src="img/create.png" alt="Создание сервера"></div>
+        <div class="shot-cap">Мастер создания: ядро, версия, память с подсказками, режим, порт</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="steps">
+  <div class="wrap">
+    <h2 class="stitle">Запуск за минуту</h2>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>Установите</h3><p>Скачайте установщик (Windows) или AppImage/.deb (Linux) и запустите.</p></div>
+      <div class="step"><div class="n">2</div><h3>Создайте сервер</h3><p>Выберите ядро и версию — панель скачает всё нужное, включая Java.</p></div>
+      <div class="step"><div class="n">3</div><h3>Управляйте</h3><p>Запуск, консоль, плагины, игроки и бэкапы — прямо в окне.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="cta">
+      <h2 class="stitle">Готовы поднять свой сервер?</h2>
+      <p class="ssub">Бесплатно, локально, без регистрации</p>
+      <div class="btns">
+        <a class="btn primary" href="https://github.com/AlexFirst404/CONTROLGUI/releases/latest">⤓ Скачать CONTROLGUI</a>
+        <a class="btn ghost" href="https://github.com/AlexFirst404/CONTROLGUI">⟨⟩ Исходный код</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>CONTROLGUI — панель управления Minecraft-серверами. Разработчик: <b>AlexFirst</b>.</div>
+    <div style="margin-top:8px">Node.js без зависимостей · интерфейс в стиле Minecraft Ore UI · <a href="https://github.com/AlexFirst404/CONTROLGUI">GitHub</a></div>
+  </div>
+</footer>
+</body>
+</html>
