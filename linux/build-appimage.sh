@@ -54,6 +54,8 @@ build_flavor() {
   chmod 0755 "$APPDIR/AppRun"
   printf '%s' "$flavor" > "$APPDIR/flavor"
   printf '%s' "$VERSION" > "$APPDIR/version"
+  # уникальный id сборки — чтобы AppRun переустанавливал копию панели при обновлении
+  printf '%s' "$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || date +%s)" > "$APPDIR/build"
 
   # иконка (в корне для thumbnailer + в hicolor)
   cp "$ROOT/public/assets/controlgui.png" "$APPDIR/controlgui.png"

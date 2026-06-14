@@ -20,10 +20,15 @@ URL="http://127.0.0.1:$PORT"
 # начал бы отдавать 404 (файлы исчезли вместе с монтированием). Копия — в
 # $CONTROLGUI_DATA/app/<версия>, как распаковка панели в Windows-версии.
 VER="$(cat "$HERE/version" 2>/dev/null || echo 0)"
+BUILD="$(cat "$HERE/build" 2>/dev/null || echo "$VER")"
 APP="$CONTROLGUI_DATA/app/$VER"
-if [ ! -f "$APP/server.js" ]; then
+# Переустанавливаем копию, если поменялась сборка (иначе после обновления AppImage
+# с той же версией оставался старый код панели). data/серверы лежат не здесь.
+if [ ! -f "$APP/server.js" ] || [ "$(cat "$APP/.build" 2>/dev/null || echo)" != "$BUILD" ]; then
+  rm -rf "$APP"
   mkdir -p "$APP"
   cp -a "$HERE/opt/controlgui/." "$APP/"
+  printf '%s' "$BUILD" > "$APP/.build"
 fi
 
 panel_up() {
