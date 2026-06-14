@@ -14,7 +14,17 @@ mkdir -p "$CONTROLGUI_DATA"
 
 PORT="${CONTROLGUI_PORT:-8400}"
 URL="http://127.0.0.1:$PORT"
-APP="$HERE/opt/controlgui"
+
+# Панель запускаем из стабильной копии, а не из точки монтирования AppImage:
+# после закрытия окна образ отмонтируется, и node, запущенный из /tmp/.mount_*,
+# начал бы отдавать 404 (файлы исчезли вместе с монтированием). Копия — в
+# $CONTROLGUI_DATA/app/<версия>, как распаковка панели в Windows-версии.
+VER="$(cat "$HERE/version" 2>/dev/null || echo 0)"
+APP="$CONTROLGUI_DATA/app/$VER"
+if [ ! -f "$APP/server.js" ]; then
+  mkdir -p "$APP"
+  cp -a "$HERE/opt/controlgui/." "$APP/"
+fi
 
 panel_up() {
   "$NODE" -e "require('http').get('$URL/',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" >/dev/null 2>&1

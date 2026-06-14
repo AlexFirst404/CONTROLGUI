@@ -13,7 +13,10 @@ try:
     gi.require_version('WebKit2', '4.1')
 except ValueError:
     gi.require_version('WebKit2', '4.0')
-from gi.repository import Gtk, WebKit2  # noqa: E402
+from gi.repository import Gtk, WebKit2, GLib  # noqa: E402
+
+# WM_CLASS для группировки/иконки в панели задач — без устаревшего set_wmclass
+GLib.set_prgname('CONTROLGUI')
 
 URL = os.environ.get('CONTROLGUI_URL', 'http://127.0.0.1:8400')
 ICON = os.environ.get('CONTROLGUI_ICON', '')
@@ -21,10 +24,6 @@ ICON = os.environ.get('CONTROLGUI_ICON', '')
 win = Gtk.Window()
 win.set_title('CONTROLGUI — панель Minecraft-серверов')
 win.set_default_size(1380, 900)
-try:
-    win.set_wmclass('CONTROLGUI', 'CONTROLGUI')
-except Exception:
-    pass
 if ICON and os.path.exists(ICON):
     try:
         win.set_icon_from_file(ICON)

@@ -53,6 +53,7 @@ build_flavor() {
   cp "$HERE/appimage/AppRun" "$APPDIR/AppRun"
   chmod 0755 "$APPDIR/AppRun"
   printf '%s' "$flavor" > "$APPDIR/flavor"
+  printf '%s' "$VERSION" > "$APPDIR/version"
 
   # иконка (в корне для thumbnailer + в hicolor)
   cp "$ROOT/public/assets/controlgui.png" "$APPDIR/controlgui.png"
