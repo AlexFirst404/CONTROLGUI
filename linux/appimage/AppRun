@@ -1,0 +1,53 @@
+#!/bin/sh
+# Точка входа AppImage CONTROLGUI. Поднимает панель на встроенном Node и
+# открывает её — нативным окном (flavor=app) или в браузере (flavor=browser).
+set -u
+HERE="$(dirname "$(readlink -f "$0")")"
+FLAVOR="$(cat "$HERE/flavor" 2>/dev/null || echo browser)"
+
+# встроенный node имеет приоритет; панель и данные — как у .deb-версии
+export PATH="$HERE/usr/bin:$PATH"
+NODE="$HERE/usr/bin/node"
+[ -x "$NODE" ] || NODE="node"
+export CONTROLGUI_DATA="${CONTROLGUI_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/controlgui}"
+mkdir -p "$CONTROLGUI_DATA"
+
+PORT="${CONTROLGUI_PORT:-8400}"
+URL="http://127.0.0.1:$PORT"
+APP="$HERE/opt/controlgui"
+
+panel_up() {
+  "$NODE" -e "require('http').get('$URL/',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" >/dev/null 2>&1
+}
+
+if ! panel_up; then
+  ( cd "$APP" && PORT="$PORT" CONTROLGUI_DATA="$CONTROLGUI_DATA" "$NODE" server.js >"$CONTROLGUI_DATA/panel.log" 2>&1 & )
+  i=0
+  while [ "$i" -lt 80 ]; do
+    panel_up && break
+    sleep 0.25
+    i=$((i + 1))
+  done
+fi
+
+# нативное окно (если есть python3-gi + WebKitGTK); иначе — браузер
+if [ "$FLAVOR" = "app" ] && command -v python3 >/dev/null 2>&1; then
+  if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$HERE/controlgui.png" \
+       python3 "$APP/controlgui-window.py"; then
+    exit 0
+  fi
+  echo "CONTROLGUI: нет python3-gi/WebKitGTK — открываю в браузере" >&2
+fi
+
+# браузер: chromium --app красивее, иначе браузер по умолчанию
+for B in chromium chromium-browser google-chrome google-chrome-stable; do
+  if command -v "$B" >/dev/null 2>&1; then
+    exec "$B" --app="$URL"
+  fi
+done
+if command -v xdg-open >/dev/null 2>&1; then
+  exec xdg-open "$URL"
+fi
+echo "CONTROLGUI работает на $URL — откройте этот адрес в браузере." >&2
+# держим процесс, чтобы node не осиротел, если панель запустил AppImage
+wait

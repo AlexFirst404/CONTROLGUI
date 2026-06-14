@@ -5,4 +5,7 @@ linux/build-deb.sh        text eol=lf
 linux/DEBIAN/postinst     text eol=lf
 linux/DEBIAN/control      text eol=lf
 linux/DEBIAN/control-app  text eol=lf
+linux/appimage/AppRun     text eol=lf
 *.sh                      text eol=lf
+*.py                      text eol=lf
+controlgui-window.py      text eol=lf

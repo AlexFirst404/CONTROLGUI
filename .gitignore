@@ -11,3 +11,8 @@ node_modules/
 
 # собранный .deb (воспроизводится: node linux/build-deb.js)
 linux/*.deb
+
+# собранный .AppImage и кэш сборки (воспроизводится: linux/build-appimage.sh)
+linux/*.AppImage
+linux/.appimage-cache/
+linux/AppDir-*/
