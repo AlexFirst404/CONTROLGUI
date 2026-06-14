@@ -1970,7 +1970,7 @@
     plugins: {
       word: 'плагин', wordGen: 'плагинов', folder: 'plugins',
       els: { q: '#pl-query', cat: '#pl-category', sort: '#pl-sort', results: '#pl-results',
-        pager: '#pl-pager', prev: '#pl-prev', next: '#pl-next', count: '#pl-count',
+        pager: '#pl-pager', prev: '#pl-prev', next: '#pl-next', count: '#pl-count', pages: '#pl-pages',
         installed: '#pl-installed', info: '#pl-info', body: '#pl-body', collapse: '#pl-collapse',
         collapseHint: '#pl-collapse-hint' },
       collapseKey: 'cg-collapse-plugins',
@@ -1985,7 +1985,7 @@
     mods: {
       word: 'мод', wordGen: 'модов', folder: 'mods',
       els: { q: '#md-query', cat: '#md-category', sort: '#md-sort', results: '#md-results',
-        pager: '#md-pager', prev: '#md-prev', next: '#md-next', count: '#md-count',
+        pager: '#md-pager', prev: '#md-prev', next: '#md-next', count: '#md-count', pages: '#md-pages',
         installed: '#md-installed', info: '#md-info', body: '#md-body', collapse: '#md-collapse',
         collapseHint: '#md-collapse-hint' },
       collapseKey: 'cg-collapse-mods',
@@ -2080,6 +2080,39 @@
     $(cfg.els.count).textContent = (offset + 1) + '–' + (offset + shown) + ' из ' + total;
     $(cfg.els.prev).disabled = offset <= 0;
     $(cfg.els.next).disabled = offset + limit >= total;
+    renderPageButtons(kind);
+  }
+
+  // кнопки страниц (окно из 10) для выбора нужной страницы
+  function renderPageButtons(kind) {
+    const cfg = CONTENT[kind];
+    const nav = contentNav[kind];
+    const el = $(cfg.els.pages);
+    if (!el) return;
+    const limit = nav.limit || 20;
+    const pages = Math.max(1, Math.ceil((nav.total || 0) / limit));
+    const cur = Math.floor((nav.offset || 0) / limit); // 0-based
+    const WIN = 10;
+    let start = Math.max(0, cur - Math.floor(WIN / 2));
+    let end = Math.min(pages, start + WIN);
+    start = Math.max(0, end - WIN);
+    el.innerHTML = '';
+    for (let p = start; p < end; p++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mc-btn sm pg' + (p === cur ? ' sel' : '');
+      b.textContent = String(p + 1);
+      b.addEventListener('click', () => contentGoToPage(kind, p));
+      el.appendChild(b);
+    }
+  }
+
+  function contentGoToPage(kind, page) {
+    const nav = contentNav[kind];
+    nav.offset = page * (nav.limit || 20);
+    doContentSearch(kind, false);
+    const res = $(CONTENT[kind].els.results);
+    if (res && res.scrollIntoView) res.scrollIntoView({ block: 'nearest' });
   }
 
   function contentPage(kind, dir) {
@@ -3744,12 +3777,20 @@
     $('#appset-root').addEventListener('click', (event) => {
       if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
     });
-    $$('#launchmode-btns .seg').forEach((b) => b.addEventListener('click', () => {
+    $$('#launchmode-btns .seg').forEach((b) => b.addEventListener('click', async () => {
       const mode = b.dataset.mode;
+      const cur = $('#launchmode-btns .seg.sel');
+      if (cur && cur.dataset.mode === mode) return; // режим уже выбран
+      const label = mode === 'app' ? 'Приложение' : 'Браузер';
+      const ok = await confirmDialog(
+        'Переключить открытие на «' + label + '»?\nЕсли панель открыта как приложение — оно закроется и сразу откроется заново в новом режиме.',
+        { title: 'Смена режима открытия', yesText: 'Переключить', danger: false });
+      if (!ok) return;
       setLaunchModeBtns(mode);
-      API.setLaunchMode(mode)
-        .then(() => showToast('Режим открытия сохранён — применится при следующем запуске', 'ok'))
-        .catch((e) => showToast(e.message));
+      try {
+        await API.setLaunchMode(mode);
+        showToast('Режим переключён на «' + label + '»…', 'ok');
+      } catch (e) { showToast(e.message); }
     }));
     mkToggle($('#set-bganim'), appSettings.bgAnim !== false);
     $('#set-bganim').addEventListener('click', () =>
