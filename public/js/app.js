@@ -23,7 +23,11 @@
   const CORE_NAMES = {
     vanilla: 'Vanilla', paper: 'Paper', purpur: 'Purpur',
     folia: 'Folia', mohist: 'Mohist', forge: 'Forge', custom: 'Своё ядро',
+    velocity: 'Velocity (прокси)', bungeecord: 'BungeeCord (прокси)',
   };
+  const PROXY_TYPES = ['velocity', 'bungeecord'];
+  // ядра, которые можно поставить за прокси (понимают форвардинг)
+  const BACKEND_OK = ['paper', 'purpur', 'folia', 'mohist', 'custom'];
 
   /* Иконки предметов «как в игре»:
      1) mc.nerothe.com — пре-рендеренные иконки инвентаря (блоки — изометрия),
@@ -815,13 +819,14 @@
 
   async function submitCreate(event) {
     event.preventDefault();
-    if (!$('#eula-check').classList.contains('on')) {
-      showToast('Нужно принять Minecraft EULA');
-      return;
-    }
     const form = $('#create-form');
     const type = $('#core-select').value;
     const isCustom = type === 'custom';
+    const isProxy = PROXY_TYPES.includes(type);
+    if (!isProxy && !$('#eula-check').classList.contains('on')) {
+      showToast('Нужно принять Minecraft EULA');
+      return;
+    }
     const coreFile = $('#custom-core-file').files[0];
     const body = {
       name: form.name.value,
@@ -839,6 +844,10 @@
       pvp: $('#toggle-pvp').classList.contains('on'),
       eulaAccepted: true,
     };
+    if (isProxy) {
+      body.backends = Array.from($('#backends-list').querySelectorAll('.mc-check.on'))
+        .map((c) => c.dataset.id).filter(Boolean);
+    }
     if (isCustom && !coreFile) { showToast('Выберите файл ядра (.jar)'); return; }
     if (!isCustom && !body.version) { showToast('Выберите версию'); return; }
     $('#btn-create').disabled = true;
@@ -3182,11 +3191,56 @@
   // ---------- своё ядро при создании ----------
 
   function onCoreChange() {
-    const custom = $('#core-select').value === 'custom';
-    $('#version-label').classList.toggle('hidden', custom);
+    const type = $('#core-select').value;
+    const custom = type === 'custom';
+    const isProxy = PROXY_TYPES.includes(type);
+    // у BungeeCord одна сборка — версию не показываем; у Velocity версии есть
+    $('#version-label').classList.toggle('hidden', custom || type === 'bungeecord');
     $('#custom-core-label').classList.toggle('hidden', !custom);
+    // обычные MC-поля прокси не нужны
+    ['cycle-gamemode', 'cycle-difficulty', 'seed-label', 'online-row', 'pvp-row', 'eula-row'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('hidden', isProxy);
+    });
+    $('#backends-label').classList.toggle('hidden', !isProxy);
     // required не ставим: <select> скрыт под своей выпадашкой, проверяем версию вручную в submitCreate
-    if (!custom) loadVersions();
+    if (isProxy) buildBackendsList();
+    if (type === 'bungeecord') {
+      $('#version-select').innerHTML = '<option value="latest">latest</option>';
+    } else if (!custom) {
+      loadVersions();
+    }
+  }
+
+  // список серверов с галочками (все включены) для привязки к прокси
+  function buildBackendsList() {
+    const box = $('#backends-list');
+    box.innerHTML = '';
+    const compat = (state.servers || []).filter((s) => BACKEND_OK.includes(s.type));
+    if (!compat.length) {
+      const e = document.createElement('span');
+      e.className = 'hint';
+      e.textContent = 'Нет подходящих серверов. Сначала создайте Paper/Purpur/Folia/Mohist — потом прокси.';
+      box.appendChild(e);
+      return;
+    }
+    for (const s of compat) {
+      const row = document.createElement('label');
+      row.className = 'backend-row';
+      const chk = document.createElement('span');
+      chk.className = 'mc-check on';
+      chk.dataset.id = s.id;
+      chk.innerHTML = '<span class="tick"></span>';
+      chk.addEventListener('click', () => chk.classList.toggle('on'));
+      const nm = document.createElement('span');
+      nm.className = 'backend-name';
+      nm.textContent = s.name;
+      const meta = document.createElement('span');
+      meta.className = 'backend-meta';
+      meta.textContent = (CORE_NAMES[s.type] || s.type) + ' · :' + s.port;
+      row.append(chk, nm, meta);
+      box.appendChild(row);
+    }
   }
 
   // ---------- логи ----------

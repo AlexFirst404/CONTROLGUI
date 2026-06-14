@@ -164,6 +164,14 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .mc-sel-opt.disabled { color: #888; cursor: default; }
 .mc-sel-opt.disabled:hover { background: transparent; color: #888; }
 
+/* список серверов для привязки к прокси (BungeeCord/Velocity) */
+.backends-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.backend-row { display: flex; align-items: center; gap: 10px; background: var(--card-inset);
+  border: 2px solid var(--bd); padding: 8px 12px; }
+.backend-row .mc-check { cursor: pointer; }
+.backend-name { color: #fff; font-size: 14px; }
+.backend-meta { margin-left: auto; color: #9a9a9a; font-size: 12px; font-family: var(--font-ui); }
+
 /* подсказка по объёму ОЗУ при создании сервера */
 .mem-hint { margin-top: 6px; }
 .mem-hint.good { color: var(--accent-bright); }
