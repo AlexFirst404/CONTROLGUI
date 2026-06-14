@@ -48,7 +48,11 @@ body {
   font-size: 16px;
   color: #ececec;
   background: #0a0a0a;
-  -webkit-font-smoothing: none;
+  /* antialiased, а не none: на Linux/WebKitGTK "none" отключает сглаживание и
+     шрифт выглядит рвано; Windows-Chromium это свойство игнорирует (вид тот же) */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* фон кита: тонкая бесконечно ползущая сетка + затемнение по краям */
@@ -136,6 +140,36 @@ select.fld option { background: #2b2b2b; }
 textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 
 .mc-label { display: flex; flex-direction: column; gap: 8px; color: #a9a9a9; font-size: 13px; }
+
+/* ---- свои выпадашки (нативный <select> на Linux/WebKitGTK — бел-на-бел) ---- */
+.mc-sel { position: relative; width: 100%; }
+.mc-sel-native { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; pointer-events: none; }
+.mc-sel-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  text-align: left; cursor: pointer; }
+.mc-sel-btn .mc-sel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-sel-btn.placeholder .mc-sel-label { color: #c3c4c6; }
+.mc-sel.open .mc-sel-btn { border-color: var(--btn-prim); }
+.mc-sel-arrow { width: 0; height: 0; flex: none; margin-left: 6px;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #d2d2d2;
+  transition: transform .1s; }
+.mc-sel.open .mc-sel-arrow { transform: rotate(180deg); }
+.mc-sel-pop { position: absolute; left: 0; right: 0; top: calc(100% + 5px); z-index: 80;
+  background: #2b2b2b; border: 3px solid #6c6d6f; box-shadow: 0 0 0 3px #1e1e1f, 0 12px 26px rgba(0,0,0,.55);
+  max-height: 290px; overflow-y: auto; }
+.mc-sel-opt { padding: 9px 12px; font-family: var(--font-ui); font-size: 15px; color: #e7e7e7;
+  cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-sel-opt:hover { background: var(--accent); color: #0d0d0d; }
+.mc-sel-opt.sel { background: #3a3a3a; color: #fff; }
+.mc-sel-opt.sel:hover { background: var(--accent); color: #0d0d0d; }
+.mc-sel-opt.disabled { color: #888; cursor: default; }
+.mc-sel-opt.disabled:hover { background: transparent; color: #888; }
+
+/* подсказка по объёму ОЗУ при создании сервера */
+.mem-hint { margin-top: 6px; }
+.mem-hint.good { color: var(--accent-bright); }
+.mem-hint.ok   { color: #a9b4ab; }
+.mem-hint.warn { color: #e8b84a; }
+.mem-hint.bad  { color: #e07a5a; }
 
 /* ----------------------------------------------------- чекбокс кита ------- */
 .mc-check { width: 24px; height: 24px; background: #1c1c1c; border: 2px solid #5a5a5a; border-radius: 0; position: relative; flex: none; cursor: pointer; }

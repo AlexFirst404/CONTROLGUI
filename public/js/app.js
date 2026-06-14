@@ -97,6 +97,8 @@
     lanIps: [],
     rootPath: '',
     maxMemMb: 8192,
+    cores: 0,
+    totalMemMb: 0,
     filesPath: '',
     editorPath: null,
     memCreateSlider: null,
@@ -307,9 +309,106 @@
 
   function fmtCpu(v) {
     if (v >= 100) return 'без лимита (все ядра)';
-    const cores = navigator.hardwareConcurrency || 0;
+    // ядра берём с бэкенда (os.cpus()) — в WebKitGTK navigator.hardwareConcurrency бывает 0
+    const cores = state.cores || navigator.hardwareConcurrency || 0;
     const k = cores ? Math.max(1, Math.round(cores * v / 100)) : 0;
     return v + '%' + (k ? ' (≈ ' + k + ' из ' + cores + ' ядер)' : '');
+  }
+
+  // подсказка по объёму ОЗУ при создании сервера (много/мало/норма)
+  function updateMemHint(mb) {
+    const el = document.getElementById('mem-create-hint');
+    if (!el) return;
+    const total = state.totalMemMb || 0;
+    const totalGb = total ? (total / 1024).toFixed(total >= 10240 ? 0 : 1).replace(/\.0$/, '') : null;
+    let msg, cls;
+    if (mb < 1536) {
+      msg = 'Маловато — серверу может не хватить, возможны лаги и вылеты'; cls = 'bad';
+    } else if (mb < 2048) {
+      msg = 'Минимум для небольшого ванильного сервера на пару игроков'; cls = 'ok';
+    } else if (total && mb > total - 1536) {
+      msg = 'Перебор — системе почти не остаётся памяти, возможны зависания ОС'; cls = 'bad';
+    } else if (total && mb > total * 0.6) {
+      msg = 'Много — хорошо для модов и большого онлайна, но следите за остатком'; cls = 'warn';
+    } else {
+      msg = 'Оптимально для большинства серверов'; cls = 'good';
+    }
+    el.textContent = (totalGb ? 'В системе ' + totalGb + ' ГБ. ' : '') + msg;
+    el.className = 'hint mem-hint ' + cls;
+  }
+
+  // Превращает нативный <select> в стилизованную выпадашку (нативный список
+  // WebKitGTK на Linux — бел-на-бел). Сам <select> остаётся в DOM (значение/форма
+  // и события change работают), мы лишь рисуем поверх своё.
+  function enhanceSelect(sel) {
+    if (!sel || sel.dataset.enhanced) return;
+    sel.dataset.enhanced = '1';
+    sel.removeAttribute('required'); // валидируем вручную (submitCreate)
+
+    const wrap = document.createElement('div');
+    wrap.className = 'mc-sel';
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    sel.classList.add('mc-sel-native');
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fld mc-sel-btn';
+    btn.innerHTML = '<span class="mc-sel-label"></span><span class="mc-sel-arrow"></span>';
+    wrap.appendChild(btn);
+    const labelEl = btn.querySelector('.mc-sel-label');
+
+    const pop = document.createElement('div');
+    pop.className = 'mc-sel-pop hidden';
+    wrap.appendChild(pop);
+
+    function syncLabel() {
+      const o = sel.options[sel.selectedIndex];
+      labelEl.textContent = o ? o.textContent : '';
+      btn.classList.toggle('placeholder', !sel.value);
+    }
+    function buildPop() {
+      pop.innerHTML = '';
+      Array.prototype.forEach.call(sel.options, (o, i) => {
+        const item = document.createElement('div');
+        item.className = 'mc-sel-opt' + (i === sel.selectedIndex ? ' sel' : '') + (o.disabled ? ' disabled' : '');
+        item.textContent = o.textContent;
+        if (!o.disabled) {
+          item.addEventListener('click', () => {
+            sel.selectedIndex = i;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            syncLabel();
+            close();
+          });
+        }
+        pop.appendChild(item);
+      });
+    }
+    function open() {
+      if (!pop.classList.contains('hidden')) return;
+      buildPop();
+      pop.classList.remove('hidden');
+      wrap.classList.add('open');
+      const cur = pop.querySelector('.mc-sel-opt.sel');
+      if (cur) cur.scrollIntoView({ block: 'nearest' });
+      setTimeout(() => document.addEventListener('pointerdown', outside), 0);
+    }
+    function close() {
+      pop.classList.add('hidden');
+      wrap.classList.remove('open');
+      document.removeEventListener('pointerdown', outside);
+    }
+    function outside(e) { if (!wrap.contains(e.target)) close(); }
+
+    btn.addEventListener('click', () => (pop.classList.contains('hidden') ? open() : close()));
+    // версии и т.п. подгружаются асинхронно — следим за изменением <option>
+    new MutationObserver(syncLabel).observe(sel, { childList: true });
+    sel.addEventListener('change', syncLabel);
+    syncLabel();
+  }
+
+  function enhanceSelectsIn(root) {
+    (root || document).querySelectorAll('select:not([data-enhanced])').forEach(enhanceSelect);
   }
 
   // ---------- компоненты кита ----------
@@ -337,6 +436,7 @@
       knob.style.left = x + 'px';
       fill.style.width = Math.max(0, x + knobW / 2 - 3) + 'px';
       if (opts.labelEl) opts.labelEl.textContent = opts.format ? opts.format(value) : String(value);
+      if (opts.onChange) opts.onChange(value);
     }
     function fromPointer(event) {
       const rect = el.getBoundingClientRect();
@@ -502,10 +602,13 @@
       const st = await API.status();
       state.lanIps = st.lanIps || [];
       state.rootPath = st.root || '';
+      if (st.cores) state.cores = st.cores;          // os.cpus() с бэкенда (надёжно и на Linux)
       if (st.totalMemMb) {
+        state.totalMemMb = st.totalMemMb;            // реальный объём ОЗУ для подсказок
         state.maxMemMb = Math.max(2048, Math.min(32768, Math.floor((st.totalMemMb - 2048) / 512) * 512));
         if (state.memCreateSlider) state.memCreateSlider.setRange(1024, state.maxMemMb);
       }
+      if (state.cpuCreateSlider) state.cpuCreateSlider.refresh(); // обновить «N ядер» в подписи
       $('#about-version').textContent = String(st.app || '').replace('CONTROLGUI', '').trim();
       const alert = $('#java-alert');
       if (st.java && st.java.available) {
@@ -2258,6 +2361,7 @@
     javaWrap.appendChild(javaSel);
     grid.appendChild(javaWrap);
     state.javaSelectEl = javaSel;
+    enhanceSelect(javaSel);
 
     // известные ключи в порядке словаря, затем остальные по алфавиту
     const knownKeys = Object.keys(PROPERTY_DEFS).filter((k) => k in properties);
@@ -2373,6 +2477,7 @@
     }
     input.className = 'fld';
     wrap.appendChild(input);
+    if (type === 'select') enhanceSelect(input);
     wrap._getValue = () => input.value;
     return wrap;
   }
@@ -3080,7 +3185,7 @@
     const custom = $('#core-select').value === 'custom';
     $('#version-label').classList.toggle('hidden', custom);
     $('#custom-core-label').classList.toggle('hidden', !custom);
-    $('#version-select').required = !custom;
+    // required не ставим: <select> скрыт под своей выпадашкой, проверяем версию вручную в submitCreate
     if (!custom) loadVersions();
   }
 
@@ -3532,12 +3637,13 @@
   $('#u-eye').style.setProperty('--i', "url('/icons/eye.svg')");
   state.memCreateSlider = mkSlider($('#mem-create'), {
     min: 1024, max: state.maxMemMb, step: 512, value: 2048,
-    format: fmtMem, labelEl: $('#mem-create-val'),
+    format: fmtMem, labelEl: $('#mem-create-val'), onChange: updateMemHint,
   });
   state.cpuCreateSlider = mkSlider($('#cpu-create'), {
     min: 10, max: 100, step: 5, value: 100,
     format: fmtCpu, labelEl: $('#cpu-create-val'),
   });
+  enhanceSelectsIn(document); // свои выпадашки для статичных <select> (ядро, версия, тема, категория)
 
   bind();
   loadMe();
