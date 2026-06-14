@@ -546,6 +546,7 @@
     $('#screen-create').classList.toggle('hidden', name !== 'create');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
     $('#screen-users').classList.toggle('hidden', name !== 'users');
+    $('#screen-proxy').classList.toggle('hidden', name !== 'proxy');
     // бургер-меню — на всех экранах (главный, создание, сервер, пользователи)
     $('#btn-burger').classList.remove('hidden');
     if (name === 'create') updateJavaInstallUI();
@@ -561,6 +562,7 @@
     if (name === 'list') pushHash('');
     else if (name === 'create') pushHash('#create');
     else if (name === 'users') pushHash('#users');
+    else if (name === 'proxy') pushHash('#proxy');
   }
 
   /* Применяем состояние из адреса при нажатии «назад/вперёд» — без выхода из SPA. */
@@ -572,6 +574,8 @@
         if (state.screen !== 'create') { showScreen('create'); suggestPort(); loadVersions(); }
       } else if (hash === '#users') {
         if (state.screen !== 'users') openUsers();
+      } else if (hash === '#proxy') {
+        if (state.screen !== 'proxy') { showScreen('proxy'); renderProxyViz(); }
       } else if (hash.indexOf('#server=') === 0) {
         const rest = hash.slice(8);
         const id = rest.split('/tab/')[0].split('/player/')[0];
@@ -3310,6 +3314,75 @@
     }, 1500);
   }
 
+  // ---------- визуализация прокси-сети ----------
+  function pvStatusClass(st) {
+    if (st === 'running') return 'on';
+    if (st === 'error') return 'err';
+    if (st === 'starting' || st === 'stopping' || st === 'downloading') return 'warn';
+    return 'off';
+  }
+  function pvNode(icon, title, sub, cls) {
+    const n = document.createElement('div');
+    n.className = 'pv-node ' + (cls || '');
+    const i = document.createElement('div'); i.className = 'pv-ic'; i.textContent = icon;
+    const t = document.createElement('div'); t.className = 'pv-t'; t.textContent = title;
+    const s = document.createElement('div'); s.className = 'pv-s'; s.textContent = sub;
+    n.append(i, t, s);
+    return n;
+  }
+  function pvArrow() {
+    const a = document.createElement('div'); a.className = 'pv-arrow'; a.textContent = '▶'; return a;
+  }
+  function renderProxyViz() {
+    const box = $('#proxy-viz');
+    if (!box) return;
+    box.innerHTML = '';
+    const proxies = (state.servers || []).filter((s) => PROXY_TYPES.includes(s.type));
+    if (!proxies.length) {
+      const e = document.createElement('div');
+      e.className = 'pv-empty';
+      e.textContent = 'Прокси-серверов пока нет. Создайте BungeeCord или Velocity и привяжите серверы — здесь появится схема маршрутизации.';
+      box.appendChild(e);
+      return;
+    }
+    for (const px of proxies) {
+      const card = document.createElement('div');
+      card.className = 'pv-card';
+      const head = document.createElement('div');
+      head.className = 'pv-head';
+      const dot = document.createElement('span'); dot.className = 'pv-dot ' + pvStatusClass(px.status);
+      const nm = document.createElement('b'); nm.textContent = px.name;
+      const meta = document.createElement('span'); meta.className = 'pv-meta';
+      meta.textContent = (CORE_NAMES[px.type] || px.type) + ' · :' + px.port + ' · ' + (STATUS_LABEL[px.status] || px.status);
+      head.append(dot, nm, meta);
+      card.appendChild(head);
+
+      const flow = document.createElement('div');
+      flow.className = 'pv-flow';
+      flow.appendChild(pvNode('👥', 'Игроки', 'заходят на :' + px.port, 'pv-players'));
+      flow.appendChild(pvArrow());
+      flow.appendChild(pvNode('🔀', px.name, 'прокси :' + px.port, 'pv-proxy ' + pvStatusClass(px.status)));
+      flow.appendChild(pvArrow());
+
+      const col = document.createElement('div');
+      col.className = 'pv-backends';
+      const backs = px.proxyServers || [];
+      if (!backs.length) {
+        const n = document.createElement('div'); n.className = 'pv-node off'; n.textContent = 'нет привязанных серверов';
+        col.appendChild(n);
+      }
+      for (const b of backs) {
+        const srv = (state.servers || []).find((s) => s.id === b.id);
+        const st = srv ? srv.status : 'unknown';
+        const sub = ':' + b.port + ' · ' + (srv ? (STATUS_LABEL[st] || st) : 'удалён');
+        col.appendChild(pvNode('🟦', b.name || (srv && srv.name) || b.slug, sub, 'pv-back ' + pvStatusClass(st)));
+      }
+      flow.appendChild(col);
+      card.appendChild(flow);
+      box.appendChild(card);
+    }
+  }
+
   function onCoreChange() {
     const type = $('#core-select').value;
     const custom = type === 'custom';
@@ -3567,11 +3640,14 @@
         loadVersions();
         if (state.memCreateSlider) state.memCreateSlider.refresh();
       }
+      if (action === 'proxy') { showScreen('proxy'); guard(loadServers).then(() => renderProxyViz()); }
       if (action === 'settings') openAppSettings();
       if (action === 'about') $('#about-root').classList.remove('hidden');
       if (action === 'users') openUsers();
       if (action === 'logout') doLogout();
     }));
+    $('#proxy-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
+    $('#proxy-refresh').addEventListener('click', () => guard(loadServers).then(() => renderProxyViz()));
     Array.from(document.querySelectorAll('#app-menu a.menu-item')).forEach((a) =>
       a.addEventListener('click', () => menuToggle(false)));
 
@@ -3847,6 +3923,9 @@
     showScreen('create');
     loadVersions();
     guard(loadServers).then(suggestPort);
+  } else if (location.hash === '#proxy') {
+    showScreen('proxy');
+    guard(loadServers).then(() => renderProxyViz());
   } else if (location.hash.startsWith('#server=')) {
     // форматы: #server=<id>, #server=<id>/player/<ник>, #server=<id>/tab/<вкладка>
     const rest = location.hash.slice(8);

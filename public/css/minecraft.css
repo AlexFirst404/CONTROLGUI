@@ -186,6 +186,28 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .seg-btns .seg { flex: 1; margin-bottom: 0; }
 .seg-btns .seg.sel { box-shadow: 0 0 0 3px var(--accent) inset; color: #fff; }
 
+/* визуализация прокси-сети */
+#proxy-viz { display: flex; flex-direction: column; gap: 18px; max-width: 940px; margin: 0 auto 18px; }
+.pv-empty { text-align: center; color: #9aa39c; padding: 46px 20px; background: var(--card-inset); border: 1px solid var(--bd); }
+.pv-card { background: var(--card); border: 1px solid var(--bd); padding: 18px 20px; }
+.pv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.pv-head b { color: #fff; }
+.pv-meta { color: #9aa39c; font-size: 13px; }
+.pv-dot { width: 11px; height: 11px; border-radius: 50%; background: #777; flex: none; }
+.pv-dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.pv-dot.err { background: #e0584a; }
+.pv-dot.warn { background: #e8b84a; }
+.pv-flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pv-node { background: var(--card-inset); border: 2px solid var(--bd); padding: 10px 14px; min-width: 132px; text-align: center; }
+.pv-node.pv-proxy, .pv-node.on { border-color: var(--accent); }
+.pv-node.err { border-color: #e0584a; }
+.pv-node.warn { border-color: #e8b84a; }
+.pv-ic { font-size: 22px; line-height: 1; }
+.pv-t { color: #fff; font-size: 14px; margin-top: 3px; }
+.pv-s { color: #9aa39c; font-size: 12px; }
+.pv-arrow { color: var(--accent); font-size: 18px; flex: none; }
+.pv-backends { display: flex; flex-direction: column; gap: 8px; }
+
 /* подсказка по объёму ОЗУ при создании сервера */
 .mem-hint { margin-top: 6px; }
 .mem-hint.good { color: var(--accent-bright); }

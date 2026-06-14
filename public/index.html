@@ -50,6 +50,7 @@
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
     <div class="menu-item" data-menu="create"><i class="pi" data-ic="plus"></i> Создать сервер</div>
+    <div class="menu-item" data-menu="proxy"><i class="pi" data-ic="zap"></i> Прокси-сеть</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="settings"><i class="pi" data-ic="sliders"></i> Настройки панели</div>
     <div class="menu-item hidden" id="menu-users" data-menu="users"><i class="pi" data-ic="users"></i> Пользователи</div>
@@ -132,6 +133,17 @@
     <div class="btn-row">
       <button class="mc-btn primary" id="btn-goto-create"><i class="pi" data-ic="plus"></i> Создать сервер</button>
       <button class="mc-btn" id="btn-refresh"><i class="pi" data-ic="reload"></i> Обновить</button>
+    </div>
+  </section>
+
+  <!-- ЭКРАН: ВИЗУАЛИЗАЦИЯ ПРОКСИ-СЕТИ -->
+  <section id="screen-proxy" class="screen hidden">
+    <h1 class="mc-title">Прокси-сеть</h1>
+    <p class="hint" style="text-align:center;margin:-6px 0 18px">Как игроки проходят через прокси на бэкенд-серверы</p>
+    <div id="proxy-viz"></div>
+    <div class="btn-row">
+      <button class="mc-btn" id="proxy-back"><i class="pi" data-ic="chevron-left"></i> К серверам</button>
+      <button class="mc-btn" id="proxy-refresh"><i class="pi" data-ic="reload"></i> Обновить</button>
     </div>
   </section>
 
