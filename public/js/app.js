@@ -791,7 +791,11 @@
   function statusText(server) {
     if (server.status === 'downloading' && server.download) {
       if (server.download.phase === 'installing') return 'Установка ядра...';
-      if (server.download.phase === 'downloading') return 'Загрузка ' + Math.round((server.download.progress || 0) * 100) + '%';
+      if (server.download.phase === 'downloading') {
+        const d = server.download;
+        return d.totalBytes ? 'Загрузка ' + Math.round((d.progress || 0) * 100) + '%'
+                            : 'Загрузка ' + fmtBytes(d.doneBytes || 0);
+      }
       return 'Подготовка...';
     }
     return STATUS_LABEL[server.status] || server.status;
@@ -942,10 +946,12 @@
     const fill = $('#download-fill');
     if (dl && (dl.phase === 'resolving' || dl.phase === 'downloading' || dl.phase === 'installing')) {
       dlWrap.classList.remove('hidden');
-      fill.classList.toggle('indeterminate', dl.phase !== 'downloading');
+      fill.classList.toggle('indeterminate', dl.phase !== 'downloading' || !dl.totalBytes);
       if (dl.phase === 'downloading') {
-        $('#download-label').textContent = 'Загрузка: ' + fmtBytes(dl.doneBytes) + ' / ' + fmtBytes(dl.totalBytes);
-        fill.style.width = Math.round((dl.progress || 0) * 100) + '%';
+        $('#download-label').textContent = dl.totalBytes
+          ? 'Загрузка: ' + fmtBytes(dl.doneBytes) + ' / ' + fmtBytes(dl.totalBytes)
+          : 'Загрузка: ' + fmtBytes(dl.doneBytes) + ' (размер неизвестен)';
+        if (dl.totalBytes) fill.style.width = Math.round((dl.progress || 0) * 100) + '%';
       } else if (dl.phase === 'installing') {
         $('#download-label').textContent = 'Установка ядра (Forge)... подробности в консоли';
       } else {
@@ -3250,7 +3256,9 @@
       try { s = await API.javaInstallState(); } catch (e) { return; }
       state.javaInstallPhase = s.phase;
       if (s.phase === 'downloading') {
-        prog.textContent = 'Скачиваю Java ' + s.major + ': ' + Math.round((s.progress || 0) * 100) + '%';
+        prog.textContent = s.totalBytes
+          ? 'Скачиваю Java ' + s.major + ': ' + Math.round((s.progress || 0) * 100) + '%'
+          : 'Скачиваю Java ' + s.major + ': ' + fmtBytes(s.doneBytes || 0);
       } else if (s.phase === 'extracting') {
         prog.textContent = 'Распаковываю Java ' + s.major + '…';
       } else if (s.phase === 'done') {
