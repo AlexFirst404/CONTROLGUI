@@ -117,6 +117,24 @@
     </div>
   </div>
 
+  <!-- МОДАЛКА: ВЫБОР ПАПКИ (импорт сервера) -->
+  <div id="browse-root" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span>Выбор папки сервера</span>
+        <button class="mc-btn sm" id="browse-close"><i class="pi" data-ic="close"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="browse-cur" id="browse-cur"></div>
+        <div class="browse-list" id="browse-list"></div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="mc-btn primary" id="browse-pick"><i class="pi" data-ic="check"></i> Выбрать эту папку</button>
+          <button class="mc-btn" id="browse-up"><i class="pi" data-ic="chevron-left"></i> Вверх</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ЭКРАН: СПИСОК СЕРВЕРОВ -->
   <section id="screen-list" class="screen">
     <div class="home-hero">
@@ -152,6 +170,17 @@
     <h1 class="mc-title">Создание нового сервера</h1>
     <form id="create-form" class="mc-card form-panel" autocomplete="off">
       <div class="form-grid">
+        <div class="opt-card toggle-row" id="import-row" style="grid-column:1/-1">
+          <span class="toggle-label">Импортировать существующий сервер (выбрать готовую папку)</span>
+          <div class="mc-toggle" id="toggle-import"></div>
+        </div>
+        <label class="mc-label hidden" id="import-label" style="grid-column:1/-1">Папка существующего сервера
+          <div style="display:flex;gap:8px;align-items:stretch">
+            <input class="fld" id="import-path" readonly placeholder="Нажмите «Обзор» и выберите папку сервера">
+            <button type="button" class="mc-btn sm" id="import-browse" style="white-space:nowrap;margin:0"><i class="pi" data-ic="folder"></i> Обзор…</button>
+          </div>
+          <span class="hint" style="margin:4px 0 0">Папка с сервером (server.jar, world и т.д.) скопируется в панель. Затем выберите ядро ниже — версия определится при первом запуске.</span>
+        </label>
         <label class="mc-label">Имя сервера
           <input class="fld" name="name" maxlength="40" placeholder="Мой сервер" required>
         </label>

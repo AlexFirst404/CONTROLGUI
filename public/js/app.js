@@ -841,7 +841,8 @@
     const type = $('#core-select').value;
     const isCustom = type === 'custom';
     const isProxy = PROXY_TYPES.includes(type);
-    if (!isProxy && !$('#eula-check').classList.contains('on')) {
+    const isImport = isImportOn() && !isProxy && !isCustom;
+    if (!isProxy && !isImport && !$('#eula-check').classList.contains('on')) {
       showToast('Нужно принять Minecraft EULA');
       return;
     }
@@ -866,8 +867,13 @@
       body.backends = Array.from($('#backends-list').querySelectorAll('.mc-check.on'))
         .map((c) => c.dataset.id).filter(Boolean);
     }
+    if (isImport) {
+      if (!$('#import-path').value) { showToast('Выберите папку сервера (кнопка «Обзор»)'); return; }
+      body.import = true;
+      body.importPath = $('#import-path').value;
+    }
     if (isCustom && !coreFile) { showToast('Выберите файл ядра (.jar)'); return; }
-    if (!isCustom && !body.version) { showToast('Выберите версию'); return; }
+    if (!isCustom && !isImport && !body.version) { showToast('Выберите версию'); return; }
     $('#btn-create').disabled = true;
     try {
       const created = await API.create(body);
@@ -875,11 +881,16 @@
         showToast('Сервер создан, загружаю ваше ядро…', 'ok');
         await API.coreUpload(created.id, coreFile);
         showToast('Своё ядро загружено.', 'ok');
+      } else if (isImport) {
+        showToast('Сервер «' + created.name + '» импортирован.', 'ok');
       } else {
         showToast('Сервер «' + created.name + '» создан, устанавливаю ядро...', 'ok');
       }
       form.reset();
       $('#custom-core-file').value = '';
+      $('#toggle-import').classList.remove('on');
+      $('#import-path').value = '';
+      $('#import-label').classList.add('hidden');
       onCoreChange();
       $('#eula-check').classList.remove('on');
       await loadServers();
@@ -3383,6 +3394,36 @@
     }
   }
 
+  // ---------- импорт существующего сервера ----------
+  function isImportOn() { const t = $('#toggle-import'); return t && t.classList.contains('on'); }
+  function updateImportMode() {
+    const on = isImportOn();
+    $('#import-label').classList.toggle('hidden', !on);
+    onCoreChange(); // пересчитать видимость версии/EULA с учётом импорта
+  }
+  let browseParent = null;
+  let browseCurPath = '';
+  async function loadBrowse(p) {
+    try {
+      const d = await API.browse(p);
+      browseParent = d.parent;
+      browseCurPath = d.path || '';
+      $('#browse-cur').textContent = (d.path ? d.path : 'Этот компьютер (диски)') + (d.isServer ? '   ✓ похоже на сервер' : '');
+      $('#browse-pick').disabled = !d.path;
+      $('#browse-up').disabled = d.parent == null;
+      const list = $('#browse-list');
+      list.innerHTML = '';
+      for (const name of (d.dirs || [])) {
+        const full = d.path ? (d.path.replace(/[\\/]+$/, '') + '/' + name) : name;
+        const row = document.createElement('div');
+        row.className = 'browse-item';
+        row.textContent = '📁 ' + name;
+        row.addEventListener('click', () => loadBrowse(full));
+        list.appendChild(row);
+      }
+    } catch (e) { showToast(e.message); }
+  }
+
   function onCoreChange() {
     const type = $('#core-select').value;
     const custom = type === 'custom';
@@ -3402,6 +3443,14 @@
       $('#version-select').innerHTML = '<option value="latest">latest</option>';
     } else if (!custom) {
       loadVersions();
+    }
+    // импорт существующего сервера: скрываем версию/EULA/привязку, сам импорт — только для обычных ядер
+    const importOn = isImportOn();
+    $('#import-row').classList.toggle('hidden', isProxy || custom);
+    if (importOn && !isProxy && !custom) {
+      $('#version-label').classList.add('hidden');
+      $('#eula-row').classList.add('hidden');
+      $('#backends-label').classList.add('hidden');
     }
     updateJavaInstallUI(); // нужная мажорная java зависит от ядра/версии
   }
@@ -3765,6 +3814,21 @@
     $('#core-select').addEventListener('change', loadVersions);
     $('#version-select').addEventListener('change', updateJavaInstallUI);
     $('#java-install-btn').addEventListener('click', startJavaInstall);
+    // импорт существующего сервера
+    mkToggle($('#toggle-import'), false);
+    $('#toggle-import').addEventListener('click', updateImportMode);
+    $('#import-browse').addEventListener('click', () => {
+      $('#browse-root').classList.remove('hidden');
+      loadBrowse($('#import-path').value || '');
+    });
+    $('#browse-close').addEventListener('click', () => $('#browse-root').classList.add('hidden'));
+    $('#browse-root').addEventListener('click', (ev) => { if (ev.target === $('#browse-root')) $('#browse-root').classList.add('hidden'); });
+    $('#browse-up').addEventListener('click', () => loadBrowse(browseParent || ''));
+    $('#browse-pick').addEventListener('click', () => {
+      if (!browseCurPath) return;
+      $('#import-path').value = browseCurPath;
+      $('#browse-root').classList.add('hidden');
+    });
     $('#eula-row').addEventListener('click', (event) => {
       if (event.target.tagName !== 'A') $('#eula-check').classList.toggle('on');
     });

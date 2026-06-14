@@ -208,6 +208,13 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .pv-arrow { color: var(--accent); font-size: 18px; flex: none; }
 .pv-backends { display: flex; flex-direction: column; gap: 8px; }
 
+/* браузер папок (импорт существующего сервера) */
+.browse-cur { font-family: Consolas, monospace; font-size: 13px; color: var(--accent-bright); background: #161616;
+  border: 1px solid var(--bd); padding: 8px 10px; margin-bottom: 10px; word-break: break-all; }
+.browse-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--bd); background: var(--card-inset); }
+.browse-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #2a2a2a; font-size: 14px; }
+.browse-item:hover { background: #2f2f2f; }
+
 /* подсказка по объёму ОЗУ при создании сервера */
 .mem-hint { margin-top: 6px; }
 .mem-hint.good { color: var(--accent-bright); }

@@ -72,6 +72,8 @@ window.API = (function () {
     javaInstall: (major) => call('POST', '/api/java/install', { major: major }),
     javaInstallState: () => call('GET', '/api/java/install'),
 
+    browse: (path) => call('GET', '/api/browse?path=' + encodeURIComponent(path || '')),
+
     me: () => call('GET', '/api/auth/me'),
     logout: () => call('POST', '/api/auth/logout'),
     usersList: () => call('GET', '/api/users'),
