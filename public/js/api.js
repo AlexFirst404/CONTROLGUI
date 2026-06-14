@@ -66,6 +66,9 @@ window.API = (function () {
     filesRename: (id, from, to) => call('POST', '/api/servers/' + id + '/files-rename', { from: from, to: to }),
     upload: upload,
 
+    launchMode: () => call('GET', '/api/launch-mode'),
+    setLaunchMode: (mode) => call('POST', '/api/launch-mode', { mode: mode }),
+
     me: () => call('GET', '/api/auth/me'),
     logout: () => call('POST', '/api/auth/logout'),
     usersList: () => call('GET', '/api/users'),

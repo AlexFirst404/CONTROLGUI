@@ -1,12 +1,12 @@
 #!/bin/sh
-# CONTROLGUI — запуск локальной панели и открытие её отдельным окном-приложением
-# (аналог десктоп-обёртки на Windows). Данные хранятся в домашнем каталоге.
-set -eu
+# CONTROLGUI — единый лаунчер локальной панели. Режим открытия (приложение или
+# браузер) выбирается при первом запуске и хранится в файле; меняется в
+# настройках панели. Данные — в домашнем каталоге пользователя, не в /opt.
+set -u
 
 APP_DIR=/opt/controlgui
 PORT="${CONTROLGUI_PORT:-8400}"
 URL="http://127.0.0.1:${PORT}"
-# данные (серверы/настройки/бэкапы) — в каталоге пользователя, не в /opt
 export CONTROLGUI_DATA="${CONTROLGUI_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/controlgui}"
 mkdir -p "$CONTROLGUI_DATA"
 
@@ -15,28 +15,61 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+# режим открытия (тот же файл, что пишет панель)
+MODE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/controlgui/launch-mode"
+MODE="$(cat "$MODE_FILE" 2>/dev/null || echo)"
+if [ "$MODE" != "app" ] && [ "$MODE" != "browser" ]; then
+  if command -v zenity >/dev/null 2>&1 && zenity --question --title="CONTROLGUI" \
+       --text="Как открывать CONTROLGUI?\n\n«Приложение» — отдельное окно\n«Браузер» — в браузере по умолчанию\n\n(потом можно сменить в настройках панели)" \
+       --ok-label="Приложение" --cancel-label="Браузер" 2>/dev/null; then
+    MODE="app"
+  elif command -v zenity >/dev/null 2>&1; then
+    MODE="browser"
+  else
+    MODE="app"
+  fi
+  mkdir -p "$(dirname "$MODE_FILE")"
+  printf '%s\n' "$MODE" > "$MODE_FILE"
+fi
+
 ping_panel() {
-  node -e "require('http').get('${URL}/login',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" 2>/dev/null
+  node -e "require('http').get('${URL}/',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" 2>/dev/null
+}
+if ! ping_panel; then
+  ( cd "$APP_DIR" && PORT="$PORT" CONTROLGUI_DATA="$CONTROLGUI_DATA" node server.js >"$CONTROLGUI_DATA/panel.log" 2>&1 & )
+  i=0
+  while [ "$i" -lt 60 ]; do ping_panel && break; sleep 0.25; i=$((i + 1)); done
+fi
+
+# нативное окно WebKitGTK: программный рендер, иначе бывает пустое окно (GBM)
+export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
+export WEBKIT_DISABLE_COMPOSITING_MODE="${WEBKIT_DISABLE_COMPOSITING_MODE:-1}"
+webkit_ok() {
+  python3 - >/dev/null 2>&1 <<'PY'
+import gi
+gi.require_version('Gtk', '3.0')
+try:
+    gi.require_version('WebKit2', '4.1')
+except ValueError:
+    gi.require_version('WebKit2', '4.0')
+from gi.repository import Gtk, WebKit2
+PY
+}
+open_browser() {
+  for B in chromium chromium-browser google-chrome google-chrome-stable brave-browser microsoft-edge vivaldi; do
+    command -v "$B" >/dev/null 2>&1 && exec "$B" --app="$URL" --class=CONTROLGUI --window-size=1380,900
+  done
+  command -v xdg-open >/dev/null 2>&1 && exec xdg-open "$URL"
+  echo "CONTROLGUI запущен. Откройте в браузере: $URL"
 }
 
-# поднимаем сервер, если он ещё не отвечает на этом порту
-if ! ping_panel; then
-  ( cd "$APP_DIR" && PORT="$PORT" node server.js >"$CONTROLGUI_DATA/panel.log" 2>&1 & )
-  i=0
-  while [ "$i" -lt 60 ]; do
-    if ping_panel; then break; fi
-    sleep 0.25
-    i=$((i + 1))
-  done
-fi
-
-# открываем окном-приложением (как десктоп-обёртка), иначе — обычной вкладкой/браузером
-for B in chromium chromium-browser google-chrome google-chrome-stable brave-browser microsoft-edge vivaldi; do
-  if command -v "$B" >/dev/null 2>&1; then
-    exec "$B" --app="$URL" --class=CONTROLGUI --window-size=1380,900 >/dev/null 2>&1
+ICON=/usr/share/icons/hicolor/256x256/apps/controlgui.png
+if [ "$MODE" = "app" ] && command -v python3 >/dev/null 2>&1 && webkit_ok; then
+  if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$ICON" python3 "$APP_DIR/controlgui-window.py"; then
+    exit 0
   fi
-done
-if command -v xdg-open >/dev/null 2>&1; then
-  exec xdg-open "$URL"
+  echo "CONTROLGUI: окно WebKitGTK не запустилось — открываю в браузере" >&2
+elif [ "$MODE" = "app" ]; then
+  echo "CONTROLGUI: нет python3-gi/WebKitGTK — открываю в браузере (sudo apt install python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0)" >&2
 fi
-echo "CONTROLGUI запущен. Откройте в браузере: $URL"
+open_browser

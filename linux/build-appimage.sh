@@ -1,13 +1,13 @@
 #!/bin/sh
 # Сборка AppImage CONTROLGUI (запускать на Linux x86_64).
-# Использование: sh linux/build-appimage.sh <browser|app|all> [версия]
+# Использование: sh linux/build-appimage.sh [версия]
+# Один пакет: режим (приложение/браузер) выбирается при первом запуске.
 # Нужны: curl, tar (с поддержкой xz). appimagetool и node скачиваются сами.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-WHICH="${1:-all}"
-VERSION="${2:-1.3.0}"
+VERSION="${1:-1.3.0}"
 ARCH="x86_64"
 NODE_VER="v20.18.1"
 CACHE="$HERE/.appimage-cache"
@@ -31,63 +31,49 @@ fi
 # в CI обычно нет FUSE — запускаем appimagetool через распаковку
 export APPIMAGE_EXTRACT_AND_RUN=1
 
-build_flavor() {
-  flavor="$1"
-  echo "=== Сборка AppImage: $flavor ==="
-  APPDIR="$HERE/AppDir-$flavor"
-  rm -rf "$APPDIR"
-  mkdir -p "$APPDIR/usr/bin" "$APPDIR/opt/controlgui" \
-           "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
-           "$APPDIR/usr/share/applications"
+echo "=== Сборка AppImage CONTROLGUI $VERSION ==="
+APPDIR="$HERE/AppDir"
+rm -rf "$APPDIR"
+mkdir -p "$APPDIR/usr/bin" "$APPDIR/opt/controlgui" \
+         "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
+         "$APPDIR/usr/share/applications"
 
-  # панель (как в .deb): server.js + lib + public
-  cp "$ROOT/server.js" "$APPDIR/opt/controlgui/"
-  cp -r "$ROOT/lib" "$ROOT/public" "$APPDIR/opt/controlgui/"
-  cp "$HERE/appimage/controlgui-window.py" "$APPDIR/opt/controlgui/"
+# панель (как в .deb): server.js + lib + public
+cp "$ROOT/server.js" "$APPDIR/opt/controlgui/"
+cp -r "$ROOT/lib" "$ROOT/public" "$APPDIR/opt/controlgui/"
+cp "$HERE/appimage/controlgui-window.py" "$APPDIR/opt/controlgui/"
 
-  # встроенный node — AppImage не требует установленного Node.js
-  cp "$NODE_DIR/bin/node" "$APPDIR/usr/bin/node"
-  chmod 0755 "$APPDIR/usr/bin/node"
+# встроенный node — AppImage не требует установленного Node.js
+cp "$NODE_DIR/bin/node" "$APPDIR/usr/bin/node"
+chmod 0755 "$APPDIR/usr/bin/node"
 
-  # точка входа + маркер flavor
-  cp "$HERE/appimage/AppRun" "$APPDIR/AppRun"
-  chmod 0755 "$APPDIR/AppRun"
-  printf '%s' "$flavor" > "$APPDIR/flavor"
-  printf '%s' "$VERSION" > "$APPDIR/version"
-  # уникальный id сборки — чтобы AppRun переустанавливал копию панели при обновлении
-  printf '%s' "$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || date +%s)" > "$APPDIR/build"
+# точка входа + версия/id сборки
+cp "$HERE/appimage/AppRun" "$APPDIR/AppRun"
+chmod 0755 "$APPDIR/AppRun"
+printf '%s' "$VERSION" > "$APPDIR/version"
+# уникальный id сборки — чтобы AppRun переустанавливал копию панели при обновлении
+printf '%s' "$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || date +%s)" > "$APPDIR/build"
 
-  # иконка (в корне для thumbnailer + в hicolor)
-  cp "$ROOT/public/assets/controlgui.png" "$APPDIR/controlgui.png"
-  cp "$ROOT/public/assets/controlgui.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/controlgui.png"
+# иконка (в корне для thumbnailer + в hicolor)
+cp "$ROOT/public/assets/controlgui.png" "$APPDIR/controlgui.png"
+cp "$ROOT/public/assets/controlgui.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/controlgui.png"
 
-  # .desktop
-  name="CONTROLGUI"
-  [ "$flavor" = "app" ] && comment="Панель Minecraft-серверов (нативное окно)" \
-                        || comment="Панель Minecraft-серверов (в браузере)"
-  cat > "$APPDIR/controlgui.desktop" <<EOF
+# .desktop
+cat > "$APPDIR/controlgui.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=$name
-Comment=$comment
+Name=CONTROLGUI
+Comment=Панель Minecraft-серверов (приложение или браузер — на выбор)
 Exec=AppRun
 Icon=controlgui
 Categories=Game;Utility;
 Terminal=false
 StartupWMClass=CONTROLGUI
 EOF
-  cp "$APPDIR/controlgui.desktop" "$APPDIR/usr/share/applications/controlgui.desktop"
+cp "$APPDIR/controlgui.desktop" "$APPDIR/usr/share/applications/controlgui.desktop"
 
-  OUT="$HERE/CONTROLGUI-${VERSION}-${flavor}-${ARCH}.AppImage"
-  rm -f "$OUT"
-  ARCH="$ARCH" "$TOOL" --no-appstream "$APPDIR" "$OUT"
-  rm -rf "$APPDIR"
-  echo "Готово: $OUT ($(du -h "$OUT" | cut -f1))"
-}
-
-case "$WHICH" in
-  all)     build_flavor browser; build_flavor app ;;
-  browser) build_flavor browser ;;
-  app)     build_flavor app ;;
-  *) echo "Неизвестный аргумент: $WHICH (нужно browser|app|all)" >&2; exit 2 ;;
-esac
+OUT="$HERE/CONTROLGUI-${VERSION}-${ARCH}.AppImage"
+rm -f "$OUT"
+ARCH="$ARCH" "$TOOL" --no-appstream "$APPDIR" "$OUT"
+rm -rf "$APPDIR"
+echo "Готово: $OUT ($(du -h "$OUT" | cut -f1))"

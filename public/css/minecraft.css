@@ -698,7 +698,9 @@ input[type=password]::-ms-clear { display: none; }
 .about-body { text-align: center; }
 .about-logo { width: 64px; height: 64px; image-rendering: pixelated; margin: 6px auto 12px; display: block; }
 .about-name { font-family: var(--font-head); font-size: 20px; color: var(--accent-bright);
-  letter-spacing: 1px; margin-bottom: 12px; }
+  letter-spacing: 1px; margin-bottom: 6px; }
+.about-dev { color: #c9c9c9; font-size: 13px; margin-bottom: 12px; }
+.about-dev b { color: var(--accent-bright); }
 .about-text { margin: 0 0 12px; line-height: 1.7; font-size: 13.5px; }
 .about-text.dim { color: #8b968d; font-size: 12px; }
 

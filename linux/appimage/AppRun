@@ -1,11 +1,10 @@
 #!/bin/sh
-# Точка входа AppImage CONTROLGUI. Поднимает панель на встроенном Node и
-# открывает её — нативным окном (flavor=app) или в браузере (flavor=browser).
+# Точка входа AppImage CONTROLGUI. Один пакет: режим (приложение/браузер)
+# выбирается при первом запуске и хранится в файле; меняется в настройках панели.
 set -u
 HERE="$(dirname "$(readlink -f "$0")")"
-FLAVOR="$(cat "$HERE/flavor" 2>/dev/null || echo browser)"
 
-# встроенный node имеет приоритет; панель и данные — как у .deb-версии
+# встроенный node имеет приоритет; данные — как у .deb-версии
 export PATH="$HERE/usr/bin:$PATH"
 NODE="$HERE/usr/bin/node"
 [ -x "$NODE" ] || NODE="node"
@@ -15,15 +14,11 @@ mkdir -p "$CONTROLGUI_DATA"
 PORT="${CONTROLGUI_PORT:-8400}"
 URL="http://127.0.0.1:$PORT"
 
-# Панель запускаем из стабильной копии, а не из точки монтирования AppImage:
-# после закрытия окна образ отмонтируется, и node, запущенный из /tmp/.mount_*,
-# начал бы отдавать 404 (файлы исчезли вместе с монтированием). Копия — в
-# $CONTROLGUI_DATA/app/<версия>, как распаковка панели в Windows-версии.
+# Панель запускаем из стабильной копии (не из точки монтирования образа: после
+# закрытия окна образ отмонтируется). Переустанавливаем при смене сборки.
 VER="$(cat "$HERE/version" 2>/dev/null || echo 0)"
 BUILD="$(cat "$HERE/build" 2>/dev/null || echo "$VER")"
 APP="$CONTROLGUI_DATA/app/$VER"
-# Переустанавливаем копию, если поменялась сборка (иначе после обновления AppImage
-# с той же версией оставался старый код панели). data/серверы лежат не здесь.
 if [ ! -f "$APP/server.js" ] || [ "$(cat "$APP/.build" 2>/dev/null || echo)" != "$BUILD" ]; then
   rm -rf "$APP"
   mkdir -p "$APP"
@@ -31,26 +26,35 @@ if [ ! -f "$APP/server.js" ] || [ "$(cat "$APP/.build" 2>/dev/null || echo)" != 
   printf '%s' "$BUILD" > "$APP/.build"
 fi
 
+# режим открытия (тот же файл, что пишет панель: ~/.local/share/controlgui/launch-mode)
+MODE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/controlgui/launch-mode"
+MODE="$(cat "$MODE_FILE" 2>/dev/null || echo)"
+if [ "$MODE" != "app" ] && [ "$MODE" != "browser" ]; then
+  if command -v zenity >/dev/null 2>&1 && zenity --question --title="CONTROLGUI" \
+       --text="Как открывать CONTROLGUI?\n\n«Приложение» — отдельное окно\n«Браузер» — в браузере по умолчанию\n\n(потом можно сменить в настройках панели)" \
+       --ok-label="Приложение" --cancel-label="Браузер" 2>/dev/null; then
+    MODE="app"
+  elif command -v zenity >/dev/null 2>&1; then
+    MODE="browser"
+  else
+    MODE="app" # без zenity — приложение, с откатом в браузер
+  fi
+  mkdir -p "$(dirname "$MODE_FILE")"
+  printf '%s\n' "$MODE" > "$MODE_FILE"
+fi
+
 panel_up() {
   "$NODE" -e "require('http').get('$URL/',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" >/dev/null 2>&1
 }
-
 if ! panel_up; then
   ( cd "$APP" && PORT="$PORT" CONTROLGUI_DATA="$CONTROLGUI_DATA" "$NODE" server.js >"$CONTROLGUI_DATA/panel.log" 2>&1 & )
   i=0
-  while [ "$i" -lt 80 ]; do
-    panel_up && break
-    sleep 0.25
-    i=$((i + 1))
-  done
+  while [ "$i" -lt 80 ]; do panel_up && break; sleep 0.25; i=$((i + 1)); done
 fi
 
-# нативное окно (WebKitGTK). Программный рендер: иначе на части систем
-# (VM, Wayland, ряд GPU-драйверов) — "Failed to create GBM buffer" и пустое окно.
+# нативное окно WebKitGTK: программный рендер, иначе бывает пустое окно (GBM)
 export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
 export WEBKIT_DISABLE_COMPOSITING_MODE="${WEBKIT_DISABLE_COMPOSITING_MODE:-1}"
-
-# проба: установлены ли python3-gi + WebKitGTK (импорт типизаций, без окна)
 webkit_ok() {
   python3 - >/dev/null 2>&1 <<'PY'
 import gi
@@ -62,29 +66,21 @@ except ValueError:
 from gi.repository import Gtk, WebKit2
 PY
 }
+open_browser() {
+  for B in chromium chromium-browser google-chrome google-chrome-stable; do
+    command -v "$B" >/dev/null 2>&1 && exec "$B" --app="$URL"
+  done
+  command -v xdg-open >/dev/null 2>&1 && exec xdg-open "$URL"
+  echo "CONTROLGUI работает на $URL — откройте этот адрес в браузере." >&2
+  wait
+}
 
-if [ "$FLAVOR" = "app" ]; then
-  if command -v python3 >/dev/null 2>&1 && webkit_ok; then
-    if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$HERE/controlgui.png" \
-         python3 "$APP/controlgui-window.py"; then
-      exit 0
-    fi
-    echo "CONTROLGUI: окно WebKitGTK закрылось с ошибкой — открываю в браузере" >&2
-  else
-    echo "CONTROLGUI: не найден python3-gi/WebKitGTK — открываю в браузере." >&2
-    echo "  Нативное окно: sudo apt install python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0" >&2
+if [ "$MODE" = "app" ] && command -v python3 >/dev/null 2>&1 && webkit_ok; then
+  if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$HERE/controlgui.png" python3 "$APP/controlgui-window.py"; then
+    exit 0
   fi
+  echo "CONTROLGUI: окно WebKitGTK не запустилось — открываю в браузере" >&2
+elif [ "$MODE" = "app" ]; then
+  echo "CONTROLGUI: нет python3-gi/WebKitGTK — открываю в браузере (sudo apt install python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0)" >&2
 fi
-
-# браузер: chromium --app красивее, иначе браузер по умолчанию
-for B in chromium chromium-browser google-chrome google-chrome-stable; do
-  if command -v "$B" >/dev/null 2>&1; then
-    exec "$B" --app="$URL"
-  fi
-done
-if command -v xdg-open >/dev/null 2>&1; then
-  exec xdg-open "$URL"
-fi
-echo "CONTROLGUI работает на $URL — откройте этот адрес в браузере." >&2
-# держим процесс, чтобы node не осиротел, если панель запустил AppImage
-wait
+open_browser

@@ -1,9 +1,8 @@
 #!/bin/sh
 set -e
 
-# лаунчеры должны быть исполняемыми
+# лаунчер должен быть исполняемым
 chmod 0755 /usr/bin/controlgui 2>/dev/null || true
-chmod 0755 /usr/bin/controlgui-app 2>/dev/null || true
 
 # обновляем кэш ярлыков рабочего стола (не критично)
 if command -v update-desktop-database >/dev/null 2>&1; then

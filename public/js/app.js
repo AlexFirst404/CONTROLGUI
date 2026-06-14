@@ -408,6 +408,7 @@
     // версии и т.п. подгружаются асинхронно — следим за изменением <option>
     new MutationObserver(syncLabel).observe(sel, { childList: true });
     sel.addEventListener('change', syncLabel);
+    sel._mcSync = syncLabel; // вызвать после программной установки .value
     syncLabel();
   }
 
@@ -505,6 +506,13 @@
 
   function openAppSettings() {
     $('#set-theme').value = appSettings.theme;
+    if ($('#set-theme')._mcSync) $('#set-theme')._mcSync();
+    // текущий режим открытия (читается лаунчером при следующем старте)
+    API.launchMode().then((r) => {
+      const sel = $('#set-launchmode');
+      sel.value = r && r.mode ? r.mode : 'app';
+      if (sel._mcSync) sel._mcSync();
+    }).catch(() => {});
     if (!scaleSlider) {
       scaleSlider = mkSlider($('#set-scale'), {
         min: 80, max: 140, step: 5, value: appSettings.scale,
@@ -3655,6 +3663,11 @@
       if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
     });
     $('#set-theme').addEventListener('change', () => changeAppSettings({ theme: $('#set-theme').value }));
+    $('#set-launchmode').addEventListener('change', () => {
+      API.setLaunchMode($('#set-launchmode').value)
+        .then(() => showToast('Режим открытия сохранён — применится при следующем запуске', 'ok'))
+        .catch((e) => showToast(e.message));
+    });
     mkToggle($('#set-bganim'), appSettings.bgAnim !== false);
     $('#set-bganim').addEventListener('click', () =>
       changeAppSettings({ bgAnim: $('#set-bganim').classList.contains('on') }));

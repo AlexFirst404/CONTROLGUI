@@ -3,16 +3,15 @@
    работает на любой ОС. .deb = ar-архив из debian-binary + control.tar.gz + data.tar.gz.
 
    Запуск:
-     node linux/build-deb.js                 # оба пакета (browser + app)
-     node linux/build-deb.js 1.3.0 browser   # только controlgui (открытие в браузере/app-режиме)
-     node linux/build-deb.js 1.3.0 app       # только controlgui-app (нативное окно WebKitGTK) */
+     node linux/build-deb.js          # единый пакет controlgui
+     node linux/build-deb.js 1.3.0    # с указанием версии
+   Режим открытия (приложение/браузер) выбирается при первом запуске. */
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
 const ROOT = path.join(__dirname, '..');
 const VERSION = process.argv[2] || '1.3.0';
-const WHICH = process.argv[3] || 'all';
 const MTIME = 1700000000; // фиксированное время для воспроизводимости
 
 // ----------------------------------------------------------------- ustar tar ---
@@ -102,6 +101,8 @@ function panel(t) {
   t.addFile('opt/controlgui/server.js', path.join(ROOT, 'server.js'), 0o644);
   t.addTree(path.join(ROOT, 'lib'), 'opt/controlgui/lib');
   t.addTree(path.join(ROOT, 'public'), 'opt/controlgui/public');
+  // окно WebKitGTK для режима «приложение» (общее с AppImage)
+  t.addFile('opt/controlgui/controlgui-window.py', path.join(__dirname, 'appimage', 'controlgui-window.py'), 0o644);
   for (const extra of ['package.json', 'LICENSE', 'README.md']) {
     const p = path.join(ROOT, extra);
     if (fs.existsSync(p)) t.addFile('opt/controlgui/' + extra, p, 0o644);
@@ -114,27 +115,18 @@ function icons(t) {
   }
 }
 
-function buildPackage(flavor) {
+function buildPackage() {
   const t = makeTree();
   panel(t);
-  // браузерный лаунчер есть в обоих пакетах
   t.addFile('usr/bin/controlgui', path.join(__dirname, 'controlgui'), 0o755);
-  if (flavor === 'app') {
-    // нативное окно (WebKitGTK) + его ярлык по умолчанию
-    t.addFile('usr/bin/controlgui-app', path.join(__dirname, 'controlgui-app'), 0o755);
-    t.addFile('usr/share/applications/controlgui.desktop', path.join(__dirname, 'controlgui-app.desktop'), 0o644);
-  } else {
-    t.addFile('usr/share/applications/controlgui.desktop', path.join(__dirname, 'controlgui.desktop'), 0o644);
-  }
+  t.addFile('usr/share/applications/controlgui.desktop', path.join(__dirname, 'controlgui.desktop'), 0o644);
   icons(t);
 
   const dataEntries = t.entries;
   const installedSizeKb = Math.ceil(dataEntries.reduce((a, e) => a + (e.data ? e.data.length : 0), 0) / 1024);
   const dataTarGz = zlib.gzipSync(buildTar(dataEntries));
 
-  const pkg = flavor === 'app' ? 'controlgui-app' : 'controlgui';
-  const controlSrc = flavor === 'app' ? 'control-app' : 'control';
-  const control = fs.readFileSync(path.join(__dirname, 'DEBIAN', controlSrc), 'utf8')
+  const control = fs.readFileSync(path.join(__dirname, 'DEBIAN', 'control'), 'utf8')
     .replace('__VERSION__', VERSION)
     .replace('__SIZE__', String(installedSizeKb));
   const postinst = fs.readFileSync(path.join(__dirname, 'DEBIAN', 'postinst'));
@@ -149,11 +141,10 @@ function buildPackage(flavor) {
     arMember('control.tar.gz  ', controlTarGz),
     arMember('data.tar.gz     ', dataTarGz),
   ]);
-  const outName = pkg + '_' + VERSION + '_all.deb';
+  const outName = 'controlgui_' + VERSION + '_all.deb';
   fs.writeFileSync(path.join(__dirname, outName), deb);
   console.log('Собран ' + outName + ' (' + Math.round(deb.length / 1024) + ' КБ, файлов: ' +
     dataEntries.filter((e) => e.type === '0').length + ', установленный размер: ' + installedSizeKb + ' КБ)');
 }
 
-if (WHICH === 'all' || WHICH === 'browser') buildPackage('browser');
-if (WHICH === 'all' || WHICH === 'app') buildPackage('app');
+buildPackage();

@@ -70,10 +70,11 @@
       <div class="modal-body about-body">
         <img src="/assets/controlgui.png" class="about-logo" alt="">
         <div class="about-name">CONTROLGUI <span id="about-version"></span></div>
+        <div class="about-dev">Разработчик: <b>AlexFirst</b></div>
         <p class="about-text">Локальная панель управления настоящими Minecraft-серверами:
-          Vanilla, Paper, Purpur, Folia, Mohist и Forge. Консоль в реальном времени,
-          мониторинг ресурсов, файловый менеджер с редактором, игроки с инвентарём
-          и модерацией.</p>
+          Vanilla, Paper, Purpur, Folia, Mohist, Forge, а также прокси BungeeCord и Velocity.
+          Консоль в реальном времени, мониторинг ресурсов, файловый менеджер с редактором,
+          игроки с инвентарём и модерацией.</p>
         <p class="about-text dim">Node.js без зависимостей · интерфейс в стиле Minecraft Ore UI ·
           иконки Pixelarticons · редактор CodeMirror · головы скинов mc-heads.net ·
           текстуры предметов minecraft-assets</p>
@@ -96,6 +97,13 @@
             <option value="theme-lime">Лайм — зелёная (как в Bedrock)</option>
             <option value="theme-blue">Синяя</option>
           </select>
+        </label>
+        <label class="mc-label" id="launchmode-label" style="margin-top:14px">Как открывать панель
+          <select class="fld" id="set-launchmode">
+            <option value="app">Приложение — отдельное окно</option>
+            <option value="browser">Браузер</option>
+          </select>
+          <span class="hint" style="margin:2px 0 0">Применится при следующем запуске установленного приложения (.exe / .deb / .AppImage).</span>
         </label>
         <div class="opt-card slider-block" style="margin-top:14px">
           <span class="opt-label">Размер интерфейса: <span class="slider-val" id="set-scale-val"></span></span>
