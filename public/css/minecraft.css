@@ -172,6 +172,15 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .backend-name { color: #fff; font-size: 14px; }
 .backend-meta { margin-left: auto; color: #9a9a9a; font-size: 12px; font-family: var(--font-ui); }
 
+/* предложение скачать Java при создании сервера */
+.java-install { background: #241a1a; border: 2px solid #a33; padding: 12px 14px; margin: 8px 0 4px; }
+.ji-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ji-text { color: #ffb3a6; font-size: 13.5px; flex: 1; min-width: 220px; }
+.ji-row .mc-btn { margin-bottom: 0; }
+.ji-prog { display: block; margin-top: 8px; color: #ffcf99; }
+.java-install.ok { background: #16241a; border-color: #3a7; }
+.java-install.ok .ji-text { color: #9ad9b0; }
+
 /* выбор режима открытия — кнопки нашего стиля (вместо select) */
 .seg-btns { display: flex; gap: 8px; margin-top: 4px; }
 .seg-btns .seg { flex: 1; margin-bottom: 0; }

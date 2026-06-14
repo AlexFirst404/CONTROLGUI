@@ -92,13 +92,7 @@
         <button class="mc-btn sm" id="appset-close"><i class="pi" data-ic="close"></i></button>
       </div>
       <div class="modal-body">
-        <label class="mc-label">Тема оформления
-          <select class="fld" id="set-theme">
-            <option value="theme-lime">Лайм — зелёная (как в Bedrock)</option>
-            <option value="theme-blue">Синяя</option>
-          </select>
-        </label>
-        <div class="mc-label" id="launchmode-label" style="margin-top:14px">Как открывать панель
+        <div class="mc-label" id="launchmode-label">Как открывать панель
           <div class="seg-btns" id="launchmode-btns">
             <button type="button" class="mc-btn sm seg" data-mode="app"><i class="pi" data-ic="app-window"></i> Приложение</button>
             <button type="button" class="mc-btn sm seg" data-mode="browser"><i class="pi" data-ic="open"></i> Браузер</button>
@@ -226,6 +220,14 @@
       </span>
 
       <div class="hint">Для современных версий (1.20.5+) требуется Java 21. Файлы качаются с официальных источников: Mojang, PaperMC, PurpurMC, MohistMC, Forge. Установка Forge занимает несколько минут.</div>
+
+      <div class="java-install hidden" id="java-install">
+        <div class="ji-row">
+          <span class="ji-text" id="java-install-text">Java не найдена — без неё сервер не запустится.</span>
+          <button type="button" class="mc-btn sm" id="java-install-btn"><i class="pi" data-ic="download"></i> Скачать Java</button>
+        </div>
+        <span class="hint ji-prog hidden" id="java-install-prog"></span>
+      </div>
 
       <div class="btn-row">
         <button type="submit" class="mc-btn primary" id="btn-create"><i class="pi" data-ic="check"></i> Создать сервер</button>

@@ -103,6 +103,7 @@
     maxMemMb: 8192,
     cores: 0,
     totalMemMb: 0,
+    javaAvailable: true,
     filesPath: '',
     editorPath: null,
     memCreateSlider: null,
@@ -509,8 +510,6 @@
   }
 
   function openAppSettings() {
-    $('#set-theme').value = appSettings.theme;
-    if ($('#set-theme')._mcSync) $('#set-theme')._mcSync();
     // текущий режим открытия (читается лаунчером при следующем старте)
     API.launchMode().then((r) => setLaunchModeBtns(r && r.mode ? r.mode : 'app')).catch(() => {});
     if (!scaleSlider) {
@@ -549,6 +548,7 @@
     $('#screen-users').classList.toggle('hidden', name !== 'users');
     // бургер-меню — на всех экранах (главный, создание, сервер, пользователи)
     $('#btn-burger').classList.remove('hidden');
+    if (name === 'create') updateJavaInstallUI();
     $('#app-menu').classList.remove('open');
     $('#app-scrim').classList.remove('open');
     $('#burger-ic').classList.remove('open');
@@ -622,13 +622,15 @@
       }
       if (state.cpuCreateSlider) state.cpuCreateSlider.refresh(); // обновить «N ядер» в подписи
       $('#about-version').textContent = String(st.app || '').replace('CONTROLGUI', '').trim();
+      state.javaAvailable = !!(st.java && st.java.available);
       const alert = $('#java-alert');
-      if (st.java && st.java.available) {
+      if (state.javaAvailable) {
         alert.classList.add('hidden');
       } else {
         alert.classList.remove('hidden');
-        alert.innerHTML = 'Java не найдена! Серверы не запустятся. Установите Java 21+ с <a href="https://adoptium.net" target="_blank" rel="noopener">adoptium.net</a> и перезапустите панель.';
+        alert.innerHTML = 'Java не найдена! Серверы не запустятся. Скачайте её кнопкой при создании сервера или вручную с <a href="https://adoptium.net" target="_blank" rel="noopener">adoptium.net</a>.';
       }
+      updateJavaInstallUI();
     } catch (e) {
       showToast(e.message);
     }
@@ -3198,6 +3200,75 @@
 
   // ---------- своё ядро при создании ----------
 
+  // какая Java нужна для версии (зеркало lib/javas.js requiredJavaMajor)
+  function requiredJavaMajor(version) {
+    const m = String(version || '').match(/^(\d+)\.(\d+)(?:\.(\d+))?/);
+    if (!m) return 21;
+    const maj = +m[1], min = +m[2], patch = +(m[3] || 0);
+    if (maj !== 1) return 21;
+    if (min <= 16) return 8;
+    if (min < 20) return 17;
+    if (min === 20) return patch >= 5 ? 21 : 17;
+    return 21;
+  }
+  function selectedJavaMajor() {
+    const type = $('#core-select').value;
+    if (PROXY_TYPES.includes(type)) return 21;
+    return requiredJavaMajor($('#version-select') ? $('#version-select').value : '');
+  }
+
+  // предложение скачать Java на экране создания, если её нет
+  function updateJavaInstallUI() {
+    const box = document.getElementById('java-install');
+    if (!box) return;
+    const busy = state.javaInstallPhase === 'downloading' || state.javaInstallPhase === 'extracting';
+    const show = state.screen === 'create' && !state.javaAvailable;
+    box.classList.toggle('hidden', !show);
+    if (show && !busy && state.javaInstallPhase !== 'done') {
+      const major = selectedJavaMajor();
+      box.classList.remove('ok');
+      $('#java-install-text').textContent = 'Java ' + major + ' не найдена — без неё сервер не запустится.';
+      $('#java-install-btn').innerHTML = '<i class="pi" data-ic="download"></i> Скачать Java ' + major;
+      applyIcons($('#java-install-btn'));
+      $('#java-install-btn').disabled = false;
+      $('#java-install-btn').classList.remove('hidden');
+      $('#java-install-prog').classList.add('hidden');
+    }
+  }
+
+  async function startJavaInstall() {
+    const major = selectedJavaMajor();
+    const btn = $('#java-install-btn');
+    const prog = $('#java-install-prog');
+    btn.disabled = true;
+    prog.classList.remove('hidden');
+    prog.textContent = 'Скачиваю Java ' + major + '…';
+    state.javaInstallPhase = 'downloading';
+    try { await API.javaInstall(major); } catch (e) { showToast(e.message); }
+    const poll = setInterval(async () => {
+      let s;
+      try { s = await API.javaInstallState(); } catch (e) { return; }
+      state.javaInstallPhase = s.phase;
+      if (s.phase === 'downloading') {
+        prog.textContent = 'Скачиваю Java ' + s.major + ': ' + Math.round((s.progress || 0) * 100) + '%';
+      } else if (s.phase === 'extracting') {
+        prog.textContent = 'Распаковываю Java ' + s.major + '…';
+      } else if (s.phase === 'done') {
+        clearInterval(poll);
+        $('#java-install').classList.add('ok');
+        $('#java-install-text').textContent = 'Java ' + s.major + ' установлена ✓';
+        prog.classList.add('hidden');
+        btn.classList.add('hidden');
+        showToast('Java установлена — можно создавать сервер', 'ok');
+        loadStatus();
+      } else if (s.phase === 'error') {
+        clearInterval(poll);
+        prog.textContent = 'Ошибка: ' + (s.error || 'не удалось установить');
+        btn.disabled = false;
+      }
+    }, 1500);
+  }
+
   function onCoreChange() {
     const type = $('#core-select').value;
     const custom = type === 'custom';
@@ -3218,6 +3289,7 @@
     } else if (!custom) {
       loadVersions();
     }
+    updateJavaInstallUI(); // нужная мажорная java зависит от ядра/версии
   }
 
   // список серверов с галочками (все включены) для привязки к прокси
@@ -3574,6 +3646,8 @@
     $('#create-form').addEventListener('submit', submitCreate);
     $('#btn-create-cancel').addEventListener('click', () => showScreen('list'));
     $('#core-select').addEventListener('change', loadVersions);
+    $('#version-select').addEventListener('change', updateJavaInstallUI);
+    $('#java-install-btn').addEventListener('click', startJavaInstall);
     $('#eula-row').addEventListener('click', (event) => {
       if (event.target.tagName !== 'A') $('#eula-check').classList.toggle('on');
     });
@@ -3662,7 +3736,6 @@
     $('#appset-root').addEventListener('click', (event) => {
       if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
     });
-    $('#set-theme').addEventListener('change', () => changeAppSettings({ theme: $('#set-theme').value }));
     $$('#launchmode-btns .seg').forEach((b) => b.addEventListener('click', () => {
       const mode = b.dataset.mode;
       setLaunchModeBtns(mode);

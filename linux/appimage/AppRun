@@ -11,6 +11,28 @@ NODE="$HERE/usr/bin/node"
 export CONTROLGUI_DATA="${CONTROLGUI_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/controlgui}"
 mkdir -p "$CONTROLGUI_DATA"
 
+# интеграция в меню приложений (один раз): ярлык, указывающий на сам AppImage,
+# чтобы запускать из списка приложений, а не только из файла
+DESKTOP_DST="${XDG_DATA_HOME:-$HOME/.local/share}/applications/controlgui-appimage.desktop"
+if [ -n "${APPIMAGE:-}" ] && [ ! -f "$DESKTOP_DST" ]; then
+  ICON_DST="${XDG_DATA_HOME:-$HOME/.local/share}/icons/controlgui.png"
+  mkdir -p "$(dirname "$DESKTOP_DST")" "$(dirname "$ICON_DST")"
+  cp -f "$HERE/controlgui.png" "$ICON_DST" 2>/dev/null || true
+  cat > "$DESKTOP_DST" <<EOF
+[Desktop Entry]
+Type=Application
+Name=CONTROLGUI
+Comment=Панель Minecraft-серверов
+Exec="$APPIMAGE"
+Icon=$ICON_DST
+Categories=Game;Utility;
+Terminal=false
+StartupWMClass=CONTROLGUI
+EOF
+  command -v update-desktop-database >/dev/null 2>&1 && \
+    update-desktop-database -q "$(dirname "$DESKTOP_DST")" 2>/dev/null || true
+fi
+
 PORT="${CONTROLGUI_PORT:-8400}"
 URL="http://127.0.0.1:$PORT"
 

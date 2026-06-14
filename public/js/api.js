@@ -69,6 +69,9 @@ window.API = (function () {
     launchMode: () => call('GET', '/api/launch-mode'),
     setLaunchMode: (mode) => call('POST', '/api/launch-mode', { mode: mode }),
 
+    javaInstall: (major) => call('POST', '/api/java/install', { major: major }),
+    javaInstallState: () => call('GET', '/api/java/install'),
+
     me: () => call('GET', '/api/auth/me'),
     logout: () => call('POST', '/api/auth/logout'),
     usersList: () => call('GET', '/api/users'),
