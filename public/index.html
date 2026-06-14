@@ -98,13 +98,13 @@
             <option value="theme-blue">Синяя</option>
           </select>
         </label>
-        <label class="mc-label" id="launchmode-label" style="margin-top:14px">Как открывать панель
-          <select class="fld" id="set-launchmode">
-            <option value="app">Приложение — отдельное окно</option>
-            <option value="browser">Браузер</option>
-          </select>
-          <span class="hint" style="margin:2px 0 0">Применится при следующем запуске установленного приложения (.exe / .deb / .AppImage).</span>
-        </label>
+        <div class="mc-label" id="launchmode-label" style="margin-top:14px">Как открывать панель
+          <div class="seg-btns" id="launchmode-btns">
+            <button type="button" class="mc-btn sm seg" data-mode="app"><i class="pi" data-ic="app-window"></i> Приложение</button>
+            <button type="button" class="mc-btn sm seg" data-mode="browser"><i class="pi" data-ic="open"></i> Браузер</button>
+          </div>
+          <span class="hint" style="margin:6px 0 0">Применится при следующем запуске установленного приложения (.exe / .deb / .AppImage).</span>
+        </div>
         <div class="opt-card slider-block" style="margin-top:14px">
           <span class="opt-label">Размер интерфейса: <span class="slider-val" id="set-scale-val"></span></span>
           <div class="mc-slider" id="set-scale"></div>

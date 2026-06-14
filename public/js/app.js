@@ -504,15 +504,15 @@
     applyAppSettings(appSettings);
   }
 
+  function setLaunchModeBtns(mode) {
+    $$('#launchmode-btns .seg').forEach((b) => b.classList.toggle('sel', b.dataset.mode === mode));
+  }
+
   function openAppSettings() {
     $('#set-theme').value = appSettings.theme;
     if ($('#set-theme')._mcSync) $('#set-theme')._mcSync();
     // текущий режим открытия (читается лаунчером при следующем старте)
-    API.launchMode().then((r) => {
-      const sel = $('#set-launchmode');
-      sel.value = r && r.mode ? r.mode : 'app';
-      if (sel._mcSync) sel._mcSync();
-    }).catch(() => {});
+    API.launchMode().then((r) => setLaunchModeBtns(r && r.mode ? r.mode : 'app')).catch(() => {});
     if (!scaleSlider) {
       scaleSlider = mkSlider($('#set-scale'), {
         min: 80, max: 140, step: 5, value: appSettings.scale,
@@ -547,8 +547,8 @@
     $('#screen-create').classList.toggle('hidden', name !== 'create');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
     $('#screen-users').classList.toggle('hidden', name !== 'users');
-    // бургер-меню — на главном и экране пользователей
-    $('#btn-burger').classList.toggle('hidden', !(name === 'list' || name === 'users'));
+    // бургер-меню — на всех экранах (главный, создание, сервер, пользователи)
+    $('#btn-burger').classList.remove('hidden');
     $('#app-menu').classList.remove('open');
     $('#app-scrim').classList.remove('open');
     $('#burger-ic').classList.remove('open');
@@ -3663,11 +3663,13 @@
       if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
     });
     $('#set-theme').addEventListener('change', () => changeAppSettings({ theme: $('#set-theme').value }));
-    $('#set-launchmode').addEventListener('change', () => {
-      API.setLaunchMode($('#set-launchmode').value)
+    $$('#launchmode-btns .seg').forEach((b) => b.addEventListener('click', () => {
+      const mode = b.dataset.mode;
+      setLaunchModeBtns(mode);
+      API.setLaunchMode(mode)
         .then(() => showToast('Режим открытия сохранён — применится при следующем запуске', 'ok'))
         .catch((e) => showToast(e.message));
-    });
+    }));
     mkToggle($('#set-bganim'), appSettings.bgAnim !== false);
     $('#set-bganim').addEventListener('click', () =>
       changeAppSettings({ bgAnim: $('#set-bganim').classList.contains('on') }));

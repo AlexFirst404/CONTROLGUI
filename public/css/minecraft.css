@@ -172,6 +172,11 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .backend-name { color: #fff; font-size: 14px; }
 .backend-meta { margin-left: auto; color: #9a9a9a; font-size: 12px; font-family: var(--font-ui); }
 
+/* выбор режима открытия — кнопки нашего стиля (вместо select) */
+.seg-btns { display: flex; gap: 8px; margin-top: 4px; }
+.seg-btns .seg { flex: 1; margin-bottom: 0; }
+.seg-btns .seg.sel { box-shadow: 0 0 0 3px var(--accent) inset; color: #fff; }
+
 /* подсказка по объёму ОЗУ при создании сервера */
 .mem-hint { margin-top: 6px; }
 .mem-hint.good { color: var(--accent-bright); }
