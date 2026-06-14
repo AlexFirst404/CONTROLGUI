@@ -30,13 +30,35 @@ if ! panel_up; then
   done
 fi
 
-# нативное окно (если есть python3-gi + WebKitGTK); иначе — браузер
-if [ "$FLAVOR" = "app" ] && command -v python3 >/dev/null 2>&1; then
-  if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$HERE/controlgui.png" \
-       python3 "$APP/controlgui-window.py"; then
-    exit 0
+# нативное окно (WebKitGTK). Программный рендер: иначе на части систем
+# (VM, Wayland, ряд GPU-драйверов) — "Failed to create GBM buffer" и пустое окно.
+export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
+export WEBKIT_DISABLE_COMPOSITING_MODE="${WEBKIT_DISABLE_COMPOSITING_MODE:-1}"
+
+# проба: установлены ли python3-gi + WebKitGTK (импорт типизаций, без окна)
+webkit_ok() {
+  python3 - >/dev/null 2>&1 <<'PY'
+import gi
+gi.require_version('Gtk', '3.0')
+try:
+    gi.require_version('WebKit2', '4.1')
+except ValueError:
+    gi.require_version('WebKit2', '4.0')
+from gi.repository import Gtk, WebKit2
+PY
+}
+
+if [ "$FLAVOR" = "app" ]; then
+  if command -v python3 >/dev/null 2>&1 && webkit_ok; then
+    if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$HERE/controlgui.png" \
+         python3 "$APP/controlgui-window.py"; then
+      exit 0
+    fi
+    echo "CONTROLGUI: окно WebKitGTK закрылось с ошибкой — открываю в браузере" >&2
+  else
+    echo "CONTROLGUI: не найден python3-gi/WebKitGTK — открываю в браузере." >&2
+    echo "  Нативное окно: sudo apt install python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0" >&2
   fi
-  echo "CONTROLGUI: нет python3-gi/WebKitGTK — открываю в браузере" >&2
 fi
 
 # браузер: chromium --app красивее, иначе браузер по умолчанию

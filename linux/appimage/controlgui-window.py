@@ -2,6 +2,11 @@
 # Нативное окно WebKitGTK для AppImage. URL и иконку берёт из окружения
 # (CONTROLGUI_URL, CONTROLGUI_ICON), чтобы работать из любого каталога.
 import os
+# Программный рендерер WebKitGTK: без этого на части систем (VM, Wayland,
+# некоторые GPU-драйверы) падает "Failed to create GBM buffer" и окно
+# остаётся пустым. setdefault — можно переопределить через окружение.
+os.environ.setdefault('WEBKIT_DISABLE_DMABUF_RENDERER', '1')
+os.environ.setdefault('WEBKIT_DISABLE_COMPOSITING_MODE', '1')
 import gi
 gi.require_version('Gtk', '3.0')
 try:
