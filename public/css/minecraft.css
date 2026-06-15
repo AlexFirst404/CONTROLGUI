@@ -652,12 +652,35 @@ input[type=password]::-ms-clear { display: none; }
 .pl-filters { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .pl-fl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9fb0a4; flex: 1; min-width: 150px; }
 .pl-fl .fld { font-size: 13px; }
-.pl-pager { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+/* пагинация плагинов/модов — чанковые пиксельные плитки (переиспользуют движок .mc-btn) */
+.pl-pager { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .pl-pager .mc-btn[disabled] { opacity: .4; pointer-events: none; }
-.pl-count { font-size: 12px; color: #aab4ac; width: 100%; text-align: center; margin-top: 2px; }
-.pl-pages { display: inline-flex; gap: 4px; flex-wrap: wrap; align-items: center; justify-content: center; }
-.pl-pages .pg { min-width: 36px; padding: 7px 9px; margin-bottom: 0; }
-.pl-pages .pg.sel { box-shadow: 0 0 0 2px var(--accent) inset; color: var(--accent-bright); }
+.pl-pager > .mc-btn {
+  --btn-c: #5a5a5a; --btn-rim: #7d7d7d; --btn-sh: #1e1e1f; --btn-ts: #161616;
+  min-width: 44px; padding: 10px 12px; border-width: 3px; box-shadow: 0 5px 0 0 var(--btn-sh);
+}
+.pl-pager > .mc-btn .pi { width: 18px; height: 18px; }
+.pl-pager > .mc-btn:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 0 0 0 var(--btn-sh); }
+.pl-pages { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: center; }
+.pl-pages .pg {
+  --btn-c: #3a3a3a; --btn-rim: #1e1e1f; --btn-sh: #161616; --btn-ts: #141414;
+  width: 42px; min-width: 42px; height: 42px; padding: 0; margin-bottom: 0;
+  font-size: 15px; line-height: 1; color: #d9e4d4; text-shadow: 2px 2px 0 var(--btn-ts);
+  border: 3px solid var(--btn-rim);
+  box-shadow: 0 5px 0 0 var(--btn-sh), inset 0 2px 0 0 rgba(255,255,255,.10), inset 0 -3px 0 0 rgba(0,0,0,.42);
+}
+.pl-pages .pg:hover:not(.sel) { --btn-c: #474747; color: #fff; }
+.pl-pages .pg:active:not(.sel) {
+  transform: translateY(5px);
+  box-shadow: 0 0 0 0 var(--btn-sh), inset 0 2px 0 0 rgba(255,255,255,.08), inset 0 -2px 0 0 rgba(0,0,0,.40);
+}
+.pl-pages .pg.sel {
+  --btn-c: var(--accent); --btn-rim: var(--accent-bright); --btn-sh: #1e1e1f; --btn-ts: #1f4a12;
+  color: #0c1a07; text-shadow: 1px 1px 0 var(--accent-bright); transform: translateY(5px);
+  box-shadow: 0 0 0 0 var(--btn-sh), 0 0 0 2px rgba(0,0,0,.55), inset 0 3px 0 0 rgba(0,0,0,.45),
+    inset 0 -2px 0 0 rgba(255,255,255,.22), inset 0 0 14px 0 rgba(128,218,91,.45);
+}
+.pl-count { font-size: 12px; color: #aab4ac; width: 100%; text-align: center; margin-top: 6px; letter-spacing: .02em; }
 .pl-results { display: flex; flex-direction: column; gap: 8px; }
 .pl-empty { color: #a9a9a9; font-size: 13px; padding: 14px 4px; text-align: center; }
 .pl-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
