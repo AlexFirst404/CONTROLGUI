@@ -78,7 +78,8 @@ cp "$APPDIR/controlgui.desktop" "$APPDIR/usr/share/applications/controlgui.deskt
 
 OUT="$HERE/CONTROLGUI-${VERSION}-${ARCH}.AppImage"
 rm -f "$OUT"
-# xz даёт меньший squashfs (вес скачивания) ценой чуть более медленной распаковки
-ARCH="$ARCH" "$TOOL" --comp xz --no-appstream "$APPDIR" "$OUT"
+# zstd — единственный компрессор в mksquashfs у appimagetool; хороший баланс
+# размера и скорости распаковки (xz этот mksquashfs не поддерживает)
+ARCH="$ARCH" "$TOOL" --comp zstd --no-appstream "$APPDIR" "$OUT"
 rm -rf "$APPDIR"
 echo "Готово: $OUT ($(du -h "$OUT" | cut -f1))"
