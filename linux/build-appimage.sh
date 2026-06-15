@@ -46,6 +46,10 @@ cp "$HERE/appimage/controlgui-window.py" "$APPDIR/opt/controlgui/"
 # встроенный node — AppImage не требует установленного Node.js
 cp "$NODE_DIR/bin/node" "$APPDIR/usr/bin/node"
 chmod 0755 "$APPDIR/usr/bin/node"
+# официальные сборки node обычно уже без символов, но снимаем на всякий случай
+if command -v strip >/dev/null 2>&1; then
+  strip --strip-all "$APPDIR/usr/bin/node" 2>/dev/null || true
+fi
 
 # точка входа + версия/id сборки
 cp "$HERE/appimage/AppRun" "$APPDIR/AppRun"
@@ -74,6 +78,7 @@ cp "$APPDIR/controlgui.desktop" "$APPDIR/usr/share/applications/controlgui.deskt
 
 OUT="$HERE/CONTROLGUI-${VERSION}-${ARCH}.AppImage"
 rm -f "$OUT"
-ARCH="$ARCH" "$TOOL" --no-appstream "$APPDIR" "$OUT"
+# xz даёт меньший squashfs (вес скачивания) ценой чуть более медленной распаковки
+ARCH="$ARCH" "$TOOL" --comp xz --no-appstream "$APPDIR" "$OUT"
 rm -rf "$APPDIR"
 echo "Готово: $OUT ($(du -h "$OUT" | cut -f1))"

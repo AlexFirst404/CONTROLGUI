@@ -1019,6 +1019,16 @@
 
   // ---------- метрики процесса (чёткие графики с учётом DPI) ----------
 
+  // accent-цвет графиков почти не меняется — читаем getComputedStyle один раз,
+  // а не на каждой перерисовке каждого спарклайна (это форсировало layout-чтения)
+  let _accentBright = null;
+  function accentBright() {
+    if (_accentBright == null) {
+      _accentBright = getComputedStyle(document.body).getPropertyValue('--accent-bright').trim() || '#80da5b';
+    }
+    return _accentBright;
+  }
+
   function sparkline(canvasId, values, maxValue) {
     const canvas = $(canvasId);
     if (!canvas) return;
@@ -1034,7 +1044,7 @@
     if (!values.length) return;
     const max = maxValue || Math.max.apply(null, values.concat([1])) * 1.15;
     const stepX = cssW / 59;
-    const accent = getComputedStyle(document.body).getPropertyValue('--accent-bright').trim() || '#80da5b';
+    const accent = accentBright();
 
     const xy = (v, i) => [
       cssW - (values.length - 1 - i) * stepX,
@@ -2711,6 +2721,54 @@
     return null;
   }
 
+  // CodeMirror грузится лениво — только при первом открытии редактора файлов,
+  // чтобы не тянуть ~17 CDN-файлов на старте панели у тех, кто его не открывает
+  let _cmPromise = null;
+  function loadCodeMirror() {
+    if (window.CodeMirror) return Promise.resolve(true);
+    if (_cmPromise) return _cmPromise;
+    const BASE = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/';
+    const css = [
+      'codemirror.min.css',
+      'theme/material-darker.min.css',
+      'addon/dialog/dialog.min.css',
+      'addon/hint/show-hint.min.css',
+    ];
+    const js = [
+      'mode/javascript/javascript.min.js',
+      'mode/xml/xml.min.js',
+      'mode/yaml/yaml.min.js',
+      'mode/properties/properties.min.js',
+      'addon/search/searchcursor.min.js',
+      'addon/search/search.min.js',
+      'addon/search/jump-to-line.min.js',
+      'addon/dialog/dialog.min.js',
+      'addon/edit/matchbrackets.min.js',
+      'addon/edit/closebrackets.min.js',
+      'addon/selection/active-line.min.js',
+      'addon/hint/show-hint.min.js',
+      'addon/hint/anyword-hint.min.js',
+    ];
+    const loadCss = (href) => new Promise((resolve) => {
+      const l = document.createElement('link');
+      l.rel = 'stylesheet'; l.href = href;
+      l.onload = l.onerror = () => resolve();
+      document.head.appendChild(l);
+    });
+    const loadJs = (src) => new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = src; sc.onload = () => resolve(); sc.onerror = () => reject(new Error('load ' + src));
+      document.head.appendChild(sc);
+    });
+    _cmPromise = (async () => {
+      css.forEach((f) => loadCss(BASE + f));          // стили не блокируют
+      await loadJs(BASE + 'codemirror.min.js');       // ядро — первым
+      await Promise.all(js.map((f) => loadJs(BASE + f))); // режимы и аддоны зависят только от ядра
+      return !!window.CodeMirror;
+    })().catch(() => { _cmPromise = null; return false; });
+    return _cmPromise;
+  }
+
   function ensureEditor() {
     if (state.cm) return state.cm;
     if (!window.CodeMirror) return null;
@@ -2754,6 +2812,7 @@
       $('#files-browser').classList.add('hidden');
       $('#file-editor').classList.remove('hidden');
 
+      await loadCodeMirror(); // подтянуть CodeMirror при первом открытии (иначе fallback на textarea)
       const cm = ensureEditor();
       if (cm) {
         $('#editor-cm').classList.remove('hidden');
@@ -3648,13 +3707,24 @@
 
   // ---------- опрос ----------
 
+  function pollOnce() {
+    if (state.screen === 'list') guard(loadServers);
+    else if (state.screen === 'server') refreshServer();
+  }
+
   function startPolling() {
     if (state.pollTimer) clearInterval(state.pollTimer);
     state.pollTimer = setInterval(() => {
-      if (state.screen === 'list') guard(loadServers);
-      else if (state.screen === 'server') refreshServer();
+      // окно свёрнуто/вкладка скрыта — не опрашиваем и не перерисовываем DOM
+      if (document.hidden) return;
+      pollOnce();
     }, 2500);
   }
+
+  // при возврате видимости сразу обновляем данные, чтобы они не выглядели застывшими
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.pollTimer) pollOnce();
+  });
 
   // ---------- инициализация ----------
 
