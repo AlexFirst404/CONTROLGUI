@@ -130,9 +130,13 @@ function buildPackage() {
     .replace('__VERSION__', VERSION)
     .replace('__SIZE__', String(installedSizeKb));
   const postinst = fs.readFileSync(path.join(__dirname, 'DEBIAN', 'postinst'));
+  const prerm = fs.readFileSync(path.join(__dirname, 'DEBIAN', 'prerm'));
+  const postrm = fs.readFileSync(path.join(__dirname, 'DEBIAN', 'postrm'));
   const controlTarGz = zlib.gzipSync(buildTar([
     { name: './control', type: '0', mode: 0o644, data: Buffer.from(control, 'utf8') },
     { name: './postinst', type: '0', mode: 0o755, data: postinst },
+    { name: './prerm', type: '0', mode: 0o755, data: prerm },
+    { name: './postrm', type: '0', mode: 0o755, data: postrm },
   ]));
 
   const deb = Buffer.concat([

@@ -9,6 +9,24 @@ export PATH="$HERE/usr/bin:$PATH"
 NODE="$HERE/usr/bin/node"
 [ -x "$NODE" ] || NODE="node"
 export CONTROLGUI_DATA="${CONTROLGUI_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/controlgui}"
+
+# Обратный сетап удаления (режим «удалить всё»):
+#   ./CONTROLGUI-<версия>-x86_64.AppImage --uninstall
+# Останавливаем панель и сносим ВСЕ данные (серверы, миры, бэкапы, настройки) и
+# интеграцию в меню. Сам файл .AppImage удаляет пользователь.
+if [ "${1:-}" = "--uninstall" ]; then
+  UPORT="${CONTROLGUI_PORT:-8400}"
+  command -v fuser >/dev/null 2>&1 && fuser -k "$UPORT/tcp" 2>/dev/null || true
+  command -v pkill >/dev/null 2>&1 && pkill -f "$CONTROLGUI_DATA" 2>/dev/null || true
+  rm -rf "$CONTROLGUI_DATA" 2>/dev/null || true
+  rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/controlgui-appimage.desktop" 2>/dev/null || true
+  rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/icons/controlgui.png" 2>/dev/null || true
+  command -v update-desktop-database >/dev/null 2>&1 && \
+    update-desktop-database -q "${XDG_DATA_HOME:-$HOME/.local/share}/applications" 2>/dev/null || true
+  echo "CONTROLGUI: все данные и интеграция удалены. Теперь удалите сам файл .AppImage."
+  exit 0
+fi
+
 mkdir -p "$CONTROLGUI_DATA"
 
 # интеграция в меню приложений (один раз): ярлык, указывающий на сам AppImage,

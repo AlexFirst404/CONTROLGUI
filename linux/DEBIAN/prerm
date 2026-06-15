@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+# Остановить запущенную панель перед удалением файлов пакета.
+# Панель — node server.js из /opt/controlgui, слушает порт 8400 по умолчанию.
+if command -v fuser >/dev/null 2>&1; then
+  fuser -k 8400/tcp 2>/dev/null || true
+fi
+if command -v pkill >/dev/null 2>&1; then
+  pkill -f '/opt/controlgui/server.js' 2>/dev/null || true
+fi
+
+exit 0

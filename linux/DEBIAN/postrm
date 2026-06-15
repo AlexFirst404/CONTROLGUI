@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+# Обратный сетап удаления (режим «удалить всё»). dpkg сам убирает файлы пакета
+# из /opt, /usr/bin и /usr/share. Здесь сносим то, что создаётся при работе уже
+# в домашних каталогах пользователей: данные панели (серверы, миры, бэкапы,
+# настройки, launch-mode) и интеграцию AppImage-версии, если она была.
+case "$1" in
+  remove|purge)
+    for home in /root /home/*; do
+      [ -d "$home" ] || continue
+      rm -rf "$home/.local/share/controlgui" 2>/dev/null || true
+      rm -f "$home/.local/share/applications/controlgui-appimage.desktop" 2>/dev/null || true
+      rm -f "$home/.local/share/icons/controlgui.png" 2>/dev/null || true
+    done
+    if command -v update-desktop-database >/dev/null 2>&1; then
+      update-desktop-database -q /usr/share/applications 2>/dev/null || true
+    fi
+    ;;
+esac
+
+exit 0

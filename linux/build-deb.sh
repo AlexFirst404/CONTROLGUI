@@ -37,6 +37,8 @@ build_flavor() {
   SIZE=$(du -sk "$PKG/opt" "$PKG/usr" | awk '{s+=$1} END {print s}')
   sed -e "s/__VERSION__/$VERSION/" -e "s/__SIZE__/$SIZE/" "$ctl" > "$PKG/DEBIAN/control"
   install -m 0755 "$HERE/DEBIAN/postinst" "$PKG/DEBIAN/postinst"
+  install -m 0755 "$HERE/DEBIAN/prerm" "$PKG/DEBIAN/prerm"
+  install -m 0755 "$HERE/DEBIAN/postrm" "$PKG/DEBIAN/postrm"
 
   dpkg-deb --build --root-owner-group "$PKG" "$HERE/${name}_${VERSION}_all.deb"
   rm -rf "$PKG"
