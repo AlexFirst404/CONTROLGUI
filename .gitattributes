@@ -2,6 +2,8 @@
 linux/controlgui          text eol=lf
 linux/build-deb.sh        text eol=lf
 linux/DEBIAN/postinst     text eol=lf
+linux/DEBIAN/prerm        text eol=lf
+linux/DEBIAN/postrm       text eol=lf
 linux/DEBIAN/control      text eol=lf
 linux/appimage/AppRun     text eol=lf
 *.sh                      text eol=lf
