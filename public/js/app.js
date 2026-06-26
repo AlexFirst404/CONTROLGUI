@@ -176,7 +176,7 @@
       files: ['files.read'],
       plugins: ['files.read'],
       mods: ['files.read'],
-      players: ['players.kick', 'players.ban', 'players.whitelist', 'players.delete'],
+      players: ['players.kick', 'players.ban', 'players.op', 'players.whitelist', 'players.delete'],
       logs: ['logs.view'],
       backups: ['backups.create', 'backups.restore', 'backups.delete'],
     };
@@ -871,6 +871,10 @@
       if (!$('#import-path').value) { showToast('Выберите папку сервера (кнопка «Обзор»)'); return; }
       body.import = true;
       body.importPath = $('#import-path').value;
+      // выбранный .jar для запуска (если в папке нашлись jar-файлы)
+      if (!$('#import-jar-label').classList.contains('hidden') && $('#import-jar').value) {
+        body.importJarFile = $('#import-jar').value;
+      }
     }
     if (isCustom && !coreFile) { showToast('Выберите файл ядра (.jar)'); return; }
     if (!isCustom && !isImport && !body.version) { showToast('Выберите версию'); return; }
@@ -891,6 +895,7 @@
       $('#toggle-import').classList.remove('on');
       $('#import-path').value = '';
       $('#import-label').classList.add('hidden');
+      $('#import-jar-label').classList.add('hidden');
       onCoreChange();
       $('#eula-check').classList.remove('on');
       await loadServers();
@@ -908,7 +913,7 @@
     const order = [
       ['console', () => can('console.view')], ['settings', () => can('settings.edit')],
       ['files', () => can('files.read')],
-      ['players', () => canAny(['players.kick', 'players.ban', 'players.whitelist', 'players.delete'])],
+      ['players', () => canAny(['players.kick', 'players.ban', 'players.op', 'players.whitelist', 'players.delete'])],
       ['logs', () => can('logs.view')],
       ['backups', () => canAny(['backups.create', 'backups.restore', 'backups.delete'])],
       ['info', () => true],
@@ -1138,6 +1143,7 @@
     const panel = $('#players-list');
     const players = mergedPlayers(server.playersInfo);
     const bannedSet = new Set((server.banned || []).map((n) => n.toLowerCase()));
+    const opsSet = new Set((server.ops || []).map((n) => n.toLowerCase()));
     // забаненные, которых нет в списке — показываем, чтобы можно было разбанить
     for (const bn of server.banned || []) {
       if (!players.some((p) => p.name.toLowerCase() === bn.toLowerCase())) {
@@ -1166,6 +1172,7 @@
       const main = document.createElement('div');
       main.className = 'player-main';
       const banned = bannedSet.has(p.name.toLowerCase());
+      const isOp = opsSet.has(p.name.toLowerCase());
       const nameEl = document.createElement('div');
       nameEl.className = 'player-name';
       const dot = document.createElement('span');
@@ -1173,6 +1180,13 @@
       dot.title = p.online ? 'В сети' : 'Не в сети';
       nameEl.appendChild(dot);
       nameEl.appendChild(document.createTextNode(p.name));
+      if (isOp) {
+        const opBadge = document.createElement('span');
+        opBadge.className = 'pl-op';
+        opBadge.textContent = 'OP';
+        opBadge.title = 'Оператор сервера';
+        nameEl.appendChild(opBadge);
+      }
       if (banned) {
         const badge = document.createElement('span');
         badge.className = 'pl-banned';
@@ -1222,6 +1236,26 @@
           }
         });
         actions.appendChild(kickBtn);
+      }
+
+      if (can('players.op')) {
+        const opBtn = document.createElement('button');
+        opBtn.className = 'mc-btn sm' + (isOp ? '' : ' accent');
+        opBtn.appendChild(picon(isOp ? 'user' : 'crown'));
+        opBtn.appendChild(document.createTextNode(isOp ? ' Снять OP' : ' Выдать OP'));
+        opBtn.title = isOp ? 'Забрать права оператора' : 'Выдать права оператора (op)';
+        opBtn.addEventListener('click', async () => {
+          const act = isOp ? 'deop' : 'op';
+          const q = isOp
+            ? 'Снять OP с игрока «' + p.name + '»?'
+            : 'Выдать OP игроку «' + p.name + '»?\nОператор получает доступ к админ-командам сервера.';
+          if (await confirmDialog(q, { title: isOp ? 'Снять OP' : 'Выдать OP', yesText: isOp ? 'Снять' : 'Выдать', danger: false })) {
+            await guard(() => API.moderate(state.currentId, act, p.name));
+            showToast(isOp ? 'OP снят с «' + p.name + '».' : '«' + p.name + '» теперь оператор.', 'ok');
+            setTimeout(refreshServer, 800);
+          }
+        });
+        actions.appendChild(opBtn);
       }
 
       if (can('players.ban')) {
@@ -1812,6 +1846,8 @@
     try {
       const data = await API.properties(state.currentId);
       renderSettings(data);
+      applyPropsModeUI();
+      if ((state.propsMode || 'fields') === 'raw') loadRawProps();
       renderIconCard();
       loadRpCard();
       renderCoreCard();
@@ -2462,6 +2498,64 @@
     updateWlVisibility();
   }
 
+  // ---------- server.properties: режим «Поля» (перевод) / «Файл» (как есть) ----------
+
+  function applyPropsModeUI() {
+    const mode = state.propsMode || 'fields';
+    const raw = mode === 'raw';
+    document.querySelectorAll('#settings-form .props-mode-btn').forEach((b) => {
+      b.classList.toggle('primary', b.dataset.pm === mode);
+    });
+    $('#settings-known').classList.toggle('hidden', raw);
+    $('#settings-raw-wrap').classList.toggle('hidden', !raw);
+    if (raw) $('#wl-card').classList.add('hidden');
+  }
+
+  async function loadRawProps() {
+    if (!state.currentId) return;
+    try {
+      const data = await API.fileGet(state.currentId, 'server.properties');
+      $('#settings-raw').value = (data && typeof data.content === 'string') ? data.content : '';
+    } catch (e) {
+      $('#settings-raw').value = '';
+      showToast('server.properties пока нет — создастся при первом запуске сервера.');
+    }
+  }
+
+  // переключение по кнопкам «Поля» / «Файл»
+  function switchPropsMode(mode) {
+    if ((state.propsMode || 'fields') === mode) return;
+    state.propsMode = mode;
+    if (mode === 'fields') {
+      loadSettings(); // перечитать актуальные значения из файла и перерисовать поля
+    } else {
+      applyPropsModeUI();
+      loadRawProps();
+    }
+  }
+
+  async function saveSettingsRaw() {
+    const server = state.current || {};
+    const isRunning = server.status === 'running' || server.status === 'starting';
+    const ok = await confirmDialog(
+      'Сохранить server.properties сервера «' + (server.name || '') + '»?' +
+      (isRunning ? '\nСервер сейчас работает — изменения применятся после перезапуска.' : ''),
+      { title: 'Сохранение server.properties', yesText: 'Сохранить', danger: false });
+    if (!ok) return;
+    const content = $('#settings-raw').value;
+    await guard(async () => {
+      await API.fileSave(state.currentId, 'server.properties', content);
+      // бэкенд синхронизирует порт панели из server.properties — обновим карточку и список
+      state.current = await API.server(state.currentId);
+      renderServerHead();
+      showToast(isRunning
+        ? 'server.properties сохранён. Перезапустите сервер, чтобы применить.'
+        : 'server.properties сохранён.', 'ok');
+      loadServers();
+      loadRawProps(); // перечитать (на случай нормализации)
+    });
+  }
+
   // ---------- белый список ----------
 
   function updateWlVisibility() {
@@ -2568,6 +2662,7 @@
   async function saveSettings(event) {
     event.preventDefault();
     if (!state.currentId) return;
+    if ((state.propsMode || 'fields') === 'raw') return saveSettingsRaw();
 
     const server = state.current || {};
     const isRunning = server.status === 'running' || server.status === 'starting';
@@ -3458,15 +3553,39 @@
   function updateImportMode() {
     const on = isImportOn();
     $('#import-label').classList.toggle('hidden', !on);
+    if (!on) $('#import-jar-label').classList.add('hidden'); // выбор jar скрываем, пока папка не выбрана
     onCoreChange(); // пересчитать видимость версии/EULA с учётом импорта
+  }
+
+  // список .jar из выбранной папки импорта: даём выбрать, какой запускать
+  function populateImportJars(jars) {
+    const label = $('#import-jar-label');
+    const sel = $('#import-jar');
+    sel.innerHTML = '';
+    const list = (jars || []).filter((f) => /\.jar$/i.test(f));
+    if (!list.length) { label.classList.add('hidden'); return; }
+    const def = list.find((f) => /^server\.jar$/i.test(f))
+      || list.find((f) => !/installer/i.test(f))
+      || list[0];
+    for (const f of list) {
+      const o = document.createElement('option');
+      o.value = f;
+      o.textContent = f;
+      sel.appendChild(o);
+    }
+    sel.value = def;
+    if (sel._mcSync) sel._mcSync(); // обновить подпись своей выпадашки
+    label.classList.remove('hidden');
   }
   let browseParent = null;
   let browseCurPath = '';
+  let browseCurJars = [];
   async function loadBrowse(p) {
     try {
       const d = await API.browse(p);
       browseParent = d.parent;
       browseCurPath = d.path || '';
+      browseCurJars = d.jars || [];
       $('#browse-cur').textContent = (d.path ? d.path : 'Этот компьютер (диски)') + (d.isServer ? '   ✓ похоже на сервер' : '');
       $('#browse-pick').disabled = !d.path;
       $('#browse-up').disabled = d.parent == null;
@@ -3897,6 +4016,7 @@
     $('#browse-pick').addEventListener('click', () => {
       if (!browseCurPath) return;
       $('#import-path').value = browseCurPath;
+      populateImportJars(browseCurJars); // показать выбор .jar для запуска
       $('#browse-root').classList.add('hidden');
     });
     $('#eula-row').addEventListener('click', (event) => {
@@ -3954,6 +4074,9 @@
     cmdInput.addEventListener('blur', () => setTimeout(hideSuggest, 150));
 
     $('#settings-form').addEventListener('submit', saveSettings);
+    document.querySelectorAll('#settings-form .props-mode-btn').forEach((b) => {
+      b.addEventListener('click', () => switchPropsMode(b.dataset.pm));
+    });
     $('#btn-delete-server').addEventListener('click', () => state.currentId && deleteServer(state.currentId));
 
     $('#btn-new-file').addEventListener('click', () => createEntry('file'));

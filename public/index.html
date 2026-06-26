@@ -32,7 +32,6 @@
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
     <div class="menu-item" data-menu="create"><i class="pi" data-ic="plus"></i> Создать сервер</div>
-    <div class="menu-item" data-menu="proxy"><i class="pi" data-ic="zap"></i> Прокси-сеть</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="settings"><i class="pi" data-ic="sliders"></i> Настройки панели</div>
     <div class="menu-item hidden" id="menu-users" data-menu="users"><i class="pi" data-ic="users"></i> Пользователи</div>
@@ -162,6 +161,10 @@
             <button type="button" class="mc-btn sm" id="import-browse" style="white-space:nowrap;margin:0"><i class="pi" data-ic="folder"></i> Обзор…</button>
           </div>
           <span class="hint" style="margin:4px 0 0">Папка с сервером (server.jar, world и т.д.) скопируется в панель. Затем выберите ядро ниже — версия определится при первом запуске.</span>
+        </label>
+        <label class="mc-label hidden" id="import-jar-label" style="grid-column:1/-1">Файл .jar для запуска
+          <select class="fld" id="import-jar"></select>
+          <span class="hint" style="margin:4px 0 0">Если в папке несколько .jar — выберите, какой запускать сервер (обычно server.jar; установщики-installer не подходят).</span>
         </label>
         <label class="mc-label">Имя сервера
           <input class="fld" name="name" maxlength="40" placeholder="Мой сервер" required>
@@ -409,6 +412,16 @@
 
     <!-- Вкладка: настройки -->
     <div class="tab-pane hidden" id="tab-settings">
+      <div class="mc-card form-panel" id="core-card">
+        <div class="section-title">Ядро сервера</div>
+        <div class="hint" id="core-info" style="margin:0 0 10px">Текущее ядро: <b id="core-current">—</b>. Можно скачать его заново (если файлы повредились) или загрузить своё ядро .jar. Сервер должен быть остановлен.</div>
+        <div class="btn-row btn-row-left" style="margin:0">
+          <button type="button" class="mc-btn sm accent" id="core-redownload"><i class="pi" data-ic="download"></i> Скачать ядро заново</button>
+          <button type="button" class="mc-btn sm primary" id="core-upload-btn"><i class="pi" data-ic="upload"></i> Загрузить своё ядро (.jar)</button>
+          <input type="file" id="core-file" class="hidden" accept=".jar">
+        </div>
+      </div>
+
       <div class="mc-card form-panel" id="icon-card">
         <div class="section-title">Иконка сервера</div>
         <div class="icon-row">
@@ -446,7 +459,18 @@
       </div>
 
       <form id="settings-form" class="mc-card form-panel" autocomplete="off">
+        <div class="props-modebar" style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+          <span class="label-dim" style="font-size:13px">server.properties:</span>
+          <button type="button" class="mc-btn sm props-mode-btn primary" data-pm="fields"><i class="pi" data-ic="sliders"></i> Поля (с переводом)</button>
+          <button type="button" class="mc-btn sm props-mode-btn" data-pm="raw"><i class="pi" data-ic="file"></i> Файл (как есть)</button>
+        </div>
+
         <div class="form-grid" id="settings-known"></div>
+
+        <div id="settings-raw-wrap" class="hidden">
+          <div class="hint" style="margin:0 0 8px">Прямое редактирование файла <code>server.properties</code>: формат <code>ключ=значение</code>, строки с <code>#</code> — комментарии. Имя/память/CPU/Java меняются в режиме «Поля».</div>
+          <textarea id="settings-raw" class="fld" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" style="width:100%;min-height:360px;font-family:ui-monospace,Consolas,'Courier New',monospace;font-size:13px;line-height:1.5;white-space:pre;tab-size:4;resize:vertical"></textarea>
+        </div>
 
         <div id="wl-card" class="opt-card wl-card hidden">
           <div class="opt-label"><i class="pi" data-ic="users"></i> Белый список — допущенные игроки</div>
@@ -463,16 +487,6 @@
           <button type="submit" class="mc-btn primary"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
         </div>
       </form>
-
-      <div class="mc-card form-panel" id="core-card">
-        <div class="section-title">Ядро сервера</div>
-        <div class="hint" id="core-info" style="margin:0 0 10px">Текущее ядро: <b id="core-current">—</b>. Можно скачать его заново (если файлы повредились) или загрузить своё ядро .jar. Сервер должен быть остановлен.</div>
-        <div class="btn-row btn-row-left" style="margin:0">
-          <button type="button" class="mc-btn sm accent" id="core-redownload"><i class="pi" data-ic="download"></i> Скачать ядро заново</button>
-          <button type="button" class="mc-btn sm primary" id="core-upload-btn"><i class="pi" data-ic="upload"></i> Загрузить своё ядро (.jar)</button>
-          <input type="file" id="core-file" class="hidden" accept=".jar">
-        </div>
-      </div>
 
       <div class="mc-card form-panel danger-card">
         <div class="danger-title">Опасная зона</div>

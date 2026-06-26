@@ -19,6 +19,10 @@
   --sl-knob-w: 32px; --sl-knob-h: 34px; --sl-face-h: 22px;
 }
 
+/* Кастомный курсор окна (cursor.png из корня -> public/assets). Курсор по
+   умолчанию; на кнопках/ссылках pointer сохраняется (их специфичность выше). */
+html, body { cursor: url('/assets/cursor.png') 0 0, default; }
+
 /* темы кита: меняют только акцент и цвета primary-кнопки */
 .theme-lime {
   --accent: #5cb53d; --accent-bright: #80da5b;
@@ -409,6 +413,8 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .player-name .dot.on { background: #7ed957; box-shadow: 0 0 6px #7ed957; }
 .pl-banned { font-size: 9px; letter-spacing: 1.5px; color: #ff7a6a; border: 1px solid #a33;
   padding: 2px 6px; background: #241a1a; }
+.pl-op { font-size: 9px; letter-spacing: 1.5px; color: #e9c558; border: 1px solid #9a7a23;
+  padding: 2px 6px; background: #241f12; }
 .player-sub { font-size: 11.5px; color: #a9a9a9; margin-top: 3px; word-break: break-all; line-height: 1.6; }
 .player-right { text-align: right; font-size: 12px; color: #c8c8c8; flex: none; line-height: 1.7; }
 .player-actions { flex: none; display: flex; gap: 6px; flex-wrap: wrap; }
