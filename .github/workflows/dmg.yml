@@ -1,0 +1,63 @@
+name: Build macOS DMG
+
+# Собирает .dmg (Apple Silicon + Intel) на macOS-раннерах и прикрепляет их к
+# релизу. Запускается при изменении файлов сборки на ветке mac-dmg, либо вручную:
+# вкладка Actions → Build macOS DMG → Run workflow.
+on:
+  push:
+    branches: [mac-dmg]
+    paths:
+      - 'mac/**'
+      # панель встраивается в .app — пересобираем при её изменении
+      - 'server.js'
+      - 'lib/**'
+      - 'public/**'
+      - '.github/workflows/dmg.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия (для имени файла)'
+        required: true
+        default: '1.3.0'
+      release_tag:
+        description: 'Тег релиза, куда заливать .dmg'
+        required: true
+        default: 'v1.3.0-linux'
+
+permissions:
+  contents: write
+
+env:
+  VERSION: ${{ github.event.inputs.version || '1.3.0' }}
+  RELEASE_TAG: ${{ github.event.inputs.release_tag || 'v1.3.0-linux' }}
+
+jobs:
+  dmg:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-14, arch: arm64 }
+          - { runner: macos-13, arch: x64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Собрать DMG
+        run: |
+          chmod +x mac/build-dmg.sh
+          ./mac/build-dmg.sh "$VERSION"
+          ls -lh mac/*.dmg
+
+      - name: Прикрепить к релизу
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" mac/*.dmg --clobber --repo "${{ github.repository }}"
+
+      - name: Сохранить как артефакты сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlgui-dmg-${{ matrix.arch }}
+          path: mac/*.dmg
