@@ -19,20 +19,58 @@ function readJsonBody(req) {
   });
 }
 
+/* Анти-брутфорс входа: 5 неверных попыток с одного IP -> блок на 5 минут. */
+const LOGIN_MAX_FAILS = 5;
+const LOGIN_LOCK_MS = 5 * 60 * 1000;
+const loginAttempts = new Map(); // ip -> { fails, lockedUntil }
+
+function clientIp(req) {
+  // за реверс-прокси (рекомендуемый удалённый доступ) — X-Forwarded-For; иначе сокет
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return xff || req.socket.remoteAddress || 'unknown';
+}
+function loginLockMs(ip) {
+  const a = loginAttempts.get(ip);
+  return a && a.lockedUntil > Date.now() ? a.lockedUntil - Date.now() : 0;
+}
+function noteLoginFail(ip) {
+  const a = loginAttempts.get(ip) || { fails: 0, lockedUntil: 0 };
+  a.fails += 1;
+  if (a.fails >= LOGIN_MAX_FAILS) { a.lockedUntil = Date.now() + LOGIN_LOCK_MS; a.fails = 0; }
+  loginAttempts.set(ip, a);
+  return a;
+}
+
 /* Логин/логаут пользователей — доступны без сессии. */
 async function handleAuthRoutes(req, res, urlPath) {
   if (urlPath === '/api/auth/login' && req.method === 'POST') {
+    const ip = clientIp(req);
+    const locked = loginLockMs(ip);
+    if (locked > 0) {
+      const sec = Math.ceil(locked / 1000);
+      res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': String(sec) });
+      res.end(JSON.stringify({ error: 'Слишком много попыток. Вход заблокирован, подождите ' + Math.ceil(sec / 60) + ' мин.', lockedSec: sec }));
+      return true;
+    }
     const body = await readJsonBody(req);
     const user = users.verify(body.username || '', body.password || '');
     if (user) {
+      loginAttempts.delete(ip); // успех — сбрасываем счётчик
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Set-Cookie': users.sessionCookie(users.createSession(user.username)),
       });
       res.end(JSON.stringify({ ok: true, user }));
     } else {
-      res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: 'Неверный логин или пароль' }));
+      const a = noteLoginFail(ip);
+      const lockMs = loginLockMs(ip);
+      if (lockMs > 0) {
+        res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': String(Math.ceil(lockMs / 1000)) });
+        res.end(JSON.stringify({ error: 'Слишком много неверных попыток. Вход заблокирован на 5 минут.', lockedSec: Math.ceil(lockMs / 1000) }));
+      } else {
+        res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Неверный логин или пароль. Осталось попыток: ' + (LOGIN_MAX_FAILS - a.fails) }));
+      }
     }
     return true;
   }

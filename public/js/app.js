@@ -788,7 +788,13 @@
   }
 
   function headUrl(player, size) {
-    const key = player.uuid || player.name;
+    // Без online-mode у игроков offline-UUID (version 3), который Mojang не знает —
+    // голова не грузилась. По НИКУ mc-heads резолвит скин (а для неизвестных отдаёт
+    // Steve), поэтому настоящий Mojang-UUID (version 4) берём только когда он есть,
+    // иначе всегда ник — голова отображается и на пиратских серверах.
+    const hex = String(player.uuid || '').replace(/-/g, '');
+    const realUuid = hex.length === 32 && hex[12] === '4';
+    const key = realUuid ? player.uuid : (player.name || player.uuid);
     return 'https://mc-heads.net/avatar/' + encodeURIComponent(key) + '/' + (size || 36);
   }
 
