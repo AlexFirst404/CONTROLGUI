@@ -17,7 +17,9 @@ linux/*.AppImage
 linux/.appimage-cache/
 linux/AppDir-*/
 
-# собранный .dmg/.app и кэш сборки macOS (воспроизводится: mac/build-dmg.sh)
+# собранный .pkg/.app и кэш сборки macOS (воспроизводится: mac/build-pkg.sh)
+mac/*.pkg
 mac/*.dmg
 mac/CONTROLGUI.app/
+mac/.pkg-cache/
 mac/.dmg-cache/

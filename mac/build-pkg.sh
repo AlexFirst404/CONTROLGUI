@@ -1,9 +1,9 @@
 #!/bin/sh
-# Сборка CONTROLGUI.app + .dmg для macOS (запускать НА macOS).
-# Использование: sh mac/build-dmg.sh [версия]
-# Бандлит встроенный node-darwin + панель; режим открытия — браузер
-# (поднимает локальную панель и открывает её в браузере/приложении-окне).
-# Нужны: curl, tar, hdiutil (есть в macOS). sips/iconutil — для иконки (необязательно).
+# Сборка CONTROLGUI.app + .pkg-установщика для macOS (запускать НА macOS).
+# Использование: sh mac/build-pkg.sh [версия]
+# Бандлит встроенный node-darwin + панель; режим открытия — браузер.
+# .pkg ставит приложение в /Applications через системный установщик macOS.
+# Нужны: curl, tar, pkgbuild (есть в macOS). sips/iconutil — для иконки (необязательно).
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -11,14 +11,13 @@ ROOT="$(cd "$HERE/.." && pwd)"
 VERSION="${1:-1.3.0}"
 NODE_VER="v20.18.1"
 
-# архитектура раннера/машины: Apple Silicon (arm64) или Intel (x64)
 case "$(uname -m)" in
   arm64) NARCH=arm64 ;;
   x86_64) NARCH=x64 ;;
   *) NARCH=x64 ;;
 esac
 
-CACHE="$HERE/.dmg-cache"
+CACHE="$HERE/.pkg-cache"
 mkdir -p "$CACHE"
 NODE_DIR="$CACHE/node-$NODE_VER-darwin-$NARCH"
 if [ ! -x "$NODE_DIR/bin/node" ]; then
@@ -63,16 +62,19 @@ if [ -f "$ICON_PNG" ] && command -v sips >/dev/null 2>&1 && command -v iconutil 
   iconutil -c icns "$TMPICON" -o "$APP/Contents/Resources/controlgui.icns" 2>/dev/null || true
 fi
 
-# ad-hoc подпись: без неё приложение из интернета может не запускаться вовсе;
-# с ней Gatekeeper всё равно попросит «Открыть» вручную при первом запуске.
+# ad-hoc подпись приложения (без неё .app из интернета может не запускаться)
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
-# .dmg с ярлыком на /Applications (перетащить для установки)
-OUT="$HERE/CONTROLGUI-${VERSION}-macos-${NARCH}.dmg"
+# .pkg: установщик кладёт CONTROLGUI.app в /Applications
+OUT="$HERE/CONTROLGUI-${VERSION}-macos-${NARCH}.pkg"
 rm -f "$OUT"
-STAGE="$(mktemp -d)"
-cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "CONTROLGUI" -srcfolder "$STAGE" -ov -format UDZO "$OUT" >/dev/null
-rm -rf "$STAGE"
+PKGROOT="$(mktemp -d)"
+cp -R "$APP" "$PKGROOT/"
+pkgbuild \
+  --root "$PKGROOT" \
+  --install-location /Applications \
+  --identifier com.alexfirst.controlgui \
+  --version "$VERSION" \
+  "$OUT"
+rm -rf "$PKGROOT"
 echo "Готово: $OUT ($(du -h "$OUT" | cut -f1))"

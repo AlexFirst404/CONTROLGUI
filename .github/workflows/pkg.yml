@@ -1,8 +1,8 @@
-name: Build macOS DMG
+name: Build macOS PKG
 
-# Собирает .dmg (Apple Silicon + Intel) на macOS-раннерах и прикрепляет их к
-# релизу. Запускается при изменении файлов сборки на ветке mac-dmg, либо вручную:
-# вкладка Actions → Build macOS DMG → Run workflow.
+# Собирает .pkg-установщик (Apple Silicon + Intel) на macOS-раннерах и прикрепляет
+# их к релизу. Запускается при изменении файлов сборки на ветке mac-dmg, либо
+# вручную: вкладка Actions → Build macOS PKG → Run workflow.
 on:
   push:
     branches: [mac-dmg]
@@ -12,7 +12,7 @@ on:
       - 'server.js'
       - 'lib/**'
       - 'public/**'
-      - '.github/workflows/dmg.yml'
+      - '.github/workflows/pkg.yml'
   workflow_dispatch:
     inputs:
       version:
@@ -20,7 +20,7 @@ on:
         required: true
         default: '1.3.0'
       release_tag:
-        description: 'Тег релиза, куда заливать .dmg'
+        description: 'Тег релиза, куда заливать .pkg'
         required: true
         default: 'v1.3.0-linux'
 
@@ -32,7 +32,7 @@ env:
   RELEASE_TAG: ${{ github.event.inputs.release_tag || 'v1.3.0-linux' }}
 
 jobs:
-  dmg:
+  pkg:
     strategy:
       fail-fast: false
       matrix:
@@ -44,20 +44,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Собрать DMG
+      - name: Собрать PKG
         run: |
-          chmod +x mac/build-dmg.sh
-          ./mac/build-dmg.sh "$VERSION"
-          ls -lh mac/*.dmg
+          chmod +x mac/build-pkg.sh
+          ./mac/build-pkg.sh "$VERSION"
+          ls -lh mac/*.pkg
 
       - name: Прикрепить к релизу
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "$RELEASE_TAG" mac/*.dmg --clobber --repo "${{ github.repository }}"
+          gh release upload "$RELEASE_TAG" mac/*.pkg --clobber --repo "${{ github.repository }}"
 
       - name: Сохранить как артефакты сборки
         uses: actions/upload-artifact@v4
         with:
-          name: controlgui-dmg-${{ matrix.arch }}
-          path: mac/*.dmg
+          name: controlgui-pkg-${{ matrix.arch }}
+          path: mac/*.pkg
