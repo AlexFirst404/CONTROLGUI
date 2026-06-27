@@ -56,8 +56,31 @@
   </div>
 </div>
 
+<!-- модалка выдачи доступа -->
+<div id="asg-modal" class="asg-overlay hidden">
+  <div class="card" style="max-width:520px;width:94%;max-height:88vh;overflow:auto">
+    <h2>Выдать доступ к серверу</h2>
+    <div class="muted" id="asg-existing" style="margin-bottom:8px"></div>
+    <label>Ник пользователя (уже зарегистрирован и одобрен)</label>
+    <input class="fld" id="asg-user" placeholder="ник">
+    <div class="row" style="margin:12px 0 6px">
+      <span class="label-dim">Пресеты:</span>
+      <button class="mc-btn sm" id="asg-preset-full">Полный</button>
+      <button class="mc-btn sm" id="asg-preset-view">Просмотр</button>
+      <button class="mc-btn sm" id="asg-preset-none">Снять всё</button>
+    </div>
+    <div id="asg-perms"></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end">
+      <button class="mc-btn sm danger" id="asg-remove">Убрать доступ</button>
+      <button class="mc-btn sm" id="asg-cancel">Отмена</button>
+      <button class="mc-btn sm primary" id="asg-save">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
 async function api(method, url, body){
   const r = await fetch(url, { method, headers: body?{'Content-Type':'application/json'}:undefined, body: body?JSON.stringify(body):undefined });
   let d={}; try{ d=await r.json(); }catch(e){}
@@ -114,13 +137,45 @@ async function loadServers(){
     box.appendChild(el);
   }
 }
-async function assignPrompt(s){
-  const u = prompt('Выдать доступ пользователю (ник). Текущие: '+(s.access||[]).map(a=>a.username+(a.perms.length?' (упр.)':' (просмотр)')).join(', '));
-  if(!u) return;
-  const manage = confirm('Разрешить управление (старт/стоп/рестарт)? OK = да, Отмена = только просмотр.');
-  const r = await api('POST','/api/servers/'+s.globalId+'/assign',{username:u.trim(), perms: manage?['start','stop','restart']:[]});
-  if(r.d&&r.d.error) alert(r.d.error); else loadServers();
+// группы прав удалённого управления (зеркало REMOTE_PERMS панели)
+const PERM_GROUPS = [
+  ['Консоль', [['console.view','Просмотр консоли'],['console.command','Ввод команд']]],
+  ['Логи', [['logs.view','Просмотр логов']]],
+  ['Управление', [['server.start','Запуск'],['server.stop','Остановка / перезапуск'],['server.kill','Принудительное завершение'],['server.install','Установка ядра']]],
+  ['Настройки', [['settings.edit','server.properties и память']]],
+  ['Файлы', [['files.read','Просмотр / чтение'],['files.write','Изменение'],['files.upload','Загрузка'],['files.delete','Удаление']]],
+  ['Игроки', [['players.kick','Кик'],['players.ban','Бан / разбан'],['players.op','Выдача OP'],['players.whitelist','Белый список'],['players.delete','Удаление данных']]],
+  ['Бэкапы', [['backups.create','Создание'],['backups.restore','Восстановление'],['backups.delete','Удаление']]],
+];
+let assignTarget = null;
+function assignPrompt(s){
+  assignTarget = s;
+  $('#asg-user').value = '';
+  const existing = (s.access||[]).map(a=>a.username+' ('+(a.perms&&a.perms.length?a.perms.length+' прав':'просмотр')+')').join(', ');
+  $('#asg-existing').textContent = existing ? ('Уже выдан доступ: '+existing) : 'Пока никому не выдан доступ.';
+  const box = $('#asg-perms'); box.innerHTML='';
+  for(const [grp,items] of PERM_GROUPS){
+    const h=document.createElement('div'); h.className='asg-grp'; h.textContent=grp; box.appendChild(h);
+    for(const [key,label] of items){
+      const lab=document.createElement('label'); lab.className='asg-perm';
+      lab.innerHTML='<input type="checkbox" value="'+key+'"> '+esc(label);
+      box.appendChild(lab);
+    }
+  }
+  show('#asg-modal', true);
 }
+$('#asg-preset-full') && ($('#asg-preset-full').onclick=()=>{ $$('#asg-perms input').forEach(c=>c.checked=true); });
+$('#asg-preset-view') && ($('#asg-preset-view').onclick=()=>{ $$('#asg-perms input').forEach(c=>{ c.checked = (c.value==='console.view'||c.value==='logs.view'||c.value==='files.read'); }); });
+$('#asg-preset-none') && ($('#asg-preset-none').onclick=()=>{ $$('#asg-perms input').forEach(c=>c.checked=false); });
+$('#asg-cancel') && ($('#asg-cancel').onclick=()=>show('#asg-modal',false));
+$('#asg-remove') && ($('#asg-remove').onclick=async()=>{ const u=$('#asg-user').value.trim(); if(!u){ alert('Укажите ник'); return; }
+  const r=await api('POST','/api/servers/'+assignTarget.globalId+'/assign',{username:u,remove:true}); if(r.d&&r.d.error)alert(r.d.error); else { show('#asg-modal',false); loadServers(); } });
+$('#asg-save') && ($('#asg-save').onclick=async()=>{
+  const u=$('#asg-user').value.trim(); if(!u){ alert('Укажите ник'); return; }
+  const perms=$$('#asg-perms input').filter(c=>c.checked).map(c=>c.value);
+  const r=await api('POST','/api/servers/'+assignTarget.globalId+'/assign',{username:u,perms:perms});
+  if(r.d&&r.d.error)alert(r.d.error); else { show('#asg-modal',false); loadServers(); }
+});
 function esc(x){ return String(x==null?'':x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
 $('#tab-login').onclick=()=>{ $('#tab-login').classList.add('active'); $('#tab-reg').classList.remove('active'); show('#form-login',true); show('#form-reg',false); };

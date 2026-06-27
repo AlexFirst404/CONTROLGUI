@@ -55,3 +55,11 @@ th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #3a3a3a; 
 th { color: #9a9a9a; font-family: var(--font-head); font-weight: normal; font-size: 11px; letter-spacing: 1px; }
 
 .center-card { max-width: 430px; margin: 44px auto; }
+
+/* модалка выдачи доступа */
+.asg-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.6); }
+.asg-grp { font-family: var(--font-head); font-size: 12px; letter-spacing: 1px; color: var(--accent-bright);
+  margin: 12px 0 4px; }
+.asg-perm { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; color: #d8d8d8; cursor: pointer; }
+.asg-perm input { width: auto; }
