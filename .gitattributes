@@ -8,4 +8,8 @@ linux/DEBIAN/control      text eol=lf
 linux/appimage/AppRun     text eol=lf
 *.sh                      text eol=lf
 *.py                      text eol=lf
+*.swift                   text eol=lf
 controlgui-window.py      text eol=lf
+# серты — без конвертации концов строк (CRLF может повредить PEM при пиннинге)
+*.pem                     -text
+lib/central-cert.pem      -text
