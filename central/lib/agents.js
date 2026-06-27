@@ -6,8 +6,9 @@ const servers = require('./servers');
 
 const streams = new Map();      // panelToken -> res (SSE к панели)
 const pending = new Map();      // reqId -> { resolve, timer, panelToken, res } (команда/не-потоковый http)
-const httpStreams = new Map();  // reqId -> { browserRes, panelToken, headSent } (потоковый ответ браузеру)
-const CMD_TIMEOUT_MS = 15000;
+const httpStreams = new Map();  // reqId -> { browserRes, panelToken, headSent, sseRes } (потоковый ответ браузеру)
+const CMD_TIMEOUT_MS = 15000;   // простые команды start/stop/restart
+const HTTP_TIMEOUT_MS = 60000;  // проксируемые запросы (бэкап/установка дольше)
 
 function send(panelToken, obj) {
   const res = streams.get(panelToken);
@@ -31,9 +32,9 @@ function attach(panelToken, res) {
     for (const [reqId, p] of pending) {
       if (p.res === res) { clearTimeout(p.timer); pending.delete(reqId); p.resolve({ error: 'Сервер недоступен' }); }
     }
-    // и закрываем потоковые ответы этого агента (браузер получит обрыв)
+    // закрываем потоки ИМЕННО этого SSE-res (не трогаем потоки нового туннеля при reconnect)
     for (const [reqId, s] of httpStreams) {
-      if (s.panelToken === panelToken) { try { s.browserRes.end(); } catch (e) { /* */ } httpStreams.delete(reqId); }
+      if (s.sseRes === res) { try { s.browserRes.end(); } catch (e) { /* */ } httpStreams.delete(reqId); }
     }
   });
 }
@@ -58,7 +59,7 @@ function dispatchHttp(panelToken, reqObj) {
     const res = streams.get(panelToken);
     if (!res) return resolve({ status: 502, headers: {}, bodyB64: '', offline: true });
     const reqId = crypto.randomBytes(8).toString('hex');
-    const timer = setTimeout(() => { if (pending.has(reqId)) { pending.delete(reqId); resolve({ status: 504, headers: {}, bodyB64: '' }); } }, CMD_TIMEOUT_MS);
+    const timer = setTimeout(() => { if (pending.has(reqId)) { pending.delete(reqId); resolve({ status: 504, headers: {}, bodyB64: '' }); } }, HTTP_TIMEOUT_MS);
     pending.set(reqId, { resolve, timer, panelToken, res });
     if (!send(panelToken, Object.assign({ reqId, kind: 'http' }, reqObj))) { clearTimeout(timer); pending.delete(reqId); resolve({ status: 502, headers: {}, bodyB64: '' }); }
   });
@@ -68,7 +69,7 @@ function dispatchHttp(panelToken, reqObj) {
 function openHttpStream(panelToken, reqObj, browserRes) {
   if (!streams.has(panelToken)) return null;
   const reqId = crypto.randomBytes(8).toString('hex');
-  httpStreams.set(reqId, { browserRes, panelToken, headSent: false });
+  httpStreams.set(reqId, { browserRes, panelToken, headSent: false, sseRes: streams.get(panelToken) });
   if (!send(panelToken, Object.assign({ reqId, kind: 'http', stream: true }, reqObj))) { httpStreams.delete(reqId); return null; }
   return reqId;
 }

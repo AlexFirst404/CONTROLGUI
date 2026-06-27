@@ -84,7 +84,7 @@ async function handleAgent(req, res, urlPath, url) {
     return;
   }
   if (urlPath === '/agent/result' && req.method === 'POST') {
-    const b = await readBody(req, 256 * 1024);
+    const b = await readBody(req, 12 * 1024 * 1024); // ответ панели (base64 раздувает) — потолок выше тела 8МБ
     if (!servers.byToken(b.token)) return json(res, 401, { error: 'bad token' });
     agents.result(String(b.token), String(b.reqId || ''), b.result); // token-привязка результата
     return json(res, 200, { ok: true });

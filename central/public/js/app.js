@@ -3173,12 +3173,15 @@
       meta.textContent = fmtBytes(b.size) + ' · ' + new Date(b.mtime).toLocaleString('ru-RU');
       const actions = document.createElement('span');
       actions.className = 'file-actions';
-      const dl = document.createElement('a');
-      dl.className = 'mc-btn sm';
-      dl.href = API.backupDownloadUrl(state.currentId, b.name);
-      dl.title = 'Скачать';
-      dl.appendChild(picon('download'));
-      actions.appendChild(dl);
+      // удалённо скачивание бэкапа недоступно (тяжёлое/в денилисте) — не показываем кнопку
+      if (!window.CG_REMOTE) {
+        const dl = document.createElement('a');
+        dl.className = 'mc-btn sm';
+        dl.href = API.backupDownloadUrl(state.currentId, b.name);
+        dl.title = 'Скачать';
+        dl.appendChild(picon('download'));
+        actions.appendChild(dl);
+      }
       if (can('backups.restore')) {
         const rest = document.createElement('button');
         rest.className = 'mc-btn sm accent';
@@ -3330,6 +3333,7 @@
   }
 
   async function openUsers() {
+    if (window.CG_REMOTE) { location.hash = ''; showScreen('list'); return; } // управление юзерами панели — не удалённо
     showScreen('users');
     $('#users-open-note').classList.toggle('hidden', !state.openMode);
     await guard(loadServers); // для списка серверов в «Доступ к серверам»
@@ -4035,9 +4039,10 @@
       if (f) uploadResourcePack(f);
     });
 
-    // вынос консоли в отдельное окно
+    // вынос консоли в отдельное окно (в удалённом режиме /console.html недоступен — скрываем)
     const pop = $('#console-pop');
-    if (pop) pop.addEventListener('click', () => {
+    if (pop && window.CG_REMOTE) pop.classList.add('hidden');
+    else if (pop) pop.addEventListener('click', () => {
       if (!state.currentId) return;
       // в браузере '_blank' без параметров окна → новая вкладка; в десктоп-обёртке
       // WebView2 перехватывает window.open и открывает отдельное окно приложения

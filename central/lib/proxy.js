@@ -8,25 +8,40 @@ const RAW_LIMIT = 8 * 1024 * 1024; // тело проксируемого зап
 
 function readRaw(req) {
   return new Promise((resolve) => {
-    const chunks = []; let size = 0; let done = false;
-    const fin = () => { if (!done) { done = true; resolve(Buffer.concat(chunks)); } };
-    req.on('data', (c) => { size += c.length; if (size <= RAW_LIMIT) chunks.push(c); else req.destroy(); });
-    req.on('end', fin);
-    req.on('close', fin);
-    req.on('error', fin);
+    const chunks = []; let size = 0; let over = false; let done = false;
+    const fin = () => { if (!done) { done = true; resolve({ buf: Buffer.concat(chunks), over }); } };
+    req.on('data', (c) => { size += c.length; if (size <= RAW_LIMIT) chunks.push(c); else { over = true; req.destroy(); } });
+    req.on('end', fin); req.on('close', fin); req.on('error', fin);
   });
 }
 
-// денилист «тяжёлого/опасного» — что НЕ проксируем удалённо (path без префикса /r/<gid>, без query)
+// сегменты пути как в роутере панели (api.js: split('/').filter(Boolean)) — устойчиво к слешам/кодированию
+function segsOf(base) {
+  let p = base; try { p = decodeURIComponent(base); } catch (e) { /* */ }
+  return p.split('/').filter(Boolean);
+}
+
+/* Что НЕ проксируем удалённо. Матчим по СЕГМЕНТАМ (не подстрокой с `$`) — нет обхода завершающим
+   слешом/лишним сегментом. Глобальные не-серверные эндпоинты тоже режем (утечка путей/IP, java). */
 function denied(method, base) {
-  if (method === 'DELETE' && /^\/api\/servers\/[^/]+$/.test(base)) return 'удаление сервера';
-  if (method === 'POST' && base === '/api/servers') return 'создание сервера';
-  if (method === 'PUT' && /\/(file-upload|core)$/.test(base)) return 'загрузка больших файлов';
-  if (method === 'GET' && /\/backup$/.test(base)) return 'скачивание бэкапа';
+  const s = segsOf(base);
+  if (s[0] !== 'api') return 'недоступно удалённо';
+  if (s[1] !== 'servers') {
+    if (s[1] === 'auth' || s[1] === 'versions' || s[1] === 'launch-mode') return null; // нужны UI, безопасны
+    return 'этот эндпоинт недоступен удалённо'; // users/status/browse/java/...
+  }
+  if (s.length === 2) return method === 'POST' ? 'создание сервера' : null;       // /api/servers
+  if (s.length === 3) return method === 'DELETE' ? 'удаление сервера' : null;      // /api/servers/<id>
+  const action = s[3];                                                            // /api/servers/<id>/<action>
+  if (method === 'PUT' && (action === 'file-upload' || action === 'core' || action === 'resourcepack')) return 'загрузка больших файлов';
+  if (method === 'GET' && action === 'backup') return 'скачивание бэкапа';
   return null;
 }
 // потоковые GET (text/event-stream): консоль
-function isStream(method, base) { return method === 'GET' && /\/console$/.test(base); }
+function isStream(method, base) {
+  const s = segsOf(base);
+  return method === 'GET' && s[0] === 'api' && s[1] === 'servers' && s[3] === 'console';
+}
 
 function pickReqHeaders(h) {
   const out = {};
@@ -64,10 +79,11 @@ async function handle(req, res, urlPath, user, json) {
     return true;
   }
 
-  const body = await readRaw(req);
+  const { buf, over } = await readRaw(req);
+  if (over) { json(res, 413, { error: 'Тело запроса слишком большое для удалённого доступа' }); return true; }
   const out = await agents.dispatchHttp(s.panelToken, {
     method: req.method, path: localPath, headers, perms, actor: user.username,
-    bodyB64: body && body.length ? body.toString('base64') : '',
+    bodyB64: buf && buf.length ? buf.toString('base64') : '',
   });
   const rh = pickRespHeaders(out.headers);
   if (!rh['content-type']) rh['content-type'] = 'application/json; charset=utf-8';
