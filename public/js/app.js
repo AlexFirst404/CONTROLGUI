@@ -136,6 +136,8 @@
   }
 
   function accountLabel() {
+    // в десктопе личность — аккаунт центра (создаётся на гейте); иначе локальный пользователь панели
+    if (!window.CG_REMOTE && cgCentralUser && cgCentralUser.username) return cgCentralUser.username;
     if (state.openMode || !state.me || !state.me.username) return 'Локальный режим';
     return state.me.username;
   }
@@ -550,9 +552,11 @@
     $('#screen-list').classList.toggle('hidden', name !== 'list');
     $('#screen-create').classList.toggle('hidden', name !== 'create');
     $('#screen-remote').classList.toggle('hidden', name !== 'remote');
+    $('#screen-profile').classList.toggle('hidden', name !== 'profile');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
     $('#screen-users').classList.toggle('hidden', name !== 'users');
     $('#screen-proxy').classList.toggle('hidden', name !== 'proxy');
+    if (name !== 'profile' && typeof stopDiscordPoll === 'function') stopDiscordPoll();
     // бургер-меню — на всех экранах (главный, создание, сервер, пользователи)
     $('#btn-burger').classList.remove('hidden');
     if (name === 'create') updateJavaInstallUI();
@@ -570,6 +574,7 @@
     else if (name === 'remote') pushHash('#remote');
     else if (name === 'users') pushHash('#users');
     else if (name === 'proxy') pushHash('#proxy');
+    else if (name === 'profile') pushHash('#profile');
   }
 
   /* Применяем состояние из адреса при нажатии «назад/вперёд» — без выхода из SPA. */
@@ -585,6 +590,8 @@
         if (state.screen !== 'proxy') { showScreen('proxy'); renderProxyViz(); }
       } else if (hash === '#remote') {
         if (state.screen !== 'remote') openRemoteScreen();
+      } else if (hash === '#profile') {
+        if (state.screen !== 'profile') openProfileScreen();
       } else if (hash.indexOf('#server=') === 0) {
         const rest = hash.slice(8);
         const id = rest.split('/tab/')[0].split('/player/')[0];
@@ -712,15 +719,15 @@
       $('#rc-tab-reg').addEventListener('click', () => rcTab(false));
       $('#rc-login-btn').addEventListener('click', async () => {
         $('#rc-li-err').textContent = '';
-        try { await API.centralLogin($('#rc-li-user').value.trim(), $('#rc-li-pass').value); $('#rc-li-pass').value = ''; await refreshRemoteScreen(); guard(loadServers); showToast('Вход выполнен.', 'ok'); }
+        try { await API.centralLogin($('#rc-li-user').value.trim(), $('#rc-li-pass').value); $('#rc-li-pass').value = ''; await syncCentralUser(); await refreshRemoteScreen(); guard(loadServers); showToast('Вход выполнен.', 'ok'); }
         catch (e) { $('#rc-li-err').textContent = e.message; }
       });
       $('#rc-reg-btn').addEventListener('click', async () => {
         $('#rc-rg-err').textContent = '';
-        try { await API.centralRegister($('#rc-rg-user').value.trim(), $('#rc-rg-pass').value); $('#rc-rg-err').className = 'err ok'; $('#rc-rg-err').textContent = 'Заявка отправлена — ждите одобрения админа центра, затем войдите.'; rcTab(true); }
+        try { await API.centralRegister($('#rc-rg-user').value.trim(), $('#rc-rg-pass').value); $('#rc-rg-pass').value = ''; await syncCentralUser(); await refreshRemoteScreen(); guard(loadServers); showToast('Аккаунт создан, вход выполнен.', 'ok'); }
         catch (e) { $('#rc-rg-err').className = 'err'; $('#rc-rg-err').textContent = e.message; }
       });
-      $('#rc-logout-btn').addEventListener('click', async () => { await API.centralLogout(); await refreshRemoteScreen(); guard(loadServers); });
+      $('#rc-logout-btn').addEventListener('click', async () => { await API.centralLogout(); cgCentralUser = null; updateCentralLabel(); await refreshRemoteScreen(); guard(loadServers); });
       $('#rc-link-btn').addEventListener('click', async () => {
         $('#rc-link-err').textContent = '';
         const code = $('#rc-code').value.trim();
@@ -732,6 +739,193 @@
       rcTab(true);
     }
     refreshRemoteScreen();
+  }
+
+  // ---------- аккаунт центра в десктопе: гейт первого запуска + профиль ----------
+  let cgCentralUser = null;
+  let gateResolve = null, gateBound = false, profileBound = false, discordPollTimer = null, discordPollLeft = 0;
+
+  function updateCentralLabel() {
+    const el = $('#menu-account-name'); if (el) el.textContent = accountLabel();
+    const chev = $('#menu-account-chev'); if (chev) chev.classList.toggle('hidden', !!window.CG_REMOTE || !cgCentralUser);
+  }
+  /* Подтянуть профиль аккаунта центра (ник/Discord) и обновить лейбл. Возвращает ответ centralMe. */
+  async function syncCentralUser() {
+    if (window.CG_REMOTE) return null;
+    let res = null;
+    try { res = await API.centralMe(); } catch (e) { return null; }
+    if (res && res.user) cgCentralUser = res.user;
+    else if (res && res.loggedIn) { if (!cgCentralUser) cgCentralUser = { username: res.username }; }
+    else cgCentralUser = null;
+    updateCentralLabel();
+    return res;
+  }
+  async function validateCentralSession() {
+    const res = await syncCentralUser();
+    if (!res) return;
+    if (res.expired) showToast('Сессия аккаунта истекла — войдите заново через «Профиль».');
+    else if (res.offline) showToast('Нет связи с сервером CONTROLGUI — удалённые серверы офлайн.');
+  }
+
+  // --- гейт ---
+  function gateTab(login) {
+    $('#gate-tab-login').classList.toggle('primary', login);
+    $('#gate-tab-reg').classList.toggle('primary', !login);
+    $('#gate-login-form').classList.toggle('hidden', !login);
+    $('#gate-reg-form').classList.toggle('hidden', login);
+  }
+  function setupGate() {
+    if (gateBound || !$('#account-gate')) return;
+    gateBound = true;
+    $('#gate-tab-login').addEventListener('click', () => gateTab(true));
+    $('#gate-tab-reg').addEventListener('click', () => gateTab(false));
+    $('#gate-login-btn').addEventListener('click', gateDoLogin);
+    $('#gate-reg-btn').addEventListener('click', gateDoReg);
+    $('#gate-li-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') gateDoLogin(); });
+    $('#gate-rg-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') gateDoReg(); });
+  }
+  function showAccountGate() {
+    return new Promise((resolve) => {
+      gateResolve = resolve;
+      const g = $('#account-gate'); if (g) g.classList.remove('hidden');
+      setTimeout(() => { const u = $('#gate-li-user'); if (u) u.focus(); }, 60);
+    });
+  }
+  function hideAccountGate() {
+    const g = $('#account-gate'); if (g) g.classList.add('hidden');
+    if (gateResolve) { const r = gateResolve; gateResolve = null; r(); }
+  }
+  async function gateDoLogin() {
+    const err = $('#gate-li-err'); err.textContent = '';
+    const u = $('#gate-li-user').value.trim(); const p = $('#gate-li-pass').value;
+    if (!u || !p) { err.textContent = 'Введите логин и пароль.'; return; }
+    const btn = $('#gate-login-btn'); btn.disabled = true;
+    try { await API.centralLogin(u, p); $('#gate-li-pass').value = ''; await syncCentralUser(); hideAccountGate(); showToast('Вход выполнен.', 'ok'); }
+    catch (e) { err.textContent = e.message; }
+    finally { btn.disabled = false; }
+  }
+  async function gateDoReg() {
+    const err = $('#gate-rg-err'); err.textContent = '';
+    const u = $('#gate-rg-user').value.trim(); const p = $('#gate-rg-pass').value;
+    if (!u || p.length < 6) { err.textContent = 'Логин и пароль минимум 6 символов.'; return; }
+    const btn = $('#gate-reg-btn'); btn.disabled = true;
+    try { await API.centralRegister(u, p); $('#gate-rg-pass').value = ''; await syncCentralUser(); hideAccountGate(); showToast('Аккаунт создан.', 'ok'); }
+    catch (e) { err.textContent = e.message; }
+    finally { btn.disabled = false; }
+  }
+
+  // --- профиль ---
+  function openProfileScreen() {
+    if (window.CG_REMOTE) return;
+    showScreen('profile');
+    refreshProfileScreen();
+  }
+  async function refreshProfileScreen() {
+    let res = null;
+    try { res = await API.centralMe(); } catch (e) { /* офлайн */ }
+    if (res && res.user) { cgCentralUser = res.user; updateCentralLabel(); }
+    const u = (res && res.user) || cgCentralUser || null;
+    $('#pf-username').textContent = u ? u.username : '—';
+    const inp = $('#pf-rename-input');
+    if (inp && document.activeElement !== inp) inp.value = u ? u.username : '';
+    const ep = res && res.endpoint;
+    $('#pf-server').textContent = ep ? ('Сервер: ' + ep.host + (ep.port && ep.port !== 443 ? ':' + ep.port : '')) : '';
+    const enabled = !!(res && res.discordEnabled);
+    const linked = !!(u && u.discord);
+    $('#pf-discord-linked').classList.toggle('hidden', !linked);
+    $('#pf-discord-unlinked').classList.toggle('hidden', linked || !enabled);
+    $('#pf-discord-off').classList.toggle('hidden', linked || enabled);
+    if (linked) $('#pf-discord-name').textContent = u.discord.name || u.discord.id;
+  }
+  function setupProfile() {
+    if (profileBound || !$('#screen-profile')) return;
+    profileBound = true;
+    $('#pf-rename-btn').addEventListener('click', async () => {
+      const err = $('#pf-rename-err'); err.className = 'err'; err.textContent = '';
+      const nn = $('#pf-rename-input').value.trim();
+      if (!nn) { err.textContent = 'Введите ник.'; return; }
+      if (cgCentralUser && nn === cgCentralUser.username) { err.className = 'err ok'; err.textContent = 'Это текущий ник.'; return; }
+      if (!await confirmDialog('Сменить ник на «' + nn + '»? Он обновится во всех ваших серверах.', { title: 'Смена ника', yesText: 'Сменить', danger: false })) return;
+      try { const r = await API.centralRename(nn); cgCentralUser = r.user || { username: nn }; updateCentralLabel(); err.className = 'err ok'; err.textContent = 'Ник изменён.'; showToast('Ник изменён.', 'ok'); }
+      catch (e) { err.className = 'err'; err.textContent = e.message; }
+    });
+    $('#pf-discord-link').addEventListener('click', async () => {
+      const err = $('#pf-discord-err'); err.className = 'err'; err.textContent = '';
+      try {
+        const r = await API.centralDiscordLink();
+        if (r && r.url) {
+          window.open(r.url, '_blank', 'noopener');
+          $('#pf-discord-refresh').classList.remove('hidden');
+          err.className = 'err ok'; err.textContent = 'Подтвердите привязку в открывшемся окне, затем вернитесь сюда.';
+          startDiscordPoll();
+        }
+      } catch (e) { err.className = 'err'; err.textContent = e.message; }
+    });
+    $('#pf-discord-refresh').addEventListener('click', () => refreshProfileScreen());
+    $('#pf-discord-unlink').addEventListener('click', async () => {
+      if (!await confirmDialog('Отвязать Discord?', { title: 'Discord', yesText: 'Отвязать' })) return;
+      try { const r = await API.centralDiscordUnlink(); cgCentralUser = r.user || cgCentralUser; await refreshProfileScreen(); showToast('Discord отвязан.', 'ok'); }
+      catch (e) { $('#pf-discord-err').className = 'err'; $('#pf-discord-err').textContent = e.message; }
+    });
+    $('#pf-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
+    $('#pf-logout').addEventListener('click', doProfileLogout);
+  }
+  function startDiscordPoll() {
+    stopDiscordPoll(); discordPollLeft = 20;
+    discordPollTimer = setInterval(async () => {
+      discordPollLeft--;
+      let res = null; try { res = await API.centralMe(); } catch (e) { /* */ }
+      if (res && res.user && res.user.discord) { cgCentralUser = res.user; stopDiscordPoll(); refreshProfileScreen(); showToast('Discord привязан.', 'ok'); }
+      else if (discordPollLeft <= 0) stopDiscordPoll();
+    }, 3000);
+  }
+  function stopDiscordPoll() { if (discordPollTimer) { clearInterval(discordPollTimer); discordPollTimer = null; } }
+  async function doProfileLogout() {
+    if (!await confirmDialog('Выйти из аккаунта CONTROLGUI? Удалённые серверы станут недоступны.', { title: 'Выход', yesText: 'Выйти' })) return;
+    try { await API.centralLogout(); } catch (e) { /* */ }
+    cgCentralUser = null; updateCentralLabel();
+    showScreen('list');
+    await showAccountGate();
+    await syncCentralUser(); guard(loadServers);
+  }
+
+  /* Загрузка приложения: в десктопе сперва требуем аккаунт центра (гейт), затем обычный старт. */
+  async function bootApp() {
+    if (!window.CG_REMOTE) {
+      let cs = null;
+      try { cs = await API.centralState(); } catch (e) { /* старая сборка без центра */ }
+      if (cs && cs.loggedIn) cgCentralUser = { username: cs.username };
+      else if (cs) await showAccountGate(); // нет аккаунта — блокирующий гейт
+    }
+    loadMe();
+    loadStatus();
+    guard(loadServers);
+    startPolling();
+    if (!window.CG_REMOTE) { updateCentralLabel(); validateCentralSession(); }
+    routeInitialHash();
+  }
+  function routeInitialHash() {
+    if (location.hash === '#create') {
+      showScreen('create'); loadVersions(); guard(loadServers).then(suggestPort);
+    } else if (location.hash === '#proxy') {
+      showScreen('proxy'); guard(loadServers).then(() => renderProxyViz());
+    } else if (location.hash === '#remote') {
+      openRemoteScreen();
+    } else if (location.hash === '#profile') {
+      openProfileScreen();
+    } else if (location.hash.startsWith('#server=')) {
+      const rest = location.hash.slice(8);
+      const playerSplit = rest.split('/player/');
+      const tabSplit = playerSplit[0].split('/tab/');
+      const id = tabSplit[0];
+      guard(loadServers).then(() => {
+        if (state.servers.some((s) => s.id === id)) {
+          openServer(id);
+          if (tabSplit[1]) switchTab(tabSplit[1]);
+          if (playerSplit[1]) setTimeout(() => openInventory(decodeURIComponent(playerSplit[1])), 400);
+        }
+      });
+    }
   }
 
   function renderList() {
@@ -4035,6 +4229,11 @@
       if (action === 'users') openUsers();
       if (action === 'logout') doLogout();
     }));
+    // клик по имени пользователя в бургер-меню -> профиль аккаунта центра
+    const acctBtn = $('#menu-account');
+    if (acctBtn) acctBtn.addEventListener('click', () => { menuToggle(false); if (!window.CG_REMOTE) openProfileScreen(); });
+    setupGate();
+    setupProfile();
     $('#proxy-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
     $('#proxy-refresh').addEventListener('click', () => guard(loadServers).then(() => renderProxyViz()));
     Array.from(document.querySelectorAll('#app-menu a.menu-item')).forEach((a) =>
@@ -4325,31 +4524,6 @@
   enhanceSelectsIn(document); // свои выпадашки для статичных <select> (ядро, версия, тема, категория)
 
   bind();
-  loadMe();
-  loadStatus();
-  guard(loadServers);
-  startPolling();
-
-  // прямые ссылки: #create — мастер создания, #server=<id> — экран сервера
-  if (location.hash === '#create') {
-    showScreen('create');
-    loadVersions();
-    guard(loadServers).then(suggestPort);
-  } else if (location.hash === '#proxy') {
-    showScreen('proxy');
-    guard(loadServers).then(() => renderProxyViz());
-  } else if (location.hash.startsWith('#server=')) {
-    // форматы: #server=<id>, #server=<id>/player/<ник>, #server=<id>/tab/<вкладка>
-    const rest = location.hash.slice(8);
-    const playerSplit = rest.split('/player/');
-    const tabSplit = playerSplit[0].split('/tab/');
-    const id = tabSplit[0];
-    guard(loadServers).then(() => {
-      if (state.servers.some((s) => s.id === id)) {
-        openServer(id);
-        if (tabSplit[1]) switchTab(tabSplit[1]);
-        if (playerSplit[1]) setTimeout(() => openInventory(decodeURIComponent(playerSplit[1])), 400);
-      }
-    });
-  }
+  // десктоп: гейт аккаунта центра -> затем обычный старт (loadMe/loadStatus/loadServers/polling) + диплинки
+  bootApp();
 })();

@@ -25,9 +25,10 @@
   </button>
   <div id="app-scrim" class="app-scrim"></div>
   <nav id="app-menu" class="app-menu">
-    <div class="menu-account" id="menu-account">
+    <div class="menu-account" id="menu-account" title="Профиль аккаунта">
       <i class="pi" data-ic="user"></i>
       <span id="menu-account-name">…</span>
+      <span class="menu-account-chev hidden" id="menu-account-chev">›</span>
     </div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
@@ -42,6 +43,43 @@
       <i class="pi" data-ic="code"></i> GitHub</a>
     <div class="menu-item danger hidden" id="menu-logout" data-menu="logout"><i class="pi" data-ic="close"></i> Выйти</div>
   </nav>
+
+  <!-- ГЕЙТ АККАУНТА: первый запуск — нужно войти/создать аккаунт CONTROLGUI -->
+  <style>
+    .gate-overlay{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(12,12,12,.93);padding:20px}
+    .gate-overlay.hidden{display:none}
+    .gate-box{width:100%;max-width:420px;padding:28px}
+    .gate-brand{font-family:'Minecraft Ten','Minecraft',sans-serif;font-size:30px;letter-spacing:2px;text-align:center;color:#e6e6e6}
+    .gate-brand b{color:#80da5b}
+    .gate-sub{text-align:center;color:#9a9a9a;font-size:13px;margin-top:6px}
+    .gate-foot{text-align:center;color:#7a7a7a;font-size:12px;margin-top:16px}
+    #menu-account{cursor:pointer}
+    #menu-account:hover{background:rgba(255,255,255,.06)}
+    .menu-account-chev{margin-left:auto;color:#7a7a7a;font-size:18px;line-height:1}
+  </style>
+  <div id="account-gate" class="gate-overlay hidden">
+    <div class="gate-box mc-card">
+      <div class="gate-brand">CONTROL<b>GUI</b></div>
+      <div class="gate-sub">Войдите в аккаунт или создайте новый, чтобы продолжить.</div>
+      <div class="props-modebar" style="margin:18px 0 14px">
+        <button type="button" class="mc-btn sm props-mode-btn primary" id="gate-tab-login">Вход</button>
+        <button type="button" class="mc-btn sm props-mode-btn" id="gate-tab-reg">Регистрация</button>
+      </div>
+      <div id="gate-login-form">
+        <label class="mc-label">Логин<input class="fld" id="gate-li-user" autocomplete="username"></label>
+        <label class="mc-label" style="margin-top:12px">Пароль<input class="fld" id="gate-li-pass" type="password" autocomplete="current-password"></label>
+        <div class="err" id="gate-li-err"></div>
+        <button class="mc-btn primary" id="gate-login-btn" style="margin-top:14px;width:100%"><i class="pi" data-ic="open"></i> Войти</button>
+      </div>
+      <div id="gate-reg-form" class="hidden">
+        <label class="mc-label">Придумайте логин<input class="fld" id="gate-rg-user" autocomplete="off"></label>
+        <label class="mc-label" style="margin-top:12px">Пароль (мин. 6)<input class="fld" id="gate-rg-pass" type="password" autocomplete="new-password"></label>
+        <div class="err" id="gate-rg-err"></div>
+        <button class="mc-btn primary" id="gate-reg-btn" style="margin-top:14px;width:100%"><i class="pi" data-ic="check"></i> Создать аккаунт</button>
+      </div>
+      <div class="gate-foot">Аккаунт привязан к общему серверу CONTROLGUI.</div>
+    </div>
+  </div>
 
   <!-- О ПАНЕЛИ -->
   <div id="about-root" class="modal-wrap hidden">
@@ -282,7 +320,7 @@
       <div id="rc-reg-form" class="hidden">
         <label class="mc-label">Логин (ник)<input class="fld" id="rc-rg-user" autocomplete="off"></label>
         <label class="mc-label" style="margin-top:12px">Пароль (мин. 6)<input class="fld" id="rc-rg-pass" type="password" autocomplete="off"></label>
-        <div class="hint" style="margin-top:8px">После регистрации аккаунт ждёт одобрения администратором центра.</div>
+        <div class="hint" style="margin-top:8px">Аккаунт создаётся сразу — после регистрации вход выполнится автоматически.</div>
         <div class="err" id="rc-rg-err"></div>
         <button class="mc-btn primary" id="rc-reg-btn" style="margin-top:10px;width:100%"><i class="pi" data-ic="check"></i> Зарегистрироваться</button>
       </div>
@@ -302,6 +340,44 @@
         <button class="mc-btn" id="rc-goto-servers"><i class="pi" data-ic="server"></i> К серверам</button>
         <button class="mc-btn danger" id="rc-logout-btn"><i class="pi" data-ic="close"></i> Выйти из аккаунта</button>
       </div>
+    </div>
+  </section>
+
+  <!-- ЭКРАН: ПРОФИЛЬ АККАУНТА (ник + Discord) -->
+  <section id="screen-profile" class="screen hidden">
+    <h1 class="mc-title">Профиль аккаунта</h1>
+    <p class="hint" style="text-align:center;margin:-6px 0 18px">Аккаунт CONTROLGUI привязан к общему серверу. Здесь можно сменить ник и привязать Discord.</p>
+
+    <div class="mc-card form-panel" style="max-width:520px;margin:0 auto">
+      <div class="section-title">Аккаунт: <b id="pf-username">…</b></div>
+      <div class="hint" id="pf-server" style="margin:0 0 14px"></div>
+      <label class="mc-label">Новый ник
+        <div style="display:flex;gap:10px;align-items:stretch;margin-top:4px">
+          <input class="fld" id="pf-rename-input" maxlength="32" autocomplete="off" style="flex:1">
+          <button class="mc-btn sm primary" id="pf-rename-btn" style="margin:0;white-space:nowrap"><i class="pi" data-ic="check"></i> Сохранить ник</button>
+        </div>
+      </label>
+      <div class="err" id="pf-rename-err"></div>
+    </div>
+
+    <div class="mc-card form-panel" style="max-width:520px;margin:16px auto 0">
+      <div class="section-title">Discord</div>
+      <div id="pf-discord-linked" class="hidden">
+        <div class="hint" style="margin:0 0 12px">Привязан: <b id="pf-discord-name"></b></div>
+        <button class="mc-btn sm danger" id="pf-discord-unlink"><i class="pi" data-ic="close"></i> Отвязать Discord</button>
+      </div>
+      <div id="pf-discord-unlinked" class="hidden">
+        <div class="hint" style="margin:0 0 12px">Привяжите свой Discord к аккаунту CONTROLGUI.</div>
+        <button class="mc-btn sm primary" id="pf-discord-link"><i class="pi" data-ic="open"></i> Привязать Discord</button>
+        <button class="mc-btn sm hidden" id="pf-discord-refresh" style="margin-left:8px">Я подтвердил — обновить</button>
+      </div>
+      <div id="pf-discord-off" class="hint hidden" style="margin:0">Привязка Discord скоро — администратор центра ещё не подключил Discord.</div>
+      <div class="err" id="pf-discord-err"></div>
+    </div>
+
+    <div class="btn-row btn-row-left" style="max-width:520px;margin:18px auto 0">
+      <button class="mc-btn" id="pf-back"><i class="pi" data-ic="server"></i> К серверам</button>
+      <button class="mc-btn danger" id="pf-logout"><i class="pi" data-ic="close"></i> Выйти из аккаунта</button>
     </div>
   </section>
 
