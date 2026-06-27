@@ -4,34 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CONTROLGUI Remote</title>
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/minecraft.css">
 <link rel="stylesheet" href="/css/style.css">
 </head>
-<body>
+<body class="theme-lime">
+<div class="bg-pattern"></div>
+<div class="shade"></div>
+
 <div class="wrap">
   <div class="top">
-    <div class="brand">CONTROL<b>GUI</b> Remote</div>
+    <div class="brand">CONTROL<b>GUI</b> <span class="sub">REMOTE</span></div>
     <div class="row" id="userbar"></div>
   </div>
 
   <!-- АВТОРИЗАЦИЯ -->
-  <div id="auth" class="card hidden" style="max-width:420px;margin:40px auto">
+  <div id="auth" class="card center-card hidden">
     <div class="tabs">
-      <button class="btn active" id="tab-login">Вход</button>
-      <button class="btn" id="tab-reg">Регистрация</button>
+      <button class="mc-btn sm active" id="tab-login">Вход</button>
+      <button class="mc-btn sm" id="tab-reg">Регистрация</button>
     </div>
     <form id="form-login">
-      <label>Логин</label><input id="li-user" autocomplete="username" required>
-      <label>Пароль</label><input id="li-pass" type="password" autocomplete="current-password" required>
+      <label>Логин</label><input class="fld" id="li-user" autocomplete="username" required>
+      <label>Пароль</label><input class="fld" id="li-pass" type="password" autocomplete="current-password" required>
       <div class="err" id="li-err"></div>
-      <div class="row" style="margin-top:12px"><button class="btn primary grow" type="submit">Войти</button></div>
+      <div class="row" style="margin-top:14px"><button class="mc-btn primary grow" type="submit">Войти</button></div>
     </form>
     <form id="form-reg" class="hidden">
-      <label>Логин (ник)</label><input id="rg-user" required>
-      <label>Пароль (мин. 6)</label><input id="rg-pass" type="password" required>
+      <label>Логин (ник)</label><input class="fld" id="rg-user" required>
+      <label>Пароль (мин. 6)</label><input class="fld" id="rg-pass" type="password" required>
       <div class="err" id="rg-err"></div>
-      <div class="muted" style="margin-top:6px">После регистрации аккаунт ждёт одобрения администратором.</div>
-      <div class="row" style="margin-top:12px"><button class="btn primary grow" type="submit">Зарегистрироваться</button></div>
+      <div class="muted" style="margin-top:8px">После регистрации аккаунт ждёт одобрения администратором.</div>
+      <div class="row" style="margin-top:14px"><button class="mc-btn primary grow" type="submit">Зарегистрироваться</button></div>
     </form>
   </div>
 
@@ -40,9 +43,9 @@
     <div class="card">
       <h2>Привязать сервер</h2>
       <div class="muted">Включите «Удалённое управление» в настройках сервера в панели CONTROLGUI — там покажется код. Введите его здесь.</div>
-      <div class="row" style="margin-top:10px">
-        <input id="link-code" class="grow" placeholder="Код привязки (напр. AB12-CD34)" maxlength="9" style="text-transform:uppercase">
-        <button class="btn primary" id="link-btn">Привязать</button>
+      <div class="row" style="margin-top:12px">
+        <input id="link-code" class="fld grow" placeholder="Код привязки (напр. AB12-CD34)" maxlength="9" style="text-transform:uppercase">
+        <button class="mc-btn primary" id="link-btn">Привязать</button>
       </div>
       <div class="err" id="link-err"></div>
     </div>
@@ -72,8 +75,8 @@ async function load(){
 function renderUser(){
   const admin = me.role==='admin';
   $('#userbar').innerHTML = '<span class="muted">'+me.username+(admin?' · админ':'')+'</span>'+
-    (admin?' <a class="btn sm" href="/admin">Админка</a>':'')+
-    ' <button class="btn sm" id="logout">Выйти</button>';
+    (admin?' <a class="mc-btn sm" href="/admin">Админка</a>':'')+
+    ' <button class="mc-btn sm" id="logout">Выйти</button>';
   $('#logout').onclick = async()=>{ await api('POST','/api/logout'); load(); };
 }
 async function loadServers(){
@@ -90,18 +93,18 @@ async function loadServers(){
       '<div class="meta">'+(s.type?esc(s.type)+' ':'')+(s.version?esc(s.version):'')+' · статус: '+esc(s.status||'—')+(s.owner?' · владелец: '+esc(s.owner):'')+'</div></div>'+
       (s.role==='owner'?'<span class="badge own">МОЙ</span>':'')+
       (s.status==='running'?'<span class="badge run">RUNNING</span>':'')+
-      '<div class="row acts"></div>';
+      '<div class="acts"></div>';
     const acts = el.querySelector('.acts');
     if(can){
-      for(const [a,label] of [['start','Старт'],['stop','Стоп'],['restart','Рестарт']]){
-        const b=document.createElement('button'); b.className='btn sm'+(a==='start'?' primary':a==='stop'?' danger':''); b.textContent=label;
+      for(const [a,label,cls] of [['start','Старт','primary'],['stop','Стоп','danger'],['restart','Рестарт','']]){
+        const b=document.createElement('button'); b.className='mc-btn sm '+cls; b.textContent=label;
         b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false;
           if(rr.d&&rr.d.error) alert(rr.d.error); setTimeout(loadServers,1000); };
         acts.appendChild(b);
       }
     }
     if(s.role==='owner'||s.role==='admin'){
-      const ab=document.createElement('button'); ab.className='btn sm'; ab.textContent='Доступ…';
+      const ab=document.createElement('button'); ab.className='mc-btn sm'; ab.textContent='Доступ…';
       ab.onclick=()=>assignPrompt(s); acts.appendChild(ab);
     }
     box.appendChild(el);

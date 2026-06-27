@@ -4,14 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CONTROLGUI Remote — админ</title>
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/minecraft.css">
 <link rel="stylesheet" href="/css/style.css">
 </head>
-<body>
+<body class="theme-lime">
+<div class="bg-pattern"></div>
+<div class="shade"></div>
+
 <div class="wrap">
   <div class="top">
-    <div class="brand">CONTROL<b>GUI</b> Remote · админ</div>
-    <div class="row"><a class="btn sm" href="/">На главную</a> <button class="btn sm" id="logout">Выйти</button></div>
+    <div class="brand">CONTROL<b>GUI</b> <span class="sub">REMOTE · АДМИН</span></div>
+    <div class="row"><a class="mc-btn sm" href="/">На главную</a> <button class="mc-btn sm" id="logout">Выйти</button></div>
   </div>
 
   <div class="card">
@@ -45,17 +48,18 @@ async function loadUsers(){
   for(const p of pend){
     const el=document.createElement('div'); el.className='srv';
     el.innerHTML='<div class="grow"><div class="nm">'+esc(p.username)+'</div><div class="meta">'+esc(p.createdAt||'')+'</div></div>';
-    const ok=document.createElement('button'); ok.className='btn sm primary'; ok.textContent='Одобрить';
+    const acts=document.createElement('div'); acts.className='acts';
+    const ok=document.createElement('button'); ok.className='mc-btn sm primary'; ok.textContent='Одобрить';
     ok.onclick=async()=>{ await api('POST','/api/admin/approve',{username:p.username}); loadUsers(); };
-    const no=document.createElement('button'); no.className='btn sm danger'; no.textContent='Отклонить';
+    const no=document.createElement('button'); no.className='mc-btn sm danger'; no.textContent='Отклонить';
     no.onclick=async()=>{ if(confirm('Отклонить '+p.username+'?')){ await api('POST','/api/admin/reject',{username:p.username}); loadUsers(); } };
-    el.appendChild(ok); el.appendChild(no); $('#pending').appendChild(el);
+    acts.appendChild(ok); acts.appendChild(no); el.appendChild(acts); $('#pending').appendChild(el);
   }
   const tb=$('#users'); tb.innerHTML='';
   for(const us of (u.users||[])){
     const tr=document.createElement('tr');
     tr.innerHTML='<td>'+esc(us.username)+'</td><td>'+esc(us.role)+'</td><td>'+(us.approved?'<span class="ok">одобрен</span>':'<span class="muted">ждёт</span>')+'</td><td></td>';
-    if(us.role!=='admin'){ const d=document.createElement('button'); d.className='btn sm danger'; d.textContent='Удалить';
+    if(us.role!=='admin'){ const d=document.createElement('button'); d.className='mc-btn sm danger'; d.textContent='Удалить';
       d.onclick=async()=>{ if(confirm('Удалить пользователя '+us.username+'?')){ await api('POST','/api/admin/reject',{username:us.username}); loadUsers(); } };
       tr.lastChild.appendChild(d); }
     tb.appendChild(tr);
@@ -70,18 +74,18 @@ async function loadServers(){
     el.innerHTML='<span class="dot'+(s.online?' on':'')+'"></span><div class="grow"><div class="nm">'+esc(s.name)+'</div>'+
       '<div class="meta">'+(s.type?esc(s.type)+' ':'')+(s.version?esc(s.version):'')+' · '+esc(s.status||'—')+' · владелец: '+(s.owner?esc(s.owner):'<i>не привязан</i>')+
       ' · доступ: '+((s.access||[]).map(a=>esc(a.username)).join(', ')||'—')+'</div></div>'+
-      (s.status==='running'?'<span class="badge run">RUNNING</span>':'')+'<div class="row acts"></div>';
+      (s.status==='running'?'<span class="badge run">RUNNING</span>':'')+'<div class="acts"></div>';
     const acts=el.querySelector('.acts');
     for(const [a,l,c] of [['start','Старт','primary'],['stop','Стоп','danger'],['restart','Рестарт','']]){
-      const b=document.createElement('button'); b.className='btn sm '+c; b.textContent=l;
+      const b=document.createElement('button'); b.className='mc-btn sm '+c; b.textContent=l;
       b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false; if(rr.d&&rr.d.error)alert(rr.d.error); setTimeout(loadServers,1000); };
       acts.appendChild(b);
     }
-    const asg=document.createElement('button'); asg.className='btn sm'; asg.textContent='Назначить';
+    const asg=document.createElement('button'); asg.className='mc-btn sm'; asg.textContent='Назначить';
     asg.onclick=async()=>{ const u=prompt('Назначить сервер пользователю (ник):'); if(!u)return; const manage=confirm('Разрешить управление? OK=да, Отмена=только просмотр.');
       const rr=await api('POST','/api/servers/'+s.globalId+'/assign',{username:u.trim(),perms:manage?['start','stop','restart']:[]}); if(rr.d&&rr.d.error)alert(rr.d.error); else loadServers(); };
     acts.appendChild(asg);
-    const rm=document.createElement('button'); rm.className='btn sm danger'; rm.textContent='Убрать';
+    const rm=document.createElement('button'); rm.className='mc-btn sm danger'; rm.textContent='Убрать';
     rm.onclick=async()=>{ if(confirm('Убрать сервер «'+s.name+'» из реестра?')){ await api('POST','/api/admin/remove-server',{globalId:s.globalId}); loadServers(); } };
     acts.appendChild(rm);
     box.appendChild(el);
