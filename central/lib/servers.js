@@ -4,8 +4,19 @@
 const crypto = require('crypto');
 const store = require('./store');
 
-// действия MVP, которые можно делегировать назначенному пользователю
+// действия простого диспетча (кнопки в списке серверов)
 const ACTIONS = ['start', 'stop', 'restart'];
+// права полного удалённого управления (подмножество прав панели; БЕЗ create/delete/admin)
+const REMOTE_PERMS = [
+  'console.view', 'console.command', 'logs.view',
+  'server.start', 'server.stop', 'server.kill', 'server.install',
+  'settings.edit',
+  'files.read', 'files.write', 'files.upload', 'files.delete',
+  'players.kick', 'players.ban', 'players.op', 'players.whitelist', 'players.delete',
+  'backups.create', 'backups.restore', 'backups.delete',
+];
+// маппинг простого действия -> требуемое право панели (для legacy кнопок)
+const ACTION_PERM = { start: 'server.start', stop: 'server.stop', restart: 'server.stop' };
 // нормализация поля от агента: строка, обрез, без управляющих символов
 function clip(v, max) { return String(v == null ? '' : v).replace(/[\x00-\x1f\x7f]/g, '').slice(0, max || 40); }
 
@@ -114,12 +125,12 @@ function claimByCode(code, username) {
   return { ok: true, server: s };
 }
 
-/* Назначение доступа пользователю с правами (perms — подмножество ACTIONS). */
+/* Назначение доступа пользователю с правами (perms — подмножество REMOTE_PERMS). */
 function assign(globalId, username, perms) {
   const list = all();
   const s = list.find((x) => x.globalId === globalId);
   if (!s) return { error: 'Сервер не найден' };
-  const clean = (Array.isArray(perms) ? perms : []).filter((p) => ACTIONS.includes(p));
+  const clean = (Array.isArray(perms) ? perms : []).filter((p) => REMOTE_PERMS.includes(p));
   s.access = (s.access || []).filter((a) => String(a.username).toLowerCase() !== String(username).toLowerCase());
   s.access.push({ username: String(username), perms: clean });
   saveAll(list);
@@ -154,17 +165,29 @@ function forUser(user) {
     .map((s) => publicServer(s, user));
 }
 
-/* Может ли пользователь выполнить действие над сервером. */
+/* Может ли пользователь выполнить простое действие (start/stop/restart) над сервером. */
 function canDo(user, s, action) {
   const role = roleFor(user, s);
-  if (role === 'admin' || role === 'owner') return true; // владелец в MVP может всё
+  if (role === 'admin' || role === 'owner') return true;
   if (role === 'assigned') {
     const a = (s.access || []).find((x) => String(x.username).toLowerCase() === String(user.username).toLowerCase());
-    return !!(a && a.perms.includes(action));
+    const have = a && Array.isArray(a.perms) ? a.perms : [];
+    return have.includes(ACTION_PERM[action]) || have.includes(action); // + back-compat
   }
   return false;
 }
 function canView(user, s) { return roleFor(user, s) != null; }
+
+/* Набор прав панели для проксирования: владелец/админ — все REMOTE_PERMS; назначенный — его подмножество. */
+function permSet(user, s) {
+  const role = roleFor(user, s);
+  if (role === 'admin' || role === 'owner') return REMOTE_PERMS.slice();
+  if (role === 'assigned') {
+    const a = (s.access || []).find((x) => String(x.username).toLowerCase() === String(user.username).toLowerCase());
+    return (a && Array.isArray(a.perms) ? a.perms : []).filter((p) => REMOTE_PERMS.includes(p));
+  }
+  return [];
+}
 
 // при старте центра сбрасываем online=false у всех — поднимутся заново по SSE
 function resetAllOnline() {
@@ -175,7 +198,7 @@ function resetAllOnline() {
 }
 
 module.exports = {
-  ACTIONS, all, get, byToken, publicServer, roleFor,
-  onRegister, updateStatus, setOnline, claimByCode, assign, unassign, remove, forUser, canDo, canView,
+  ACTIONS, REMOTE_PERMS, all, get, byToken, publicServer, roleFor,
+  onRegister, updateStatus, setOnline, claimByCode, assign, unassign, remove, forUser, canDo, canView, permSet,
   setLiveChecker, resetAllOnline, removeByToken,
 };

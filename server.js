@@ -115,6 +115,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // внутренний loopback-принципал полного удалённого управления (тот же процесс, 127.0.0.1 + секрет):
+  // проксированный с центрального сервера запрос исполняется с проброшенными правами по ОДНОМУ серверу.
+  if (urlPath.startsWith('/api/')) {
+    const internal = require('./lib/remote').internalUserFor(req);
+    if (internal) { req.cgUser = internal; return handleApi(req, res); }
+  }
+
   if (await handleAuthRoutes(req, res, urlPath)) return;
 
   // ресурсы страницы входа — без сессии
