@@ -27,6 +27,10 @@
   cursor: -webkit-image-set(url('/assets/cursor.png') 3x) 0 0, url('/assets/cursor.png') 0 0, auto !important;
   cursor: image-set(url('/assets/cursor.png') 3x) 0 0, url('/assets/cursor.png') 0 0, auto !important;
 }
+/* бейдж удалённого сервера (добавлен по коду) */
+.srv-remote-badge { display: inline-block; vertical-align: middle; font-family: var(--font-head); font-size: 9px;
+  letter-spacing: 1px; padding: 2px 6px; margin-left: 6px; color: #80da5b; border: 1px solid #3a6a28; }
+
 /* в текстовых полях возвращаем I-beam (универсальное !important выше иначе его затирает) */
 input.fld, textarea.fld, input[type="text"], input[type="password"], input[type="number"], textarea {
   cursor: text !important;

@@ -127,6 +127,27 @@
       <div class="home-account" id="home-account"></div>
       <div class="hero-stats" id="home-stats"></div>
     </div>
+    <div class="mc-card form-panel" id="remote-account-card" style="margin-bottom:16px">
+      <div class="section-title"><i class="pi" data-ic="server"></i> Удалённые серверы (CONTROLGUI Remote)</div>
+      <div id="ra-login">
+        <div class="hint" style="margin:0 0 10px">Войдите в аккаунт CONTROLGUI Remote — и добавляйте удалённые серверы по коду, управляя ими как локальными.</div>
+        <div class="btn-row btn-row-left" style="gap:10px;flex-wrap:wrap;margin:0">
+          <input class="fld" id="ra-user" placeholder="Логин аккаунта" style="max-width:200px" autocomplete="off">
+          <input class="fld" id="ra-pass" type="password" placeholder="Пароль" style="max-width:200px" autocomplete="off">
+          <button class="mc-btn sm primary" id="ra-login-btn">Войти</button>
+        </div>
+        <div class="err" id="ra-err" style="margin-top:8px"></div>
+      </div>
+      <div id="ra-linked" class="hidden">
+        <div class="hint" style="margin:0 0 10px">Аккаунт центра: <b id="ra-username"></b>. Удалённые серверы — в списке ниже с пометкой «удалённый».</div>
+        <div class="btn-row btn-row-left" style="gap:10px;flex-wrap:wrap;margin:0">
+          <input class="fld" id="ra-code" placeholder="Код привязки (AB12-CD34)" maxlength="9" style="max-width:230px;text-transform:uppercase">
+          <button class="mc-btn sm primary" id="ra-link-btn">Привязать по коду</button>
+          <button class="mc-btn sm" id="ra-logout-btn">Выйти из аккаунта</button>
+        </div>
+        <div class="err" id="ra-link-err" style="margin-top:8px"></div>
+      </div>
+    </div>
     <div class="srv-grid" id="server-list">
       <div class="list-empty" id="list-empty">
         Серверов пока нет.<br>Нажмите «Создать сервер», чтобы развернуть первый!

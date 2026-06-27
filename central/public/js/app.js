@@ -680,7 +680,39 @@
     chip('users', 'Игроков онлайн: <b>' + players + '</b>');
   }
 
+  let raBound = false;
+  async function renderRemoteAccount() {
+    const card = $('#remote-account-card');
+    if (!card) return;
+    if (window.CG_REMOTE) { card.classList.add('hidden'); return; } // на сайте центра этот блок не нужен
+    card.classList.remove('hidden');
+    if (!raBound) {
+      raBound = true;
+      $('#ra-login-btn').addEventListener('click', async () => {
+        $('#ra-err').textContent = '';
+        try { await API.centralLogin($('#ra-user').value.trim(), $('#ra-pass').value); $('#ra-pass').value = ''; await renderRemoteAccount(); loadServers(); }
+        catch (e) { $('#ra-err').textContent = e.message; }
+      });
+      $('#ra-logout-btn').addEventListener('click', async () => { await API.centralLogout(); await renderRemoteAccount(); loadServers(); });
+      $('#ra-link-btn').addEventListener('click', async () => {
+        $('#ra-link-err').textContent = '';
+        const code = $('#ra-code').value.trim();
+        if (!code) return;
+        try { await API.centralLink(code); $('#ra-code').value = ''; $('#ra-link-err').className = 'err ok'; $('#ra-link-err').textContent = 'Сервер привязан!'; setTimeout(loadServers, 600); }
+        catch (e) { $('#ra-link-err').className = 'err'; $('#ra-link-err').textContent = e.message; }
+      });
+    }
+    try {
+      const st = await API.centralState();
+      const on = !!(st && st.loggedIn);
+      $('#ra-login').classList.toggle('hidden', on);
+      $('#ra-linked').classList.toggle('hidden', !on);
+      if (on) $('#ra-username').textContent = st.username || '';
+    } catch (e) { /* /api/central нет (старая сборка) — прячем блок */ $('#remote-account-card').classList.add('hidden'); }
+  }
+
   function renderList() {
+    renderRemoteAccount();
     const panel = $('#server-list');
     Array.from(panel.querySelectorAll('.srv-card')).forEach((el) => el.remove());
     $('#list-empty').classList.toggle('hidden', state.servers.length > 0);
@@ -706,6 +738,10 @@
       const subEl = document.createElement('div');
       subEl.className = 'srv-card-sub';
       subEl.textContent = (CORE_NAMES[server.type] || server.type) + ' ' + (server.version || '–');
+      if (server.remote) {
+        const rb = document.createElement('span'); rb.className = 'srv-remote-badge'; rb.textContent = 'удалённый';
+        nameEl.appendChild(document.createTextNode(' ')); nameEl.appendChild(rb);
+      }
       id.appendChild(nameEl);
       id.appendChild(subEl);
       top.appendChild(icon);
@@ -715,7 +751,7 @@
       const addrRow = document.createElement('div');
       addrRow.className = 'srv-card-addr';
       const host = (state.lanIps && state.lanIps.length ? state.lanIps[0] : 'localhost');
-      const address = host + ':' + server.port;
+      const address = server.remote ? 'CONTROLGUI Remote' : (host + ':' + server.port);
       const code = document.createElement('code');
       code.textContent = address;
       addrRow.appendChild(code);

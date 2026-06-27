@@ -82,6 +82,13 @@ window.API = (function () {
 
     me: () => call('GET', '/api/auth/me'),
     logout: () => call('POST', '/api/auth/logout'),
+
+    // аккаунт центрального сервера (удалённые серверы в десктопе)
+    centralState: () => call('GET', '/api/central'),
+    centralLogin: (username, password) => call('POST', '/api/central/login', { username: username, password: password }),
+    centralRegister: (username, password) => call('POST', '/api/central/register', { username: username, password: password }),
+    centralLogout: () => call('POST', '/api/central/logout'),
+    centralLink: (code) => call('POST', '/api/central/link', { code: code }),
     usersList: () => call('GET', '/api/users'),
     userCreate: (body) => call('POST', '/api/users', body),
     userUpdate: (name, body) => call('PUT', '/api/users/' + encodeURIComponent(name), body),
