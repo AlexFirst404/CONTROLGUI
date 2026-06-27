@@ -31,6 +31,18 @@ function readJsonBody(req) {
   });
 }
 
+function sendJson(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)); }
+
+/* Аккаунт центрального сервера в десктопе: вход/выход/статус + привязка по коду. */
+async function handleCentralRoutes(req, res, urlPath, cc) {
+  if (urlPath === '/api/central' && req.method === 'GET') return sendJson(res, 200, cc.state());
+  if (urlPath === '/api/central/login' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.login(b.username || '', b.password || ''); return sendJson(res, r.error ? 400 : 200, r); }
+  if (urlPath === '/api/central/register' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.register(b.username || '', b.password || ''); return sendJson(res, r.error ? 400 : 200, r); }
+  if (urlPath === '/api/central/logout' && req.method === 'POST') return sendJson(res, 200, cc.logout());
+  if (urlPath === '/api/central/link' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.linkByCode(String(b.code || '')); return sendJson(res, r.error ? 400 : 200, r); }
+  return sendJson(res, 404, { error: 'Не найдено' });
+}
+
 /* Анти-брутфорс входа: 5 неверных попыток с одного IP -> блок на 5 минут. */
 const LOGIN_MAX_FAILS = 5;
 const LOGIN_LOCK_MS = 5 * 60 * 1000;
@@ -148,6 +160,12 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.url.startsWith('/api/')) {
     req.cgUser = user; // для проверки прав в api.js
+    const cc = require('./lib/centralclient');
+    // удалённый сервер (добавлен по коду) -> прозрачный прокси к центру (ДО чтения тела — нужен поток)
+    const m = urlPath.match(/^\/api\/servers\/([^/]+)(?:\/|$)/);
+    if (m) { const gid = cc.gidForLocal(m[1]); if (gid) return cc.proxy(req, res, gid); }
+    // управление аккаунтом центра в десктопе
+    if (urlPath === '/api/central' || urlPath.startsWith('/api/central/')) return handleCentralRoutes(req, res, urlPath, cc);
     return handleApi(req, res);
   }
   serveStatic(req, res);
