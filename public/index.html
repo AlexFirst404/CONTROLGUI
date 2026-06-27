@@ -32,6 +32,7 @@
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
     <div class="menu-item" data-menu="create"><i class="pi" data-ic="plus"></i> Создать сервер</div>
+    <div class="menu-item" data-menu="remote" id="menu-remote"><i class="pi" data-ic="open"></i> Подключить сервер</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="settings"><i class="pi" data-ic="sliders"></i> Настройки панели</div>
     <div class="menu-item hidden" id="menu-users" data-menu="users"><i class="pi" data-ic="users"></i> Пользователи</div>
@@ -123,27 +124,6 @@
       <div class="hero-sub">Локальная панель управления Minecraft-серверами</div>
       <div class="home-account" id="home-account"></div>
       <div class="hero-stats" id="home-stats"></div>
-    </div>
-    <div class="mc-card form-panel" id="remote-account-card" style="margin-bottom:16px">
-      <div class="section-title"><i class="pi" data-ic="server"></i> Удалённые серверы (CONTROLGUI Remote)</div>
-      <div id="ra-login">
-        <div class="hint" style="margin:0 0 10px">Войдите в аккаунт CONTROLGUI Remote — и добавляйте удалённые серверы по коду, управляя ими как локальными.</div>
-        <div class="btn-row btn-row-left" style="gap:10px;flex-wrap:wrap;margin:0">
-          <input class="fld" id="ra-user" placeholder="Логин аккаунта" style="max-width:200px" autocomplete="off">
-          <input class="fld" id="ra-pass" type="password" placeholder="Пароль" style="max-width:200px" autocomplete="off">
-          <button class="mc-btn sm primary" id="ra-login-btn">Войти</button>
-        </div>
-        <div class="err" id="ra-err" style="margin-top:8px"></div>
-      </div>
-      <div id="ra-linked" class="hidden">
-        <div class="hint" style="margin:0 0 10px">Аккаунт центра: <b id="ra-username"></b>. Удалённые серверы — в списке ниже с пометкой «удалённый».</div>
-        <div class="btn-row btn-row-left" style="gap:10px;flex-wrap:wrap;margin:0">
-          <input class="fld" id="ra-code" placeholder="Код привязки (AB12-CD34)" maxlength="9" style="max-width:230px;text-transform:uppercase">
-          <button class="mc-btn sm primary" id="ra-link-btn">Привязать по коду</button>
-          <button class="mc-btn sm" id="ra-logout-btn">Выйти из аккаунта</button>
-        </div>
-        <div class="err" id="ra-link-err" style="margin-top:8px"></div>
-      </div>
     </div>
     <div class="srv-grid" id="server-list">
       <div class="list-empty" id="list-empty">
@@ -281,6 +261,48 @@
         <button type="button" class="mc-btn" id="btn-create-cancel">Отмена</button>
       </div>
     </form>
+  </section>
+
+  <!-- ЭКРАН: ПОДКЛЮЧИТЬ УДАЛЁННЫЙ СЕРВЕР -->
+  <section id="screen-remote" class="screen hidden">
+    <h1 class="mc-title">Подключить удалённый сервер</h1>
+    <p class="hint" style="text-align:center;margin:-6px 0 18px">Войдите в аккаунт CONTROLGUI Remote — и серверы с других компьютеров появятся в общем списке «Серверы».</p>
+
+    <div class="mc-card form-panel" id="rc-auth" style="max-width:460px;margin:0 auto">
+      <div class="props-modebar" style="margin-bottom:16px">
+        <button type="button" class="mc-btn sm props-mode-btn primary" id="rc-tab-login">Вход</button>
+        <button type="button" class="mc-btn sm props-mode-btn" id="rc-tab-reg">Регистрация</button>
+      </div>
+      <div id="rc-login-form">
+        <label class="mc-label">Логин аккаунта<input class="fld" id="rc-li-user" autocomplete="off"></label>
+        <label class="mc-label" style="margin-top:12px">Пароль<input class="fld" id="rc-li-pass" type="password" autocomplete="off"></label>
+        <div class="err" id="rc-li-err"></div>
+        <button class="mc-btn primary" id="rc-login-btn" style="margin-top:14px;width:100%"><i class="pi" data-ic="open"></i> Войти</button>
+      </div>
+      <div id="rc-reg-form" class="hidden">
+        <label class="mc-label">Логин (ник)<input class="fld" id="rc-rg-user" autocomplete="off"></label>
+        <label class="mc-label" style="margin-top:12px">Пароль (мин. 6)<input class="fld" id="rc-rg-pass" type="password" autocomplete="off"></label>
+        <div class="hint" style="margin-top:8px">После регистрации аккаунт ждёт одобрения администратором центра.</div>
+        <div class="err" id="rc-rg-err"></div>
+        <button class="mc-btn primary" id="rc-reg-btn" style="margin-top:10px;width:100%"><i class="pi" data-ic="check"></i> Зарегистрироваться</button>
+      </div>
+    </div>
+
+    <div class="mc-card form-panel hidden" id="rc-linked" style="max-width:520px;margin:0 auto">
+      <div class="section-title">Аккаунт: <b id="rc-username"></b></div>
+      <div class="hint" style="margin:0 0 12px">Удалённые серверы появляются в общем списке «Серверы» с пометкой «удалённый». Привяжите новый по коду из настроек удалённого управления нужной панели.</div>
+      <label class="mc-label">Код привязки сервера
+        <div style="display:flex;gap:10px;align-items:stretch;margin-top:4px">
+          <input class="fld" id="rc-code" placeholder="AB12-CD34" maxlength="9" style="max-width:220px;text-transform:uppercase" autocomplete="off">
+          <button class="mc-btn sm primary" id="rc-link-btn" style="margin:0;white-space:nowrap"><i class="pi" data-ic="plus"></i> Привязать</button>
+        </div>
+      </label>
+      <div class="err" id="rc-link-err"></div>
+      <div class="btn-row btn-row-left" style="margin-top:18px">
+        <button class="mc-btn" id="rc-goto-servers"><i class="pi" data-ic="server"></i> К серверам</button>
+        <button class="mc-btn danger" id="rc-logout-btn"><i class="pi" data-ic="close"></i> Выйти из аккаунта</button>
+      </div>
+    </div>
   </section>
 
   <!-- ЭКРАН: ПОЛЬЗОВАТЕЛИ -->

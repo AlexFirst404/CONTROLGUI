@@ -170,7 +170,7 @@
     $('#menu-logout').classList.toggle('hidden', state.openMode);
     // удалённый режим: панель-локальные пункты не относятся к удалённому серверу — прячем
     if (window.CG_REMOTE) {
-      $$('.menu-item[data-menu="create"], .menu-item[data-menu="settings"], .menu-item[data-menu="about"]').forEach((el) => el.classList.add('hidden'));
+      $$('.menu-item[data-menu="create"], .menu-item[data-menu="remote"], .menu-item[data-menu="settings"], .menu-item[data-menu="about"]').forEach((el) => el.classList.add('hidden'));
     }
     // создание сервера
     $('#btn-goto-create').classList.toggle('hidden', !can('server.create'));
@@ -549,6 +549,7 @@
     state.screen = name;
     $('#screen-list').classList.toggle('hidden', name !== 'list');
     $('#screen-create').classList.toggle('hidden', name !== 'create');
+    $('#screen-remote').classList.toggle('hidden', name !== 'remote');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
     $('#screen-users').classList.toggle('hidden', name !== 'users');
     $('#screen-proxy').classList.toggle('hidden', name !== 'proxy');
@@ -566,6 +567,7 @@
     // (вкладки сервера пушит switchTab)
     if (name === 'list') pushHash('');
     else if (name === 'create') pushHash('#create');
+    else if (name === 'remote') pushHash('#remote');
     else if (name === 'users') pushHash('#users');
     else if (name === 'proxy') pushHash('#proxy');
   }
@@ -581,6 +583,8 @@
         if (state.screen !== 'users') openUsers();
       } else if (hash === '#proxy') {
         if (state.screen !== 'proxy') { showScreen('proxy'); renderProxyViz(); }
+      } else if (hash === '#remote') {
+        if (state.screen !== 'remote') openRemoteScreen();
       } else if (hash.indexOf('#server=') === 0) {
         const rest = hash.slice(8);
         const id = rest.split('/tab/')[0].split('/player/')[0];
@@ -684,39 +688,53 @@
     chip('users', 'Игроков онлайн: <b>' + players + '</b>');
   }
 
-  let raBound = false;
-  async function renderRemoteAccount() {
-    const card = $('#remote-account-card');
-    if (!card) return;
-    if (window.CG_REMOTE) { card.classList.add('hidden'); return; } // на сайте центра этот блок не нужен
-    card.classList.remove('hidden');
-    if (!raBound) {
-      raBound = true;
-      $('#ra-login-btn').addEventListener('click', async () => {
-        $('#ra-err').textContent = '';
-        try { await API.centralLogin($('#ra-user').value.trim(), $('#ra-pass').value); $('#ra-pass').value = ''; await renderRemoteAccount(); loadServers(); }
-        catch (e) { $('#ra-err').textContent = e.message; }
+  // ---------- экран «Подключить удалённый сервер» (аккаунт центра) ----------
+  let rcBound = false;
+  function rcTab(login) {
+    $('#rc-tab-login').classList.toggle('primary', login);
+    $('#rc-tab-reg').classList.toggle('primary', !login);
+    $('#rc-login-form').classList.toggle('hidden', !login);
+    $('#rc-reg-form').classList.toggle('hidden', login);
+  }
+  async function refreshRemoteScreen() {
+    let st = null;
+    try { st = await API.centralState(); } catch (e) { /* старая сборка */ }
+    const on = !!(st && st.loggedIn);
+    $('#rc-auth').classList.toggle('hidden', on);
+    $('#rc-linked').classList.toggle('hidden', !on);
+    if (on) $('#rc-username').textContent = st.username || '';
+  }
+  function openRemoteScreen() {
+    showScreen('remote');
+    if (!rcBound) {
+      rcBound = true;
+      $('#rc-tab-login').addEventListener('click', () => rcTab(true));
+      $('#rc-tab-reg').addEventListener('click', () => rcTab(false));
+      $('#rc-login-btn').addEventListener('click', async () => {
+        $('#rc-li-err').textContent = '';
+        try { await API.centralLogin($('#rc-li-user').value.trim(), $('#rc-li-pass').value); $('#rc-li-pass').value = ''; await refreshRemoteScreen(); guard(loadServers); showToast('Вход выполнен.', 'ok'); }
+        catch (e) { $('#rc-li-err').textContent = e.message; }
       });
-      $('#ra-logout-btn').addEventListener('click', async () => { await API.centralLogout(); await renderRemoteAccount(); loadServers(); });
-      $('#ra-link-btn').addEventListener('click', async () => {
-        $('#ra-link-err').textContent = '';
-        const code = $('#ra-code').value.trim();
+      $('#rc-reg-btn').addEventListener('click', async () => {
+        $('#rc-rg-err').textContent = '';
+        try { await API.centralRegister($('#rc-rg-user').value.trim(), $('#rc-rg-pass').value); $('#rc-rg-err').className = 'err ok'; $('#rc-rg-err').textContent = 'Заявка отправлена — ждите одобрения админа центра, затем войдите.'; rcTab(true); }
+        catch (e) { $('#rc-rg-err').className = 'err'; $('#rc-rg-err').textContent = e.message; }
+      });
+      $('#rc-logout-btn').addEventListener('click', async () => { await API.centralLogout(); await refreshRemoteScreen(); guard(loadServers); });
+      $('#rc-link-btn').addEventListener('click', async () => {
+        $('#rc-link-err').textContent = '';
+        const code = $('#rc-code').value.trim();
         if (!code) return;
-        try { await API.centralLink(code); $('#ra-code').value = ''; $('#ra-link-err').className = 'err ok'; $('#ra-link-err').textContent = 'Сервер привязан!'; setTimeout(loadServers, 600); }
-        catch (e) { $('#ra-link-err').className = 'err'; $('#ra-link-err').textContent = e.message; }
+        try { await API.centralLink(code); $('#rc-code').value = ''; $('#rc-link-err').className = 'err ok'; $('#rc-link-err').textContent = 'Сервер привязан! Он появится в списке «Серверы».'; setTimeout(() => guard(loadServers), 600); }
+        catch (e) { $('#rc-link-err').className = 'err'; $('#rc-link-err').textContent = e.message; }
       });
+      $('#rc-goto-servers').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
+      rcTab(true);
     }
-    try {
-      const st = await API.centralState();
-      const on = !!(st && st.loggedIn);
-      $('#ra-login').classList.toggle('hidden', on);
-      $('#ra-linked').classList.toggle('hidden', !on);
-      if (on) $('#ra-username').textContent = st.username || '';
-    } catch (e) { /* /api/central нет (старая сборка) — прячем блок */ $('#remote-account-card').classList.add('hidden'); }
+    refreshRemoteScreen();
   }
 
   function renderList() {
-    renderRemoteAccount();
     const panel = $('#server-list');
     Array.from(panel.querySelectorAll('.srv-card')).forEach((el) => el.remove());
     $('#list-empty').classList.toggle('hidden', state.servers.length > 0);
@@ -4011,6 +4029,7 @@
         if (state.memCreateSlider) state.memCreateSlider.refresh();
       }
       if (action === 'proxy') { showScreen('proxy'); guard(loadServers).then(() => renderProxyViz()); }
+      if (action === 'remote') openRemoteScreen();
       if (action === 'settings') openAppSettings();
       if (action === 'about') $('#about-root').classList.remove('hidden');
       if (action === 'users') openUsers();
