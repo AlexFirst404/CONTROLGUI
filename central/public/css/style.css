@@ -63,3 +63,11 @@ th { color: #9a9a9a; font-family: var(--font-head); font-weight: normal; font-si
   margin: 12px 0 4px; }
 .asg-perm { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; color: #d8d8d8; cursor: pointer; }
 .asg-perm input { width: auto; }
+.asg-acc-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--card-inset); border: 1px solid var(--bd); margin: 6px 0; font-size: 14px; }
+
+/* тост (вместо alert) */
+.toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); z-index: 100;
+  background: #2b2b2b; border: 2px solid var(--danger); color: #ffd9d4; padding: 11px 18px; font-size: 14px;
+  max-width: 90vw; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; }
+.toast.ok { border-color: var(--accent); color: #d6f5c8; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

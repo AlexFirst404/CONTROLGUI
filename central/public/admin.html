@@ -33,10 +33,26 @@
   </div>
 </div>
 
+<div id="toast" class="toast"></div>
+<div id="cf-modal" class="asg-overlay hidden">
+  <div class="card" style="max-width:420px;width:92%">
+    <h2 id="cf-title">Подтверждение</h2>
+    <div class="muted" id="cf-text" style="margin-bottom:14px"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="mc-btn sm" id="cf-no">Отмена</button>
+      <button class="mc-btn sm danger" id="cf-yes">Да</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $=(s)=>document.querySelector(s);
 async function api(m,u,b){ const r=await fetch(u,{method:m,headers:b?{'Content-Type':'application/json'}:undefined,body:b?JSON.stringify(b):undefined}); let d={}; try{d=await r.json();}catch(e){} return {ok:r.ok,status:r.status,d}; }
 function esc(x){ return String(x==null?'':x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function show(el,on){ $(el).classList.toggle('hidden', !on); }
+function confirmModal(text,title){ return new Promise((resolve)=>{ $('#cf-title').textContent=title||'Подтверждение'; $('#cf-text').textContent=text; show('#cf-modal',true); const done=(v)=>{ show('#cf-modal',false); $('#cf-yes').onclick=null; $('#cf-no').onclick=null; resolve(v); }; $('#cf-yes').onclick=()=>done(true); $('#cf-no').onclick=()=>done(false); }); }
+let toastTimer=null;
+function toast(msg,ok){ const t=$('#toast'); if(!t)return; t.textContent=msg; t.className='toast'+(ok?' ok':''); t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200); }
 $('#logout').onclick=async()=>{ await api('POST','/api/logout'); location.href='/'; };
 
 async function guard(){ const r=await api('GET','/api/me'); if(!r.d||!r.d.user){ location.href='/'; return false; } if(r.d.user.role!=='admin'){ location.href='/'; return false; } return true; }
@@ -52,7 +68,7 @@ async function loadUsers(){
     const ok=document.createElement('button'); ok.className='mc-btn sm primary'; ok.textContent='Одобрить';
     ok.onclick=async()=>{ await api('POST','/api/admin/approve',{username:p.username}); loadUsers(); };
     const no=document.createElement('button'); no.className='mc-btn sm danger'; no.textContent='Отклонить';
-    no.onclick=async()=>{ if(confirm('Отклонить '+p.username+'?')){ await api('POST','/api/admin/reject',{username:p.username}); loadUsers(); } };
+    no.onclick=async()=>{ if(await confirmModal('Отклонить заявку «'+p.username+'»?','Отклонить')){ await api('POST','/api/admin/reject',{username:p.username}); toast('Заявка отклонена.',true); loadUsers(); } };
     acts.appendChild(ok); acts.appendChild(no); el.appendChild(acts); $('#pending').appendChild(el);
   }
   const tb=$('#users'); tb.innerHTML='';
@@ -60,7 +76,7 @@ async function loadUsers(){
     const tr=document.createElement('tr');
     tr.innerHTML='<td>'+esc(us.username)+'</td><td>'+esc(us.role)+'</td><td>'+(us.approved?'<span class="ok">одобрен</span>':'<span class="muted">ждёт</span>')+'</td><td></td>';
     if(us.role!=='admin'){ const d=document.createElement('button'); d.className='mc-btn sm danger'; d.textContent='Удалить';
-      d.onclick=async()=>{ if(confirm('Удалить пользователя '+us.username+'?')){ await api('POST','/api/admin/reject',{username:us.username}); loadUsers(); } };
+      d.onclick=async()=>{ if(await confirmModal('Удалить пользователя «'+us.username+'»?','Удалить')){ await api('POST','/api/admin/reject',{username:us.username}); toast('Пользователь удалён.',true); loadUsers(); } };
       tr.lastChild.appendChild(d); }
     tb.appendChild(tr);
   }
@@ -78,15 +94,11 @@ async function loadServers(){
     const acts=el.querySelector('.acts');
     for(const [a,l,c] of [['start','Старт','primary'],['stop','Стоп','danger'],['restart','Рестарт','']]){
       const b=document.createElement('button'); b.className='mc-btn sm '+c; b.textContent=l;
-      b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false; if(rr.d&&rr.d.error)alert(rr.d.error); setTimeout(loadServers,1000); };
+      b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false; if(rr.d&&rr.d.error)toast(rr.d.error); setTimeout(loadServers,1000); };
       acts.appendChild(b);
     }
-    const asg=document.createElement('button'); asg.className='mc-btn sm'; asg.textContent='Назначить';
-    asg.onclick=async()=>{ const u=prompt('Назначить сервер пользователю (ник):'); if(!u)return; const manage=confirm('Разрешить управление? OK=да, Отмена=только просмотр.');
-      const rr=await api('POST','/api/servers/'+s.globalId+'/assign',{username:u.trim(),perms:manage?['start','stop','restart']:[]}); if(rr.d&&rr.d.error)alert(rr.d.error); else loadServers(); };
-    acts.appendChild(asg);
     const rm=document.createElement('button'); rm.className='mc-btn sm danger'; rm.textContent='Убрать';
-    rm.onclick=async()=>{ if(confirm('Убрать сервер «'+s.name+'» из реестра?')){ await api('POST','/api/admin/remove-server',{globalId:s.globalId}); loadServers(); } };
+    rm.onclick=async()=>{ if(await confirmModal('Убрать сервер «'+s.name+'» из реестра?','Убрать сервер')){ await api('POST','/api/admin/remove-server',{globalId:s.globalId}); toast('Сервер убран.',true); loadServers(); } };
     acts.appendChild(rm);
     box.appendChild(el);
   }

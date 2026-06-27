@@ -27,8 +27,10 @@ function denied(method, base) {
   const s = segsOf(base);
   if (s[0] !== 'api') return 'недоступно удалённо';
   if (s[1] !== 'servers') {
-    if (s[1] === 'auth' || s[1] === 'versions' || s[1] === 'launch-mode') return null; // нужны UI, безопасны
-    return 'этот эндпоинт недоступен удалённо'; // users/status/browse/java/...
+    // нужны UI и безопасны (status — редактируется на панели: без root/lanIps)
+    if (s[1] === 'auth' || s[1] === 'versions' || s[1] === 'launch-mode' || s[1] === 'status') return null;
+    if (s[1] === 'java' && method === 'GET') return null; // опрос состояния установки Java
+    return 'этот эндпоинт недоступен удалённо'; // users/browse/java-install(POST)/...
   }
   if (s.length === 2) return method === 'POST' ? 'создание сервера' : null;       // /api/servers
   if (s.length === 3) return method === 'DELETE' ? 'удаление сервера' : null;      // /api/servers/<id>

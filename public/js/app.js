@@ -651,6 +651,10 @@
     const data = await API.servers();
     state.servers = data.servers;
     renderList();
+    // удалённый режим управляет ОДНИМ сервером — открываем его сразу, без экрана выбора
+    if (window.CG_REMOTE && state.screen !== 'server' && state.servers.length) {
+      openServer(state.servers[0].id);
+    }
   }
 
   function statusDotClass(status) {

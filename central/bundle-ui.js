@@ -37,24 +37,25 @@ const boot =
 if (html.indexOf('<script src="js/api.js"></script>') < 0) { console.error('Не нашёл тег js/api.js в index.html'); process.exit(1); }
 html = html.replace('<script src="js/api.js"></script>', boot + '<script src="js/api.js"></script>');
 
-// верхняя панель центра — связь с сайтом (на главную / к серверам / аккаунт / выйти)
+// верхняя панель центра в стилистике кита (кнопки .mc-btn) — связь с сайтом
 const bar =
   '<style>' +
   '#cg-remote-bar{position:sticky;top:0;z-index:80;display:flex;align-items:center;justify-content:space-between;gap:12px;' +
-  'padding:8px 16px;background:#171717;border-bottom:2px solid #454545;font-family:\'Minecraft Ten\',\'Minecraft\',sans-serif}' +
-  '#cg-remote-bar .cgrb-brand{color:#e6e6e6;text-decoration:none;font-size:16px;letter-spacing:1px}' +
+  'padding:10px 18px;background:#1f1f1f;border-bottom:2px solid #454545}' +
+  '#cg-remote-bar .cgrb-brand{color:#e6e6e6;text-decoration:none;font-size:17px;letter-spacing:1px;' +
+  "font-family:'Minecraft Ten','Minecraft',sans-serif}" +
   '#cg-remote-bar .cgrb-brand b{color:#80da5b}' +
-  '#cg-remote-bar .cgrb-nav{display:flex;align-items:center;gap:16px;font-size:13px}' +
-  '#cg-remote-bar .cgrb-nav a{color:#80da5b;text-decoration:none}' +
-  '#cg-remote-bar #cgrb-user{color:#a9a9a9}' +
-  '#cg-remote-bar #cgrb-logout{color:#ff8a7e}' +
+  '#cg-remote-bar .cgrb-brand .cgrb-sub{color:#9a9a9a;font-size:13px}' +
+  '#cg-remote-bar .cgrb-nav{display:flex;align-items:center;gap:12px}' +
+  "#cg-remote-bar #cgrb-user{color:#a9a9a9;font-size:13px;font-family:'Minecraft','Pixelify Sans',monospace}" +
+  '#cg-remote-bar .mc-btn{margin-bottom:0}' +
   '</style>' +
   '<div id="cg-remote-bar">' +
-  '<a class="cgrb-brand" href="/">CONTROL<b>GUI</b> Remote</a>' +
+  '<a class="cgrb-brand" href="/">CONTROL<b>GUI</b> Remote · <span class="cgrb-sub">управление</span></a>' +
   '<div class="cgrb-nav">' +
-  '<a href="/">← К серверам</a>' +
   '<span id="cgrb-user"></span>' +
-  '<a href="#" id="cgrb-logout">Выйти</a>' +
+  '<a class="mc-btn sm" href="/">← К серверам</a>' +
+  '<button class="mc-btn sm danger" id="cgrb-logout">Выйти</button>' +
   '</div></div>\n' +
   '<script>' +
   "fetch('/api/me').then(function(r){return r.json();}).then(function(d){if(d&&d.user){var e=document.getElementById('cgrb-user');if(e)e.textContent=d.user.username+(d.user.role==='admin'?' · админ':'');}}).catch(function(){});" +
@@ -62,6 +63,8 @@ const bar =
   '</script>\n';
 const bodyTag = html.match(/<body[^>]*>/);
 if (bodyTag) html = html.replace(bodyTag[0], bodyTag[0] + '\n' + bar);
+// заголовок вкладки -> «Управление сервером»
+html = html.replace(/<title>[^<]*<\/title>/, '<title>Управление сервером — CONTROLGUI Remote</title>');
 fs.writeFileSync(path.join(DST, 'manage.html'), html);
 
 console.log('UI панели собран в central/public + manage.html');

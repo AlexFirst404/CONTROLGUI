@@ -150,6 +150,7 @@ async function handleAuth(req, res, urlPath) {
 async function handleApi(req, res, urlPath, url, user) {
   if (urlPath === '/api/me') return json(res, 200, { user });
   if (urlPath === '/api/servers' && req.method === 'GET') return json(res, 200, { servers: servers.forUser(user) });
+  if (urlPath === '/api/accounts' && req.method === 'GET') return json(res, 200, { users: accounts.approvedNames() }); // для выбора при выдаче доступа
 
   if (urlPath === '/api/link' && req.method === 'POST') {
     if (!linkLimit(String(user.username).toLowerCase())) return json(res, 429, { error: 'Слишком много попыток привязки. Подождите минуту.' });

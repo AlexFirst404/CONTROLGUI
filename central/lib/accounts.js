@@ -94,6 +94,8 @@ function remove(username) {
 }
 function pending() { return all().filter((a) => !a.approved).map(publicUser); }
 function listUsers() { return all().map(publicUser); }
+// одобренные ники (для выбора при выдаче доступа) — без админов
+function approvedNames() { return all().filter((a) => a.approved && a.role !== 'admin').map((a) => a.username); }
 function isAdmin(user) { return !!(user && user.role === 'admin'); }
 
 // ---- сессии ----
@@ -153,7 +155,7 @@ const _sweepTimer = setInterval(sweep, 10 * 60 * 1000);
 if (_sweepTimer.unref) _sweepTimer.unref();
 
 module.exports = {
-  COOKIE, ensureAdmin, register, verify, approve, remove, pending, listUsers, isAdmin, exists,
+  COOKIE, ensureAdmin, register, verify, approve, remove, pending, listUsers, approvedNames, isAdmin, exists,
   createSession, destroySession, cookieFor, clearCookie, parseCookies, userFromReq, validName,
   MAX_FAILS, lockMs, noteFail, clearFails,
 };

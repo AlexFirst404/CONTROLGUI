@@ -58,11 +58,12 @@
 
 <!-- модалка выдачи доступа -->
 <div id="asg-modal" class="asg-overlay hidden">
-  <div class="card" style="max-width:520px;width:94%;max-height:88vh;overflow:auto">
-    <h2>Выдать доступ к серверу</h2>
-    <div class="muted" id="asg-existing" style="margin-bottom:8px"></div>
-    <label>Ник пользователя (уже зарегистрирован и одобрен)</label>
-    <input class="fld" id="asg-user" placeholder="ник">
+  <div class="card" style="max-width:560px;width:94%;max-height:90vh;overflow:auto">
+    <h2 id="asg-title">Доступ к серверу</h2>
+    <div id="asg-access"></div>
+    <hr class="sep" style="margin:14px 0">
+    <label>Пользователь (одобренный аккаунт)</label>
+    <select class="fld" id="asg-user"></select>
     <div class="row" style="margin:12px 0 6px">
       <span class="label-dim">Пресеты:</span>
       <button class="mc-btn sm" id="asg-preset-full">Полный</button>
@@ -70,10 +71,24 @@
       <button class="mc-btn sm" id="asg-preset-none">Снять всё</button>
     </div>
     <div id="asg-perms"></div>
+    <div class="err" id="asg-err"></div>
     <div class="row" style="margin-top:14px;justify-content:flex-end">
-      <button class="mc-btn sm danger" id="asg-remove">Убрать доступ</button>
-      <button class="mc-btn sm" id="asg-cancel">Отмена</button>
-      <button class="mc-btn sm primary" id="asg-save">Сохранить</button>
+      <button class="mc-btn sm" id="asg-cancel">Закрыть</button>
+      <button class="mc-btn sm primary" id="asg-save">Выдать / обновить</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- общая модалка подтверждения (вместо браузерного confirm) -->
+<div id="cf-modal" class="asg-overlay hidden">
+  <div class="card" style="max-width:420px;width:92%">
+    <h2 id="cf-title">Подтверждение</h2>
+    <div class="muted" id="cf-text" style="margin-bottom:14px"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="mc-btn sm" id="cf-no">Отмена</button>
+      <button class="mc-btn sm danger" id="cf-yes">Да</button>
     </div>
   </div>
 </div>
@@ -126,7 +141,7 @@ async function loadServers(){
       for(const [a,label,cls] of [['start','Старт','primary'],['stop','Стоп','danger'],['restart','Рестарт','']]){
         const b=document.createElement('button'); b.className='mc-btn sm '+cls; b.textContent=label;
         b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false;
-          if(rr.d&&rr.d.error) alert(rr.d.error); setTimeout(loadServers,1000); };
+          if(rr.d&&rr.d.error) toast(rr.d.error); setTimeout(loadServers,1000); };
         acts.appendChild(b);
       }
     }
@@ -148,33 +163,66 @@ const PERM_GROUPS = [
   ['Бэкапы', [['backups.create','Создание'],['backups.restore','Восстановление'],['backups.delete','Удаление']]],
 ];
 let assignTarget = null;
-function assignPrompt(s){
-  assignTarget = s;
-  $('#asg-user').value = '';
-  const existing = (s.access||[]).map(a=>a.username+' ('+(a.perms&&a.perms.length?a.perms.length+' прав':'просмотр')+')').join(', ');
-  $('#asg-existing').textContent = existing ? ('Уже выдан доступ: '+existing) : 'Пока никому не выдан доступ.';
-  const box = $('#asg-perms'); box.innerHTML='';
+// промис-подтверждение вместо браузерного confirm
+function confirmModal(text, title){
+  return new Promise((resolve)=>{
+    $('#cf-title').textContent = title || 'Подтверждение';
+    $('#cf-text').textContent = text;
+    show('#cf-modal', true);
+    const done=(v)=>{ show('#cf-modal',false); $('#cf-yes').onclick=null; $('#cf-no').onclick=null; resolve(v); };
+    $('#cf-yes').onclick=()=>done(true); $('#cf-no').onclick=()=>done(false);
+  });
+}
+// тост вместо alert
+let toastTimer=null;
+function toast(msg, ok){ const t=$('#toast'); if(!t)return; t.textContent=msg; t.className='toast'+(ok?' ok':''); t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200); }
+
+function permsOfUser(s, username){ const a=(s.access||[]).find(x=>x.username.toLowerCase()===String(username).toLowerCase()); return a&&a.perms?a.perms:null; }
+function renderAsgPerms(checked){
+  const box=$('#asg-perms'); box.innerHTML=''; const set=new Set(checked||[]);
   for(const [grp,items] of PERM_GROUPS){
     const h=document.createElement('div'); h.className='asg-grp'; h.textContent=grp; box.appendChild(h);
     for(const [key,label] of items){
       const lab=document.createElement('label'); lab.className='asg-perm';
-      lab.innerHTML='<input type="checkbox" value="'+key+'"> '+esc(label);
+      lab.innerHTML='<input type="checkbox" value="'+key+'"'+(set.has(key)?' checked':'')+'> '+esc(label);
       box.appendChild(lab);
     }
   }
+}
+async function refreshAssign(gid){ const f=await api('GET','/api/servers'); const fresh=(f.d.servers||[]).find(x=>x.globalId===gid); if(fresh) assignPrompt(fresh); loadServers(); }
+async function assignPrompt(s){
+  assignTarget = s;
+  $('#asg-err').textContent='';
+  $('#asg-title').textContent='Доступ к серверу «'+s.name+'»';
+  // текущий доступ + «Забрать»
+  const acc=$('#asg-access'); acc.innerHTML='';
+  const list=(s.access||[]);
+  if(!list.length){ acc.innerHTML='<div class="muted">Пока никому не выдан доступ.</div>'; }
+  else for(const a of list){
+    const row=document.createElement('div'); row.className='asg-acc-row';
+    row.innerHTML='<span class="grow">'+esc(a.username)+' <span class="label-dim">('+(a.perms&&a.perms.length?a.perms.length+' прав':'просмотр')+')</span></span>';
+    const rm=document.createElement('button'); rm.className='mc-btn sm danger'; rm.textContent='Забрать';
+    rm.onclick=async()=>{ if(await confirmModal('Забрать доступ у «'+a.username+'»?','Забрать доступ')){ const r=await api('POST','/api/servers/'+s.globalId+'/assign',{username:a.username,remove:true}); if(r.d&&r.d.error)toast(r.d.error); else { toast('Доступ забран.',true); refreshAssign(s.globalId); } } };
+    row.appendChild(rm); acc.appendChild(row);
+  }
+  // выбор пользователя из списка одобренных (не владелец)
+  const sel=$('#asg-user'); sel.innerHTML='';
+  let users=[]; try{ const r=await api('GET','/api/accounts'); users=(r.d&&r.d.users)||[]; }catch(e){}
+  users=users.filter(u=> !s.owner || u.toLowerCase()!==String(s.owner).toLowerCase());
+  sel.innerHTML = users.length ? ('<option value="">— выберите —</option>'+users.map(u=>'<option value="'+esc(u)+'">'+esc(u)+'</option>').join('')) : '<option value="">Нет одобренных пользователей</option>';
+  renderAsgPerms([]);
+  sel.onchange=()=>renderAsgPerms(permsOfUser(s, sel.value)||[]);
   show('#asg-modal', true);
 }
 $('#asg-preset-full') && ($('#asg-preset-full').onclick=()=>{ $$('#asg-perms input').forEach(c=>c.checked=true); });
-$('#asg-preset-view') && ($('#asg-preset-view').onclick=()=>{ $$('#asg-perms input').forEach(c=>{ c.checked = (c.value==='console.view'||c.value==='logs.view'||c.value==='files.read'); }); });
+$('#asg-preset-view') && ($('#asg-preset-view').onclick=()=>{ $$('#asg-perms input').forEach(c=>{ c.checked=(c.value==='console.view'||c.value==='logs.view'||c.value==='files.read'); }); });
 $('#asg-preset-none') && ($('#asg-preset-none').onclick=()=>{ $$('#asg-perms input').forEach(c=>c.checked=false); });
 $('#asg-cancel') && ($('#asg-cancel').onclick=()=>show('#asg-modal',false));
-$('#asg-remove') && ($('#asg-remove').onclick=async()=>{ const u=$('#asg-user').value.trim(); if(!u){ alert('Укажите ник'); return; }
-  const r=await api('POST','/api/servers/'+assignTarget.globalId+'/assign',{username:u,remove:true}); if(r.d&&r.d.error)alert(r.d.error); else { show('#asg-modal',false); loadServers(); } });
 $('#asg-save') && ($('#asg-save').onclick=async()=>{
-  const u=$('#asg-user').value.trim(); if(!u){ alert('Укажите ник'); return; }
+  const u=$('#asg-user').value; if(!u){ $('#asg-err').textContent='Выберите пользователя'; return; }
   const perms=$$('#asg-perms input').filter(c=>c.checked).map(c=>c.value);
   const r=await api('POST','/api/servers/'+assignTarget.globalId+'/assign',{username:u,perms:perms});
-  if(r.d&&r.d.error)alert(r.d.error); else { show('#asg-modal',false); loadServers(); }
+  if(r.d&&r.d.error){ $('#asg-err').textContent=r.d.error; } else { toast('Доступ обновлён для «'+u+'».', true); refreshAssign(assignTarget.globalId); }
 });
 function esc(x){ return String(x==null?'':x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
