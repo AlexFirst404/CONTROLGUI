@@ -19,13 +19,17 @@ function genCode() {
 }
 
 function publicServer(s, viewer) {
+  const role = viewer ? roleFor(viewer, s) : null;
   const out = {
     globalId: s.globalId, name: s.name, type: s.type || null, version: s.version || null,
     status: s.status || 'offline', online: !!s.online, lastSeen: s.lastSeen || null,
     owner: s.ownerAccount || null, claimed: !!s.ownerAccount,
-    access: (s.access || []).map((a) => ({ username: a.username, perms: a.perms })),
   };
-  if (viewer) out.role = roleFor(viewer, s); // owner | assigned | admin | null
+  // полный список доступа (ACL) видят только владелец и админ — не утекаем его назначенным
+  if (role === 'owner' || role === 'admin') {
+    out.access = (s.access || []).map((a) => ({ username: a.username, perms: a.perms }));
+  }
+  if (viewer) out.role = role; // owner | assigned | admin | null
   return out;
 }
 

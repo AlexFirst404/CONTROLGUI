@@ -64,7 +64,11 @@ function register(username, password) {
 /* Проверка входа: ник+пароль и аккаунт одобрен. */
 function verify(username, password) {
   const u = findRaw(username);
-  if (!u) return null;
+  if (!u) {
+    // считаем фиктивный хэш — чтобы время ответа не выдавало существование ника
+    crypto.pbkdf2Sync(String(password), 'cgr-dummy-salt', 120000, 32, 'sha256');
+    return null;
+  }
   const cand = Buffer.from(hashPw(password, u.salt));
   const stored = Buffer.from(u.hash);
   if (cand.length !== stored.length || !crypto.timingSafeEqual(cand, stored)) return null;

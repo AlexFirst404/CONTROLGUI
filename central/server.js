@@ -37,9 +37,22 @@ function json(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
+// анти-спам регистрации агентов: не больше REG_MAX обращений с IP за окно
+const regHits = new Map(); // ip -> { count, resetAt }
+const REG_WINDOW_MS = 60 * 1000;
+const REG_MAX = 30;
+function regAllowed(ip) {
+  const now = Date.now();
+  const r = regHits.get(ip);
+  if (!r || now > r.resetAt) { regHits.set(ip, { count: 1, resetAt: now + REG_WINDOW_MS }); return true; }
+  r.count += 1;
+  return r.count <= REG_MAX;
+}
+
 // ---------------- агенты (локальные панели) ----------------
 async function handleAgent(req, res, urlPath, url) {
   if (urlPath === '/agent/register' && req.method === 'POST') {
+    if (!regAllowed(clientIp(req))) return json(res, 429, { error: 'too many' });
     const b = await readBody(req);
     if (!/^[a-f0-9]{32,64}$/i.test(String(b.panelToken || ''))) return json(res, 400, { error: 'bad token' });
     const { server, isNew } = servers.onRegister(b.panelToken, { name: b.name, type: b.type, version: b.version });
