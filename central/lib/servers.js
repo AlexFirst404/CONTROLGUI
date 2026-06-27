@@ -147,6 +147,21 @@ function unassign(globalId, username) {
 function remove(globalId) {
   saveAll(all().filter((s) => s.globalId !== globalId));
 }
+
+/* Каскад при переименовании аккаунта: ownerAccount и access[].username -> новый ник. */
+function renameAccount(oldName, newName) {
+  const list = all();
+  let changed = false;
+  const lo = String(oldName).toLowerCase();
+  for (const s of list) {
+    if (s.ownerAccount && String(s.ownerAccount).toLowerCase() === lo) { s.ownerAccount = newName; changed = true; }
+    for (const a of (s.access || [])) {
+      if (String(a.username).toLowerCase() === lo) { a.username = newName; changed = true; }
+    }
+  }
+  if (changed) saveAll(list);
+  return changed;
+}
 function removeByToken(panelToken) {
   const before = all();
   const after = before.filter((s) => s.panelToken !== panelToken);
@@ -199,6 +214,6 @@ function resetAllOnline() {
 
 module.exports = {
   ACTIONS, REMOTE_PERMS, all, get, byToken, publicServer, roleFor,
-  onRegister, updateStatus, setOnline, claimByCode, assign, unassign, remove, forUser, canDo, canView, permSet,
+  onRegister, updateStatus, setOnline, claimByCode, assign, unassign, remove, renameAccount, forUser, canDo, canView, permSet,
   setLiveChecker, resetAllOnline, removeByToken,
 };

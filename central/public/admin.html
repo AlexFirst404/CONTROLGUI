@@ -23,6 +23,18 @@
   </div>
 
   <div class="card">
+    <h2>Адрес сервера (для клиентов)</h2>
+    <div class="muted" style="margin-bottom:10px">Если центр переезжает на новый IP/домен — укажите его здесь. Десктоп-клиенты узнают адрес при следующем подключении и переключатся сами. Важно: используйте тот же TLS-сертификат на новом адресе (клиент пинует его по отпечатку).</div>
+    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="ep-host" placeholder="89.125.169.61" style="padding:8px 10px;background:#101010;border:2px solid #454545;color:#e6e6e6;border-radius:4px;max-width:240px;font-family:inherit">
+      <span class="muted">порт</span>
+      <input id="ep-port" placeholder="443" style="padding:8px 10px;background:#101010;border:2px solid #454545;color:#e6e6e6;border-radius:4px;max-width:90px;font-family:inherit">
+      <button class="mc-btn sm primary" id="ep-save">Сохранить</button>
+    </div>
+    <div class="muted" id="ep-msg" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
     <h2>Все серверы</h2>
     <div id="servers"></div>
   </div>
@@ -103,7 +115,18 @@ async function loadServers(){
     box.appendChild(el);
   }
 }
-(async()=>{ if(await guard()){ loadUsers(); loadServers(); setInterval(loadServers, 8000); } })();
+async function loadEndpoint(){
+  const r=await api('GET','/api/admin/endpoint'); const e=(r.d&&r.d.endpoint)||{};
+  if($('#ep-host')) $('#ep-host').value=e.host||''; if($('#ep-port')) $('#ep-port').value=e.port||443;
+}
+if($('#ep-save')) $('#ep-save').onclick=async()=>{
+  const host=$('#ep-host').value.trim(); const port=parseInt($('#ep-port').value,10)||443;
+  const m=$('#ep-msg'); m.textContent='';
+  if(!await confirmModal('Сменить адрес центра на '+host+':'+port+'? Клиенты переключатся при следующем подключении.','Сменить адрес')) return;
+  const r=await api('POST','/api/admin/endpoint',{host,port});
+  if(r.d&&r.d.error){ m.textContent=r.d.error; toast(r.d.error); } else { m.textContent='Сохранено: '+r.d.endpoint.host+':'+r.d.endpoint.port; toast('Адрес сохранён.',true); }
+};
+(async()=>{ if(await guard()){ loadUsers(); loadServers(); loadEndpoint(); setInterval(loadServers, 8000); } })();
 </script>
 </body>
 </html>

@@ -9,6 +9,8 @@ const accounts = require('./lib/accounts');
 const servers = require('./lib/servers');
 const agents = require('./lib/agents');
 const proxy = require('./lib/proxy');
+const settings = require('./lib/settings');
+const discord = require('./lib/discord');
 
 const PORT = parseInt(process.env.PORT, 10) || 443;
 const CERT = process.env.CGR_CERT || path.join(__dirname, 'cert', 'cert.pem');
@@ -61,7 +63,8 @@ function makeLimiter(windowMs, max) {
 const agentRegLimit = makeLimiter(60 * 1000, 30); // /agent/register по IP
 const apiRegLimit = makeLimiter(60 * 1000, 10);   // /api/register по IP
 const linkLimit = makeLimiter(60 * 1000, 10);     // /api/link по аккаунту
-const MAX_PENDING_ACCOUNTS = 200;                  // потолок неодобренных заявок (анти-флуд)
+const renameLimit = makeLimiter(60 * 1000, 5);    // /api/account/rename по аккаунту
+const MAX_ACCOUNTS = 5000;                         // потолок всех аккаунтов (анти-флуд при авто-одобрении)
 
 // ---------------- агенты (локальные панели) ----------------
 async function handleAgent(req, res, urlPath, url) {
@@ -116,11 +119,15 @@ async function handleAgent(req, res, urlPath, url) {
 async function handleAuth(req, res, urlPath) {
   if (urlPath === '/api/register' && req.method === 'POST') {
     if (!apiRegLimit(clientIp(req))) return json(res, 429, { error: 'Слишком много регистраций. Подождите минуту.' });
-    if (accounts.pending().length >= MAX_PENDING_ACCOUNTS) return json(res, 429, { error: 'Слишком много неодобренных заявок. Попробуйте позже.' });
+    if (accounts.count() >= MAX_ACCOUNTS) return json(res, 429, { error: 'Достигнут лимит аккаунтов на сервере.' });
     const b = await readBody(req);
     const r = accounts.register(b.username, b.password);
     if (r.error) return json(res, 400, r);
-    return json(res, 200, { ok: true, pending: true });
+    // авто-одобрение (v1.4): сразу логиним — «просто логин и пароль» работает с первого запуска
+    const u = accounts.verify(b.username, b.password);
+    if (!u || u.pending) return json(res, 200, { ok: true }); // на всякий случай — деградация
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': accounts.cookieFor(accounts.createSession(u.username)) });
+    return res.end(JSON.stringify({ ok: true, user: u }));
   }
   if (urlPath === '/api/login' && req.method === 'POST') {
     const ip = clientIp(req);
@@ -146,9 +153,49 @@ async function handleAuth(req, res, urlPath) {
   return false;
 }
 
+function htmlPage(res, code, title, msg) {
+  res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end('<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>' + title + '</title>'
+    + '<style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
+    + 'background:#1a1a1a;color:#e6e6e6;font-family:system-ui,Segoe UI,sans-serif;text-align:center}'
+    + '.c{max-width:420px;padding:28px}h1{color:#80da5b;font-size:20px;margin:0 0 10px}'
+    + 'p{color:#bdbdbd;line-height:1.5}</style></head><body><div class="c"><h1>' + title + '</h1><p>'
+    + msg + '</p></div></body></html>');
+}
+
+// ---------------- Discord OAuth (публично: state/lt вместо cookie-сессии) ----------------
+async function handleDiscordOAuth(req, res, urlPath, url) {
+  // старт: ?lt=<link-token из десктопа> ИЛИ cookie-сессия (с сайта)
+  if (urlPath === '/api/account/discord/start' && req.method === 'GET') {
+    if (!discord.enabled()) return htmlPage(res, 503, 'Discord не настроен', 'Администратор ещё не подключил Discord-приложение. Попробуйте позже.');
+    const lt = url.searchParams.get('lt') || '';
+    let username = null;
+    if (lt) { const v = discord.takeLinkToken(lt); if (v) username = v.username; }
+    if (!username) { const u = accounts.userFromReq(req); if (u) username = u.username; }
+    if (!username) return htmlPage(res, 401, 'Нужен вход', 'Ссылка устарела. Откройте привязку Discord заново из приложения.');
+    const state = discord.makeState(username);
+    res.writeHead(302, { Location: discord.authorizeUrl(state) });
+    return res.end();
+  }
+  // callback от Discord (браузер пользователя)
+  if (urlPath === '/api/account/discord/callback' && req.method === 'GET') {
+    const code = url.searchParams.get('code') || '';
+    const state = url.searchParams.get('state') || '';
+    const v = discord.takeState(state);
+    if (!v || !code) return htmlPage(res, 400, 'Ошибка', 'Ссылка устарела или недействительна. Повторите привязку из приложения.');
+    let prof;
+    try { prof = await discord.exchange(code); } catch (e) { prof = { error: 'Discord недоступен' }; }
+    if (prof.error) return htmlPage(res, 502, 'Не получилось', prof.error + '. Повторите попытку.');
+    const r = accounts.setDiscord(v.username, prof);
+    if (r.error) return htmlPage(res, 409, 'Не получилось', r.error);
+    return htmlPage(res, 200, 'Discord привязан', 'Аккаунт <b>' + prof.name + '</b> привязан. Можно закрыть это окно и вернуться в приложение.');
+  }
+  return false;
+}
+
 // ---------------- API пользователя/админа (нужна сессия) ----------------
 async function handleApi(req, res, urlPath, url, user) {
-  if (urlPath === '/api/me') return json(res, 200, { user });
+  if (urlPath === '/api/me') return json(res, 200, { user, discordEnabled: discord.enabled() });
   if (urlPath === '/api/servers' && req.method === 'GET') return json(res, 200, { servers: servers.forUser(user) });
   if (urlPath === '/api/accounts' && req.method === 'GET') return json(res, 200, { users: accounts.approvedNames() }); // для выбора при выдаче доступа
 
@@ -158,6 +205,27 @@ async function handleApi(req, res, urlPath, url, user) {
     const r = servers.claimByCode(b.code, user.username);
     if (r.error) return json(res, 400, r);
     return json(res, 200, { ok: true, server: servers.publicServer(r.server, user) });
+  }
+
+  // --- профиль аккаунта: смена ника, привязка Discord ---
+  if (urlPath === '/api/account/rename' && req.method === 'POST') {
+    if (!renameLimit(String(user.username).toLowerCase())) return json(res, 429, { error: 'Слишком часто. Подождите минуту.' });
+    const b = await readBody(req);
+    const r = accounts.rename(user.username, b.newName);
+    if (r.error) return json(res, 400, r);
+    servers.renameAccount(user.username, b.newName); // каскад ownerAccount/access
+    return json(res, 200, { ok: true, user: r.user });
+  }
+  if (urlPath === '/api/account/discord/link-init' && req.method === 'POST') {
+    if (!discord.enabled()) return json(res, 503, { error: 'Discord ещё не настроен администратором' });
+    const lt = discord.makeLinkToken(user.username);
+    const e = settings.endpoint();
+    const host = e.host + (e.port && e.port !== 443 ? ':' + e.port : '');
+    return json(res, 200, { ok: true, url: 'https://' + host + '/api/account/discord/start?lt=' + lt });
+  }
+  if (urlPath === '/api/account/discord/unlink' && req.method === 'POST') {
+    const r = accounts.setDiscord(user.username, null);
+    return json(res, r.error ? 400 : 200, r.error ? r : { ok: true, user: r.user });
   }
 
   // действие над сервером: /api/servers/<id>/action
@@ -197,6 +265,12 @@ async function handleApi(req, res, urlPath, url, user) {
     if (urlPath === '/api/admin/approve' && req.method === 'POST') { const b = await readBody(req); accounts.approve(b.username); return json(res, 200, { ok: true }); }
     if (urlPath === '/api/admin/reject' && req.method === 'POST') { const b = await readBody(req); accounts.remove(b.username); return json(res, 200, { ok: true }); }
     if (urlPath === '/api/admin/remove-server' && req.method === 'POST') { const b = await readBody(req); servers.remove(b.globalId); return json(res, 200, { ok: true }); }
+    if (urlPath === '/api/admin/endpoint' && req.method === 'GET') return json(res, 200, { endpoint: settings.endpoint() });
+    if (urlPath === '/api/admin/endpoint' && req.method === 'POST') {
+      const b = await readBody(req);
+      const r = settings.setEndpoint(b.host, b.port);
+      return json(res, r.error ? 400 : 200, r);
+    }
   }
   return json(res, 404, { error: 'Не найдено' });
 }
@@ -221,6 +295,9 @@ async function handle(req, res) {
     const url = new URL(req.url, 'https://localhost');
     const urlPath = url.pathname;
     if (urlPath.startsWith('/agent/')) { const r = await handleAgent(req, res, urlPath, url); if (r !== false) return; res.writeHead(404); return res.end(); }
+    // публичный адрес центра — клиенты узнают его и мигрируют на новый IP/host
+    if (urlPath === '/api/endpoint' && req.method === 'GET') return json(res, 200, settings.endpoint());
+    if (urlPath.startsWith('/api/account/discord/')) { const r = await handleDiscordOAuth(req, res, urlPath, url); if (r !== false) return; }
     if (await handleAuth(req, res, urlPath) !== false) return;
     // полное удалённое управление: /r/<globalId>/<путь панели> -> туннель (нужна сессия)
     if (urlPath.startsWith('/r/')) {

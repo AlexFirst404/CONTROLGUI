@@ -201,9 +201,12 @@ async function assignPrompt(s){
   else for(const a of list){
     const row=document.createElement('div'); row.className='asg-acc-row';
     row.innerHTML='<span class="grow">'+esc(a.username)+' <span class="label-dim">('+(a.perms&&a.perms.length?a.perms.length+' прав':'просмотр')+')</span></span>';
+    const ed=document.createElement('button'); ed.className='mc-btn sm'; ed.textContent='Изменить';
+    ed.title='Редактировать права этого пользователя';
+    ed.onclick=()=>{ const sel=$('#asg-user'); sel.value=a.username; if(sel.value!==a.username){ const o=document.createElement('option'); o.value=a.username; o.textContent=a.username; sel.appendChild(o); sel.value=a.username; } renderAsgPerms(a.perms||[]); $('#asg-err').textContent=''; sel.scrollIntoView({block:'nearest'}); };
     const rm=document.createElement('button'); rm.className='mc-btn sm danger'; rm.textContent='Забрать';
     rm.onclick=async()=>{ if(await confirmModal('Забрать доступ у «'+a.username+'»?','Забрать доступ')){ const r=await api('POST','/api/servers/'+s.globalId+'/assign',{username:a.username,remove:true}); if(r.d&&r.d.error)toast(r.d.error); else { toast('Доступ забран.',true); refreshAssign(s.globalId); } } };
-    row.appendChild(rm); acc.appendChild(row);
+    row.appendChild(ed); row.appendChild(rm); acc.appendChild(row);
   }
   // выбор пользователя из списка одобренных (не владелец)
   const sel=$('#asg-user'); sel.innerHTML='';

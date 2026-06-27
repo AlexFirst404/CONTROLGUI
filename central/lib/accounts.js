@@ -22,7 +22,10 @@ function hashPw(password, salt) {
 }
 
 function publicUser(u) {
-  return { username: u.username, role: u.role, approved: !!u.approved, createdAt: u.createdAt };
+  return {
+    username: u.username, role: u.role, approved: !!u.approved, createdAt: u.createdAt,
+    discord: u.discord ? { id: u.discord.id, name: u.discord.name } : null,
+  };
 }
 
 /* Логин: СТРОКА 1–32 символа, буквы/цифры/_/-. typeof-проверка обязательна —
@@ -48,7 +51,9 @@ function ensureAdmin(username) {
   return { created: true, username: username || 'admin', password };
 }
 
-/* Регистрация обычного пользователя — ждёт одобрения админа. */
+/* Регистрация обычного пользователя — АВТО-ОДОБРЕНИЕ (v1.4): аккаунт нужен с первого
+   запуска десктопа, поэтому «просто логин и пароль» работает сразу. Это безопасно:
+   свежий аккаунт не видит ни одного сервера, пока админ не выдаст доступ. */
 function register(username, password) {
   if (!validName(username)) return { error: 'Ник: 1–32 символа (буквы, цифры, _ и -)' };
   if (String(password || '').length < 6) return { error: 'Пароль: минимум 6 символов' };
@@ -59,11 +64,12 @@ function register(username, password) {
   const salt = crypto.randomBytes(16).toString('hex');
   list.push({
     username, salt, hash: hashPw(password, salt),
-    role: 'user', approved: false, createdAt: new Date().toISOString(),
+    role: 'user', approved: true, createdAt: new Date().toISOString(),
   });
   saveAll(list);
   return { ok: true };
 }
+function count() { return all().length; }
 
 /* Проверка входа: ник+пароль и аккаунт одобрен. */
 function verify(username, password) {
@@ -91,6 +97,43 @@ function approve(username) {
 function remove(username) {
   const list = all().filter((a) => String(a.username).toLowerCase() !== String(username).toLowerCase() || a.role === 'admin');
   saveAll(list);
+}
+
+/* Переименование своего аккаунта. Каскад в серверах (ownerAccount/access) делает вызывающий
+   через servers.renameAccount. Активные сессии переносятся на новый ник, чтобы вход не отвалился. */
+function rename(oldName, newName) {
+  if (!validName(newName)) return { error: 'Ник: 1–32 символа (буквы, цифры, _ и -)' };
+  const list = all();
+  const u = list.find((a) => String(a.username).toLowerCase() === String(oldName).toLowerCase());
+  if (!u) return { error: 'Аккаунт не найден' };
+  const same = String(newName).toLowerCase() === String(oldName).toLowerCase();
+  if (!same && list.some((a) => String(a.username).toLowerCase() === String(newName).toLowerCase())) {
+    return { error: 'Такой ник уже занят' };
+  }
+  u.username = newName;
+  saveAll(list);
+  for (const s of sessions.values()) {
+    if (String(s.username).toLowerCase() === String(oldName).toLowerCase()) s.username = newName;
+  }
+  return { ok: true, user: publicUser(u) };
+}
+
+/* Привязка/отвязка Discord. discord=null -> отвязать. Один Discord = один аккаунт. */
+function setDiscord(username, discord) {
+  const list = all();
+  const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
+  if (!u) return { error: 'Аккаунт не найден' };
+  if (discord) {
+    const id = String(discord.id);
+    const taken = list.find((a) => a.discord && String(a.discord.id) === id
+      && String(a.username).toLowerCase() !== String(username).toLowerCase());
+    if (taken) return { error: 'Этот Discord уже привязан к другому аккаунту' };
+    u.discord = { id, name: String(discord.name || ''), linkedAt: new Date().toISOString() };
+  } else {
+    delete u.discord;
+  }
+  saveAll(list);
+  return { ok: true, user: publicUser(u) };
 }
 function pending() { return all().filter((a) => !a.approved).map(publicUser); }
 function listUsers() { return all().map(publicUser); }
@@ -155,7 +198,8 @@ const _sweepTimer = setInterval(sweep, 10 * 60 * 1000);
 if (_sweepTimer.unref) _sweepTimer.unref();
 
 module.exports = {
-  COOKIE, ensureAdmin, register, verify, approve, remove, pending, listUsers, approvedNames, isAdmin, exists,
+  COOKIE, ensureAdmin, register, verify, approve, remove, rename, setDiscord, count,
+  pending, listUsers, approvedNames, isAdmin, exists,
   createSession, destroySession, cookieFor, clearCookie, parseCookies, userFromReq, validName,
   MAX_FAILS, lockMs, noteFail, clearFails,
 };
