@@ -20,7 +20,7 @@ window.API = (function () {
     }
     let data = {};
     try { data = await res.json(); } catch (e) { /* пустой ответ */ }
-    if (!res.ok) throw new Error(data.error || ('Ошибка HTTP ' + res.status));
+    if (!res.ok) { const err = new Error(data.error || ('Ошибка HTTP ' + res.status)); err.status = res.status; throw err; }
     return data;
   }
 
@@ -36,7 +36,7 @@ window.API = (function () {
     }
     let data = {};
     try { data = await res.json(); } catch (e) { /* пустой ответ */ }
-    if (!res.ok) throw new Error(data.error || ('Ошибка HTTP ' + res.status));
+    if (!res.ok) { const err = new Error(data.error || ('Ошибка HTTP ' + res.status)); err.status = res.status; throw err; }
     return data;
   }
 
@@ -57,6 +57,7 @@ window.API = (function () {
     saveProperties: (id, body) => call('PUT', '/api/servers/' + id + '/properties', body),
     remoteGet: (id) => call('GET', '/api/servers/' + id + '/remote'),
     remoteSet: (id, enabled) => call('POST', '/api/servers/' + id + '/remote', { enabled: enabled }),
+    remoteRegenerate: (id) => call('POST', '/api/servers/' + id + '/remote/regenerate'),
     consoleStream: (id) => new EventSource(B('/api/servers/' + id + '/console')),
     stats: (id) => call('GET', '/api/servers/' + id + '/stats'),
     player: (id, name) => call('GET', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),
@@ -74,6 +75,8 @@ window.API = (function () {
 
     launchMode: () => call('GET', '/api/launch-mode'),
     setLaunchMode: (mode) => call('POST', '/api/launch-mode', { mode: mode }),
+    trayMinimize: () => call('GET', '/api/tray-minimize'),
+    setTrayMinimize: (enabled) => call('POST', '/api/tray-minimize', { enabled: enabled }),
 
     javaInstall: (major) => call('POST', '/api/java/install', { major: major }),
     javaInstallState: () => call('GET', '/api/java/install'),

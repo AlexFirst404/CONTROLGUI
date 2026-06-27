@@ -75,6 +75,12 @@ async function handleAgent(req, res, urlPath, url) {
     const { server, isNew } = servers.onRegister(b.panelToken, { name: b.name, type: b.type, version: b.version });
     return json(res, 200, { globalId: server.globalId, linkCode: server.linkCode || null, claimed: !!server.ownerAccount, name: server.name });
   }
+  if (urlPath === '/agent/regen-code' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (!/^[a-f0-9]{32,64}$/i.test(String(b.panelToken || ''))) return json(res, 400, { error: 'bad token' });
+    const r = servers.regenerateCode(b.panelToken);
+    return json(res, r.error ? 400 : 200, r);
+  }
   if (urlPath === '/agent/stream' && req.method === 'GET') {
     // секрет — в заголовке Authorization (не в query, чтобы не утекал в логи); query — fallback
     const auth = String(req.headers.authorization || '');

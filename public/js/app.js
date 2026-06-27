@@ -531,6 +531,7 @@
     }
     $('#set-bganim').classList.toggle('on', appSettings.bgAnim !== false);
     $('#set-graphs').classList.toggle('on', appSettings.graphs !== false);
+    API.trayMinimize().then((r) => $('#set-tray').classList.toggle('on', !!(r && r.enabled))).catch(() => {});
     $('#appset-root').classList.remove('hidden');
     setTimeout(() => scaleSlider.refresh(), 30);
   }
@@ -658,9 +659,11 @@
 
   // ---------- список серверов ----------
 
+  // id серверов, которые ответили 404 «не найден» — больше не показываем (фантомы)
+  const deadServerIds = new Set();
   async function loadServers() {
     const data = await API.servers();
-    state.servers = data.servers;
+    state.servers = (data.servers || []).filter((s) => !deadServerIds.has(s.id));
     renderList();
     // удалённый режим управляет ОДНИМ сервером — открываем его сразу, без экрана выбора
     if (window.CG_REMOTE && state.screen !== 'server' && state.servers.length) {
@@ -1209,8 +1212,15 @@
       // перерисовываем вкладку игроков — иначе OP/бан/вайтлист показывают старое состояние после действия
       if (state.currentTab === 'players') renderPlayers(state.current);
     } catch (e) {
+      // фантомный сервер (строго 404 «не найден») — убираем из списка, чтобы не висел.
+      // 502 (панель удалёнки офлайн) НЕ роняет сервер — он вернётся, когда панель проснётся.
+      if (e.status === 404) {
+        deadServerIds.add(state.currentId);
+        state.servers = (state.servers || []).filter((s) => s.id !== state.currentId);
+      }
       showScreen('list');
       showToast(e.message);
+      renderList();
     }
   }
 
@@ -1271,6 +1281,7 @@
       ['Адрес (локальная сеть)', state.lanIps.length ? state.lanIps.map((ip) => ip + ':' + server.port).join('  ') : '—'],
       ['Ядро', (CORE_NAMES[server.type] || server.type) + ' ' + server.version],
       ['Память', fmtMem(server.memoryMb)],
+      ['Владелец', server.creatorUsername || server.owner || '—'],
       ['Создан', new Date(server.createdAt).toLocaleString('ru-RU')],
       ['Файлы сервера', (state.rootPath ? state.rootPath + '\\' : '') + 'servers\\' + server.id],
     ];
@@ -2128,6 +2139,46 @@
   function canRemote() { return can('server.start') && can('server.stop'); }
   let remoteBusy = false;
 
+  let remoteRevealed = false;     // показан ли код привязки (по умолчанию скрыт)
+  let remoteUiBound = false;
+  function renderRemoteCodeDisplay() {
+    const el = $('#remote-code'); if (!el) return;
+    const code = state.remoteCode || '';
+    el.textContent = code ? (remoteRevealed ? code : '••••-••••') : '—';
+    const eye = $('#remote-code-eye');
+    if (eye) {
+      const ic = eye.querySelector('.pi');
+      if (ic) ic.style.setProperty('--i', "url('/icons/" + (remoteRevealed ? 'eye-closed' : 'eye') + ".svg')");
+      eye.title = remoteRevealed ? 'Скрыть код' : 'Показать код';
+    }
+  }
+  function setupRemoteCodeUi() {
+    if (remoteUiBound) return; remoteUiBound = true;
+    const eye = $('#remote-code-eye');
+    if (eye) eye.addEventListener('click', () => { remoteRevealed = !remoteRevealed; renderRemoteCodeDisplay(); });
+    const codeEl = $('#remote-code');
+    if (codeEl) codeEl.addEventListener('click', () => {
+      if (!state.remoteCode) return;
+      try { if (navigator.clipboard) navigator.clipboard.writeText(state.remoteCode); } catch (e) { /* */ }
+      remoteRevealed = true; renderRemoteCodeDisplay();
+      showToast('Код скопирован: ' + state.remoteCode, 'ok');
+    });
+    const regen = $('#remote-code-regen');
+    if (regen) regen.addEventListener('click', async () => {
+      if (!state.currentId) return;
+      const ok = await confirmDialog('Переиздать код привязки? Старый код перестанет работать.',
+        { title: 'Переиздать код', yesText: 'Переиздать', danger: false });
+      if (!ok) return;
+      const forId = state.currentId;
+      try {
+        const info = await API.remoteRegenerate(forId);
+        paintRemote(info, forId);
+        remoteRevealed = true; renderRemoteCodeDisplay();
+        showToast('Новый код выпущен.', 'ok');
+      } catch (e) { showToast(e.message); }
+    });
+  }
+
   function paintRemote(info, forId) {
     const card = $('#remote-card');
     if (!card) return;
@@ -2139,13 +2190,12 @@
     $('#remote-toggle').classList.toggle('on', on);
     $('#remote-status').classList.toggle('hidden', !on);
     if (!on) return;
-    try { $('#remote-host').textContent = String(info.central || '').replace(/^https?:\/\//, ''); } catch (e) { /* */ }
     $('#remote-gid').textContent = info.globalId || '—';
     $('#remote-online').textContent = info.online ? 'на связи' : 'подключение…';
     const claimed = !!info.claimed;
     $('#remote-claimed-block').style.display = claimed ? '' : 'none';
     $('#remote-code-block').style.display = claimed ? 'none' : '';
-    if (!claimed) $('#remote-code').textContent = info.linkCode || '—';
+    if (!claimed) { state.remoteCode = info.linkCode || ''; renderRemoteCodeDisplay(); }
   }
 
   function renderRemoteCard() {
@@ -2154,6 +2204,8 @@
     if (window.CG_REMOTE) { card.classList.add('hidden'); return; } // рекурсивно включать удалёнку из удалёнки незачем
     card.classList.toggle('hidden', !canRemote());
     if (!canRemote() || !state.currentId) return;
+    setupRemoteCodeUi();
+    remoteRevealed = false; // код скрыт по умолчанию при заходе в настройки
     const forId = state.currentId;
     API.remoteGet(forId).then((i) => paintRemote(i, forId)).catch(() => {});
   }
@@ -3391,9 +3443,16 @@
       if ($('#logs-live').classList.contains('on')) startLogLive();
     }
     if (tab === 'files') {
-      $('#file-editor').classList.add('hidden');
-      $('#files-browser').classList.remove('hidden');
-      loadFiles();
+      // не теряем активное (несохранённое) редактирование при возврате на вкладку «Файлы»
+      if (state.editorPath) {
+        $('#file-editor').classList.remove('hidden');
+        $('#files-browser').classList.add('hidden');
+        if (state.cm) setTimeout(() => state.cm.refresh(), 0); // CodeMirror перерисовать после показа
+      } else {
+        $('#file-editor').classList.add('hidden');
+        $('#files-browser').classList.remove('hidden');
+        loadFiles();
+      }
     }
   }
 
@@ -4088,18 +4147,29 @@
 
   // ---------- перетаскивание файлов (drag & drop) ----------
 
+  // контекст перетаскивания: вкладка «Файлы» — в текущую папку; «Плагины»/«Моды» — авто-установка .jar
+  function dropContext() {
+    if (state.screen !== 'server' || !can('files.upload')) return null;
+    if (state.currentTab === 'files' && !$('#files-browser').classList.contains('hidden'))
+      return { kind: 'files', folder: state.filesPath, label: 'в папку: ' + (state.filesPath || 'корень') };
+    if (state.currentTab === 'plugins' && state.current && state.current.plugins)
+      return { kind: 'plugins', folder: 'plugins', label: 'установить плагин — перетащите .jar' };
+    if (state.currentTab === 'mods' && state.current && state.current.mods)
+      return { kind: 'mods', folder: 'mods', label: 'установить мод — перетащите .jar' };
+    return null;
+  }
+
   function setupFileDrop() {
     const overlay = $('#drop-overlay');
     let depth = 0;
-    const onFilesTab = () => state.screen === 'server' && state.currentTab === 'files' &&
-      !$('#files-browser').classList.contains('hidden');
 
     window.addEventListener('dragenter', (e) => {
-      if (!onFilesTab() || !can('files.upload')) return;
+      const ctx = dropContext();
+      if (!ctx) return;
       if (!e.dataTransfer || Array.from(e.dataTransfer.types || []).indexOf('Files') < 0) return;
       e.preventDefault();
       depth++;
-      $('#drop-sub').textContent = 'в папку: ' + (state.filesPath || 'корень');
+      $('#drop-sub').textContent = ctx.label;
       overlay.classList.remove('hidden');
     });
     window.addEventListener('dragover', (e) => {
@@ -4115,9 +4185,25 @@
       e.preventDefault();
       depth = 0;
       overlay.classList.add('hidden');
+      const ctx = dropContext();
       const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
-      if (files.length) openDropConfirm(files);
+      if (!ctx || !files.length) return;
+      if (ctx.kind === 'files') openDropConfirm(files);
+      else dropContentJars(ctx, files);
     });
+  }
+
+  // авто-установка .jar в plugins/ или mods/ перетаскиванием — без захода в «Файлы»
+  async function dropContentJars(ctx, files) {
+    const jars = files.filter((f) => /\.jar$/i.test(f.name));
+    if (!jars.length) { showToast('Перетащите файл .jar'); return; }
+    let ok = 0;
+    for (const f of jars) {
+      try { await API.upload(state.currentId, ctx.folder + '/' + f.name, f); ok++; }
+      catch (e) { showToast('Не удалось добавить ' + f.name + ': ' + e.message); }
+    }
+    if (ok) showToast((ok > 1 ? ok + ' файла(ов) добавлено' : 'Добавлено: ' + jars[0].name) + '. Перезапустите сервер, чтобы применить.', 'ok');
+    loadContent(ctx.kind); // обновить список установленных
   }
 
   function openDropConfirm(files) {
@@ -4485,6 +4571,11 @@
     mkToggle($('#set-graphs'), appSettings.graphs !== false);
     $('#set-graphs').addEventListener('click', () =>
       changeAppSettings({ graphs: $('#set-graphs').classList.contains('on') }));
+    mkToggle($('#set-tray'), false);
+    $('#set-tray').addEventListener('click', () => {
+      const on = $('#set-tray').classList.contains('on');
+      API.setTrayMinimize(on).catch((e) => { $('#set-tray').classList.toggle('on', !on); showToast(e.message); });
+    });
 
     // при изменении размера окна перерисовываем графики и черту вкладок
     let resizeTimer = null;

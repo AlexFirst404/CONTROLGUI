@@ -135,6 +135,12 @@
           <span class="toggle-label">Графики на вкладке «Консоль»</span>
           <div class="mc-toggle" id="set-graphs"></div>
         </div>
+        <div class="opt-card toggle-row" style="margin-top:14px" id="set-tray-row">
+          <span class="toggle-label">Сворачивать в трей (Windows)
+            <span class="hint" style="display:block;margin:2px 0 0">Кнопки «Свернуть»/«Закрыть» прячут окно в системный трей. Выключено — обычное сворачивание на панель задач, закрытие = выход.</span>
+          </span>
+          <div class="mc-toggle" id="set-tray"></div>
+        </div>
         <div class="hint" style="margin-bottom:0">Применяется сразу и сохраняется в этом браузере/приложении.</div>
       </div>
     </div>
@@ -536,20 +542,20 @@
     <div class="tab-pane hidden" id="tab-settings">
       <div class="mc-card form-panel" id="remote-card">
         <div class="section-title"><i class="pi" data-ic="globe"></i> Удалённое управление</div>
-        <div class="hint" style="margin:0 0 10px">Управляйте этим сервером из любой точки через сайт CONTROLGUI Remote.
-          После включения панель установит защищённый исходящий туннель к центральному серверу (работает за роутером, проброс портов не нужен).
-          Доступны только команды Старт / Стоп / Рестарт — произвольный код не передаётся.</div>
-        <div class="hint" style="margin:0 0 10px">Сайт удалённого доступа: <a id="remote-site" href="#" target="_blank" rel="noopener">—</a>
-          <span class="label-dim">— зайдите туда, создайте аккаунт и привяжите сервер по коду ниже. В первый раз браузер предупредит
-          о самоподписанном сертификате (это нормально для доступа по IP) — нажмите «Дополнительно → Перейти».</span></div>
+        <div class="hint" style="margin:0 0 10px">Способ управлять серверами, находясь вдали от вашего компьютера.
+          Сайт: <a id="remote-site" href="#" target="_blank" rel="noopener">—</a></div>
         <label class="check-row" id="remote-toggle-row" style="margin:0">
           <span class="mc-check" id="remote-toggle"><span class="tick"></span></span>
           <span>Включить удалённое управление</span>
         </label>
         <div id="remote-status" class="hidden" style="margin-top:12px">
           <div class="hint" id="remote-code-block" style="margin:0 0 8px">
-            Код привязки (введите его на главной странице <b id="remote-host">сайта</b>, чтобы привязать сервер к своему аккаунту):
-            <div style="font-family:ui-monospace,Consolas,monospace;font-size:26px;letter-spacing:4px;color:var(--mc-accent-bright,#80da5b);margin-top:6px" id="remote-code">—</div>
+            Код привязки (введите его на сайте, чтобы привязать сервер к аккаунту):
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+              <code id="remote-code" title="Нажмите, чтобы скопировать" style="font-family:ui-monospace,Consolas,monospace;font-size:24px;letter-spacing:4px;color:var(--mc-accent-bright,#80da5b);cursor:pointer;user-select:none">••••-••••</code>
+              <button type="button" class="mc-btn sm" id="remote-code-eye" title="Показать код" style="margin:0"><i class="pi" data-ic="eye"></i></button>
+              <button type="button" class="mc-btn sm" id="remote-code-regen" title="Переиздать код" style="margin:0"><i class="pi" data-ic="reload"></i></button>
+            </div>
           </div>
           <div class="hint" id="remote-claimed-block" style="margin:0 0 8px;display:none">✓ Сервер привязан к аккаунту владельца.</div>
           <div class="label-dim" style="font-size:12px">ID сервера: <span id="remote-gid">—</span> · туннель: <span id="remote-online">—</span></div>

@@ -125,6 +125,17 @@ function claimByCode(code, username) {
   return { ok: true, server: s };
 }
 
+/* Переиздать код привязки для ещё не привязанного сервера (старый код перестаёт работать). */
+function regenerateCode(panelToken) {
+  const list = all();
+  const s = list.find((x) => x.panelToken === panelToken);
+  if (!s) return { error: 'Сервер не найден' };
+  if (s.ownerAccount) return { error: 'Сервер уже привязан — код не нужен' };
+  s.linkCode = genCode();
+  saveAll(list);
+  return { ok: true, linkCode: s.linkCode };
+}
+
 /* Назначение доступа пользователю с правами (perms — подмножество REMOTE_PERMS). */
 function assign(globalId, username, perms) {
   const list = all();
@@ -214,6 +225,6 @@ function resetAllOnline() {
 
 module.exports = {
   ACTIONS, REMOTE_PERMS, all, get, byToken, publicServer, roleFor,
-  onRegister, updateStatus, setOnline, claimByCode, assign, unassign, remove, renameAccount, forUser, canDo, canView, permSet,
+  onRegister, updateStatus, setOnline, claimByCode, regenerateCode, assign, unassign, remove, renameAccount, forUser, canDo, canView, permSet,
   setLiveChecker, resetAllOnline, removeByToken,
 };

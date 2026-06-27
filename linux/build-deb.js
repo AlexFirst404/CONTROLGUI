@@ -4,14 +4,14 @@
 
    Запуск:
      node linux/build-deb.js          # единый пакет controlgui
-     node linux/build-deb.js 1.4.0    # с указанием версии
+     node linux/build-deb.js 1.4.1    # с указанием версии
    Режим открытия (приложение/браузер) выбирается при первом запуске. */
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
 const ROOT = path.join(__dirname, '..');
-const VERSION = process.argv[2] || '1.4.0';
+const VERSION = process.argv[2] || '1.4.1';
 const MTIME = 1700000000; // фиксированное время для воспроизводимости
 
 // ----------------------------------------------------------------- ustar tar ---
