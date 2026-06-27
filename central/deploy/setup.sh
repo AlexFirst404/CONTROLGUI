@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Установка CONTROLGUI Remote на чистый VPS (Debian/Ubuntu). Запускать от root.
-#   scp -r central root@IP:/opt/controlgui-remote && ssh root@IP 'bash /opt/controlgui-remote/deploy/setup.sh'
-set -euo pipefail
+#   scp -r central root@IP:/opt/controlgui-remote && ssh root@IP 'sh /opt/controlgui-remote/deploy/setup.sh'
+set -eu
 
 APP_DIR=/opt/controlgui-remote
 DATA_DIR="$APP_DIR/data"
