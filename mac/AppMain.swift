@@ -11,11 +11,12 @@ let URL_STR = "http://127.0.0.1:\(PORT)"
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
     var window: NSWindow!
     var webView: WKWebView!
-    var node: Process?
+    var node: Process?          // только если node стартовали МЫ (иначе nil — не глушим чужую панель)
+    var started = false
 
     func applicationDidFinishLaunching(_ note: Notification) {
-        startPanel()
         buildWindow()
+        startPanelIfNeeded()
         waitForPanelThenLoad()
     }
 
@@ -27,7 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return contents + "/Resources"
     }
 
-    func startPanel() {
+    // спавним node ТОЛЬКО если панель ещё не отвечает на порту (иначе подключаемся к уже живой,
+    // а на выходе не трогаем чужой процесс — node остаётся nil)
+    func startPanelIfNeeded() {
+        if panelUp() { return }
         let res = resourcesDir()
         let nodeBin = res + "/bin/node"
         let appSrc = res + "/opt/controlgui"
@@ -47,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         var env = env0
         env["PORT"] = PORT
         env["CONTROLGUI_DATA"] = data
+        // node сам корректно завершится, если этот процесс (родитель) умрёт ненормально
+        env["CONTROLGUI_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         p.environment = env
 
         let logPath = data + "/panel.log"
@@ -55,7 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             p.standardOutput = fh
             p.standardError = fh
         }
-        do { try p.run(); node = p } catch { NSLog("CONTROLGUI: не удалось запустить панель: \(error)") }
+        do { try p.run(); node = p; started = true }
+        catch { NSLog("CONTROLGUI: не удалось запустить панель: \(error)") }
     }
 
     func buildWindow() {
@@ -72,9 +79,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         window.contentView = webView
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        // заставка, пока панель поднимается
+        showMessage(title: "CONTROLGUI", text: "Запуск панели…")
+    }
+
+    func showMessage(title: String, text: String) {
         webView.loadHTMLString(
-            "<html><body style='background:#1b1b1c;color:#80da5b;margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font-family:-apple-system,Segoe UI,sans-serif'><div style='text-align:center'><div style='font-size:20px;font-weight:700'>CONTROLGUI</div><div style='opacity:.7;margin-top:8px'>Запуск панели…</div></div></body></html>",
+            "<html><body style='background:#1b1b1c;color:#80da5b;margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font-family:-apple-system,Segoe UI,sans-serif'><div style='text-align:center;max-width:520px;padding:24px'><div style='font-size:20px;font-weight:700'>\(title)</div><div style='opacity:.75;margin-top:10px;line-height:1.5'>\(text)</div></div></body></html>",
             baseURL: nil)
     }
 
@@ -95,22 +105,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func waitForPanelThenLoad() {
         DispatchQueue.global().async {
             var i = 0
-            while i < 160 { if self.panelUp() { break }; Thread.sleep(forTimeInterval: 0.25); i += 1 }
+            var up = false
+            while i < 160 { if self.panelUp() { up = true; break }; Thread.sleep(forTimeInterval: 0.25); i += 1 }
             DispatchQueue.main.async {
-                if let u = URL(string: URL_STR) { self.webView.load(URLRequest(url: u)) }
+                if up, let u = URL(string: URL_STR) { self.webView.load(URLRequest(url: u)) }
+                else {
+                    self.showMessage(title: "Панель не запустилась",
+                        text: "Не удалось поднять локальную панель на порту \(PORT). Загляните в журнал:<br><code>~/Library/Application Support/CONTROLGUI/panel.log</code>")
+                }
             }
         }
     }
 
-    // ссылки target=_blank открываем в той же вьюхе (панель — одностраничник)
+    // 127.0.0.1 грузим в окне; внешние ссылки (GitHub, EULA, adoptium…) открываем в браузере
+    func isLocal(_ url: URL?) -> Bool {
+        let h = url?.host ?? ""
+        return h == "127.0.0.1" || h == "localhost" || h == "" // "" = about:blank/data: (наш сплеш)
+    }
+
+    func webView(_ wv: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        let u = action.request.url
+        if action.navigationType == .linkActivated && !isLocal(u), let url = u {
+            NSWorkspace.shared.open(url) // внешняя ссылка -> системный браузер
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    // window.open / target=_blank: внешние — в браузер, локальные — в той же вьюхе
     func webView(_ wv: WKWebView, createWebViewWith cfg: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let u = action.request.url { wv.load(URLRequest(url: u)) }
+        if let u = action.request.url {
+            if isLocal(u) { wv.load(URLRequest(url: u)) } else { NSWorkspace.shared.open(u) }
+        }
         return nil
     }
 
+    func webView(_ wv: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        showMessage(title: "Не удалось открыть панель", text: "Ошибка: \(error.localizedDescription)<br>Панель: <code>\(URL_STR)</code>")
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { return true }
-    func applicationWillTerminate(_ note: Notification) { node?.terminate() }
+    func applicationWillTerminate(_ note: Notification) {
+        // глушим node ТОЛЬКО если стартовали его сами (не убиваем чужую/осиротевшую панель)
+        if started { node?.terminate() }
+    }
 }
 
 let app = NSApplication.shared

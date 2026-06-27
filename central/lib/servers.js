@@ -6,6 +6,15 @@ const store = require('./store');
 
 // действия MVP, которые можно делегировать назначенному пользователю
 const ACTIONS = ['start', 'stop', 'restart'];
+// нормализация поля от агента: строка, обрез, без управляющих символов
+function clip(v, max) { return String(v == null ? '' : v).replace(/[\x00-\x1f\x7f]/g, '').slice(0, max || 40); }
+
+// online выводим из ЖИВОГО набора SSE-стримов, а не из персистентного булеана
+// (иначе после рестарта центра / жёсткого краша панели статус «online» вечен).
+// Чекер инжектится из server.js, чтобы не было циклического require (servers<->agents).
+let liveChecker = null;
+function setLiveChecker(fn) { liveChecker = fn; }
+function isLive(s) { return liveChecker ? !!liveChecker(s.panelToken) : !!s.online; }
 
 function all() { return store.load('servers.json', []); }
 function saveAll(list) { store.save('servers.json', list); }
@@ -22,7 +31,7 @@ function publicServer(s, viewer) {
   const role = viewer ? roleFor(viewer, s) : null;
   const out = {
     globalId: s.globalId, name: s.name, type: s.type || null, version: s.version || null,
-    status: s.status || 'offline', online: !!s.online, lastSeen: s.lastSeen || null,
+    status: s.status || 'offline', online: isLive(s), lastSeen: s.lastSeen || null,
     owner: s.ownerAccount || null, claimed: !!s.ownerAccount,
   };
   // полный список доступа (ACL) видят только владелец и админ — не утекаем его назначенным
@@ -35,8 +44,8 @@ function publicServer(s, viewer) {
 
 function roleFor(user, s) {
   if (user.role === 'admin') return 'admin';
-  if (s.ownerAccount && s.ownerAccount.toLowerCase() === user.username.toLowerCase()) return 'owner';
-  const a = (s.access || []).find((x) => x.username.toLowerCase() === user.username.toLowerCase());
+  if (s.ownerAccount && String(s.ownerAccount).toLowerCase() === String(user.username).toLowerCase()) return 'owner';
+  const a = (s.access || []).find((x) => String(x.username).toLowerCase() === String(user.username).toLowerCase());
   return a ? 'assigned' : null;
 }
 
@@ -49,8 +58,8 @@ function onRegister(panelToken, meta) {
     s = {
       globalId: crypto.randomBytes(6).toString('hex'),
       panelToken,
-      name: String(meta.name || 'Сервер').slice(0, 60),
-      type: meta.type || null, version: meta.version || null,
+      name: clip(meta.name || 'Сервер', 60) || 'Сервер',
+      type: clip(meta.type, 40) || null, version: clip(meta.version, 40) || null,
       ownerAccount: null, access: [], linkCode: genCode(),
       status: 'offline', online: false, lastSeen: Date.now(),
       createdAt: new Date().toISOString(),
@@ -58,9 +67,9 @@ function onRegister(panelToken, meta) {
     list.push(s);
     isNew = true;
   } else {
-    if (meta.name) s.name = String(meta.name).slice(0, 60);
-    if (meta.type) s.type = meta.type;
-    if (meta.version) s.version = meta.version;
+    if (meta.name) s.name = clip(meta.name, 60);
+    if (meta.type) s.type = clip(meta.type, 40);
+    if (meta.version) s.version = clip(meta.version, 40);
     s.lastSeen = Date.now();
   }
   saveAll(list);
@@ -73,10 +82,10 @@ function updateStatus(panelToken, fields) {
   const list = all();
   const s = list.find((x) => x.panelToken === panelToken);
   if (!s) return null;
-  if (fields.status) s.status = fields.status;
-  if (fields.name) s.name = String(fields.name).slice(0, 60);
-  if (fields.type) s.type = fields.type;
-  if (fields.version) s.version = fields.version;
+  if (fields.status) s.status = clip(fields.status, 20);
+  if (fields.name) s.name = clip(fields.name, 60);
+  if (fields.type) s.type = clip(fields.type, 40);
+  if (fields.version) s.version = clip(fields.version, 40);
   s.online = fields.online !== undefined ? !!fields.online : s.online;
   s.lastSeen = Date.now();
   saveAll(list);
@@ -111,8 +120,8 @@ function assign(globalId, username, perms) {
   const s = list.find((x) => x.globalId === globalId);
   if (!s) return { error: 'Сервер не найден' };
   const clean = (Array.isArray(perms) ? perms : []).filter((p) => ACTIONS.includes(p));
-  s.access = (s.access || []).filter((a) => a.username.toLowerCase() !== username.toLowerCase());
-  s.access.push({ username, perms: clean });
+  s.access = (s.access || []).filter((a) => String(a.username).toLowerCase() !== String(username).toLowerCase());
+  s.access.push({ username: String(username), perms: clean });
   saveAll(list);
   return { ok: true };
 }
@@ -120,12 +129,18 @@ function unassign(globalId, username) {
   const list = all();
   const s = list.find((x) => x.globalId === globalId);
   if (!s) return { error: 'Сервер не найден' };
-  s.access = (s.access || []).filter((a) => a.username.toLowerCase() !== username.toLowerCase());
+  s.access = (s.access || []).filter((a) => String(a.username).toLowerCase() !== String(username).toLowerCase());
   saveAll(list);
   return { ok: true };
 }
 function remove(globalId) {
   saveAll(all().filter((s) => s.globalId !== globalId));
+}
+function removeByToken(panelToken) {
+  const before = all();
+  const after = before.filter((s) => s.panelToken !== panelToken);
+  if (after.length !== before.length) { saveAll(after); return true; }
+  return false;
 }
 
 /* Видимые пользователю серверы. */
@@ -134,8 +149,8 @@ function forUser(user) {
   if (user.role === 'admin') return list.map((s) => publicServer(s, user));
   const me = user.username.toLowerCase();
   return list
-    .filter((s) => (s.ownerAccount && s.ownerAccount.toLowerCase() === me)
-      || (s.access || []).some((a) => a.username.toLowerCase() === me))
+    .filter((s) => (s.ownerAccount && String(s.ownerAccount).toLowerCase() === me)
+      || (s.access || []).some((a) => String(a.username).toLowerCase() === me))
     .map((s) => publicServer(s, user));
 }
 
@@ -144,14 +159,23 @@ function canDo(user, s, action) {
   const role = roleFor(user, s);
   if (role === 'admin' || role === 'owner') return true; // владелец в MVP может всё
   if (role === 'assigned') {
-    const a = (s.access || []).find((x) => x.username.toLowerCase() === user.username.toLowerCase());
+    const a = (s.access || []).find((x) => String(x.username).toLowerCase() === String(user.username).toLowerCase());
     return !!(a && a.perms.includes(action));
   }
   return false;
 }
 function canView(user, s) { return roleFor(user, s) != null; }
 
+// при старте центра сбрасываем online=false у всех — поднимутся заново по SSE
+function resetAllOnline() {
+  const list = all();
+  let changed = false;
+  for (const s of list) if (s.online) { s.online = false; s.status = 'offline'; changed = true; }
+  if (changed) saveAll(list);
+}
+
 module.exports = {
   ACTIONS, all, get, byToken, publicServer, roleFor,
   onRegister, updateStatus, setOnline, claimByCode, assign, unassign, remove, forUser, canDo, canView,
+  setLiveChecker, resetAllOnline, removeByToken,
 };

@@ -27,8 +27,10 @@
   cursor: -webkit-image-set(url('/assets/cursor.png') 3x) 0 0, url('/assets/cursor.png') 0 0, auto !important;
   cursor: image-set(url('/assets/cursor.png') 3x) 0 0, url('/assets/cursor.png') 0 0, auto !important;
 }
-/* html тоже фиксируем — снижает «сброс» текстуры курсора во время инерц. скролла в WebKit */
-html { cursor: -webkit-image-set(url('/assets/cursor.png') 3x) 0 0, auto; }
+/* в текстовых полях возвращаем I-beam (универсальное !important выше иначе его затирает) */
+input.fld, textarea.fld, input[type="text"], input[type="password"], input[type="number"], textarea {
+  cursor: text !important;
+}
 
 /* темы кита: меняют только акцент и цвета primary-кнопки */
 .theme-lime {

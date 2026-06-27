@@ -1865,10 +1865,18 @@
 
   // ---------- удалённое управление (туннель к CONTROLGUI Remote) ----------
 
-  function paintRemote(info) {
+  // право на удалённое управление = полный набор силовых прав (как на сервере)
+  function canRemote() { return can('server.start') && can('server.stop'); }
+  let remoteBusy = false;
+
+  function paintRemote(info, forId) {
     const card = $('#remote-card');
     if (!card) return;
+    if (forId && forId !== state.currentId) return; // поздний ответ для другого сервера — игнор
     const on = !!(info && info.enabled);
+    // ссылка на сайт видна ВСЕГДА (даже до включения) — кликабельная, с полной схемой
+    const site = $('#remote-site');
+    if (site && info && info.central) { site.href = info.central; site.textContent = info.central; }
     $('#remote-toggle').classList.toggle('on', on);
     $('#remote-status').classList.toggle('hidden', !on);
     if (!on) return;
@@ -1884,26 +1892,46 @@
   function renderRemoteCard() {
     const card = $('#remote-card');
     if (!card) return;
-    // функция настроек — тем, кто может править настройки
-    card.classList.toggle('hidden', !can('settings.edit'));
-    if (!can('settings.edit') || !state.currentId) return;
-    API.remoteGet(state.currentId).then(paintRemote).catch(() => {});
+    card.classList.toggle('hidden', !canRemote());
+    if (!canRemote() || !state.currentId) return;
+    const forId = state.currentId;
+    API.remoteGet(forId).then((i) => paintRemote(i, forId)).catch(() => {});
+  }
+
+  // после включения туннель поднимается асинхронно — несколько раз опрашиваем статус,
+  // чтобы метка сменилась «подключение…» -> «на связи» без выхода из настроек
+  function pollRemoteStatus(forId, tries) {
+    if (tries <= 0 || forId !== state.currentId) return;
+    setTimeout(() => {
+      if (forId !== state.currentId) return;
+      API.remoteGet(forId).then((i) => {
+        paintRemote(i, forId);
+        if (i && i.enabled && !i.online) pollRemoteStatus(forId, tries - 1);
+      }).catch(() => {});
+    }, 1200);
   }
 
   async function toggleRemote() {
-    if (!state.currentId) return;
+    if (!state.currentId || remoteBusy) return; // guard от двойного клика / гонки токена
     const turnOn = !$('#remote-toggle').classList.contains('on');
     if (!turnOn) {
       const ok = await confirmDialog('Выключить удалённое управление этим сервером? Туннель к центральному серверу закроется.',
         { title: 'Удалённое управление', yesText: 'Выключить', danger: true });
       if (!ok) return;
     }
-    await guard(async () => {
-      if (turnOn) showToast('Подключаюсь к центральному серверу…', 'ok');
-      const info = await API.remoteSet(state.currentId, turnOn);
-      paintRemote(info);
-      showToast(turnOn ? 'Удалённое управление включено.' : 'Удалённое управление выключено.', 'ok');
-    });
+    remoteBusy = true;
+    const forId = state.currentId;
+    try {
+      await guard(async () => {
+        if (turnOn) showToast('Подключаюсь к центральному серверу…', 'ok');
+        const info = await API.remoteSet(forId, turnOn);
+        paintRemote(info, forId);
+        showToast(turnOn ? 'Удалённое управление включено.' : 'Удалённое управление выключено.', 'ok');
+        if (turnOn) pollRemoteStatus(forId, 6);
+      });
+    } finally {
+      remoteBusy = false;
+    }
   }
 
   // ---------- ядро сервера (повторное скачивание / своё ядро) ----------

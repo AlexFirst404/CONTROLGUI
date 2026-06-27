@@ -22,9 +22,10 @@ function attach(panelToken, res) {
       streams.delete(panelToken);
       servers.setOnline(panelToken, false);
     }
-    // отклоняем висящие команды этого агента
+    // отклоняем висящие команды ИМЕННО этого закрывшегося стрима (по res),
+    // чтобы вытеснённый при reconnect старый поток не отменил команды НОВОГО живого.
     for (const [reqId, p] of pending) {
-      if (p.panelToken === panelToken) { clearTimeout(p.timer); pending.delete(reqId); p.resolve({ error: 'Сервер недоступен' }); }
+      if (p.res === res) { clearTimeout(p.timer); pending.delete(reqId); p.resolve({ error: 'Сервер недоступен' }); }
     }
   });
 }
@@ -40,7 +41,7 @@ function dispatch(panelToken, action, params) {
     const timer = setTimeout(() => {
       if (pending.has(reqId)) { pending.delete(reqId); resolve({ error: 'Таймаут — нет ответа от панели' }); }
     }, CMD_TIMEOUT_MS);
-    pending.set(reqId, { resolve, timer, panelToken });
+    pending.set(reqId, { resolve, timer, panelToken, res });
     try {
       res.write('data: ' + JSON.stringify({ reqId, action, params: params || {} }) + '\n\n');
     } catch (e) {
@@ -49,10 +50,11 @@ function dispatch(panelToken, action, params) {
   });
 }
 
-/* Агент прислал результат. */
-function result(reqId, payload) {
+/* Агент прислал результат. token обязан совпасть с тем, кому слали команду —
+   иначе любой держатель валидного токена мог бы подделать чужой результат. */
+function result(token, reqId, payload) {
   const p = pending.get(reqId);
-  if (!p) return false;
+  if (!p || p.panelToken !== token) return false;
   clearTimeout(p.timer);
   pending.delete(reqId);
   p.resolve(payload || { ok: true });

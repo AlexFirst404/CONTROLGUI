@@ -12,8 +12,10 @@ function all() { return store.load('accounts.json', []); }
 function saveAll(list) { store.save('accounts.json', list); }
 function findRaw(username) {
   const u = String(username || '').toLowerCase();
-  return all().find((a) => a.username.toLowerCase() === u) || null;
+  // String(...) — устойчивость к уже отравленному стору (нестроковый username)
+  return all().find((a) => String(a.username).toLowerCase() === u) || null;
 }
+function exists(username) { return !!findRaw(username); }
 
 function hashPw(password, salt) {
   return crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
@@ -23,8 +25,10 @@ function publicUser(u) {
   return { username: u.username, role: u.role, approved: !!u.approved, createdAt: u.createdAt };
 }
 
-/* Логин: 1–32 символа, буквы/цифры/_/-. Пароль: минимум 6. */
-function validName(n) { return /^[A-Za-z0-9_-]{1,32}$/.test(String(n || '')); }
+/* Логин: СТРОКА 1–32 символа, буквы/цифры/_/-. typeof-проверка обязательна —
+   иначе ['bob']/123 проходят String()-coerce в regex и сохраняются сырыми,
+   роняя .toLowerCase() во всех обходах аккаунтов (персистентный DoS). */
+function validName(n) { return typeof n === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(n); }
 
 /* Сидируем админа при старте, если админа ещё нет. Возвращает {created, password}. */
 function ensureAdmin(username) {
@@ -49,7 +53,7 @@ function register(username, password) {
   if (!validName(username)) return { error: 'Ник: 1–32 символа (буквы, цифры, _ и -)' };
   if (String(password || '').length < 6) return { error: 'Пароль: минимум 6 символов' };
   const list = all();
-  if (list.some((a) => a.username.toLowerCase() === String(username).toLowerCase())) {
+  if (list.some((a) => String(a.username).toLowerCase() === username.toLowerCase())) {
     return { error: 'Такой ник уже занят' };
   }
   const salt = crypto.randomBytes(16).toString('hex');
@@ -78,14 +82,14 @@ function verify(username, password) {
 
 function approve(username) {
   const list = all();
-  const u = list.find((a) => a.username.toLowerCase() === String(username).toLowerCase());
+  const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
   if (!u) return false;
   u.approved = true;
   saveAll(list);
   return true;
 }
 function remove(username) {
-  const list = all().filter((a) => a.username.toLowerCase() !== String(username).toLowerCase() || a.role === 'admin');
+  const list = all().filter((a) => String(a.username).toLowerCase() !== String(username).toLowerCase() || a.role === 'admin');
   saveAll(list);
 }
 function pending() { return all().filter((a) => !a.approved).map(publicUser); }
@@ -128,14 +132,28 @@ function lockMs(ip) { const a = attempts.get(ip); return a && a.lockedUntil > Da
 function noteFail(ip) {
   const a = attempts.get(ip) || { fails: 0, lockedUntil: 0 };
   a.fails += 1;
+  a.lastSeen = Date.now();
   if (a.fails >= MAX_FAILS) { a.lockedUntil = Date.now() + LOCK_MS; a.fails = 0; }
   attempts.set(ip, a);
   return a;
 }
 function clearFails(ip) { attempts.delete(ip); }
 
+// периодический свип карт в памяти: истёкшие сессии и старые записи попыток.
+// Без свипа карты растут неограниченно (особенно attempts при спуфинге ключа).
+function sweep() {
+  const now = Date.now();
+  for (const [t, s] of sessions) if (now > s.expires) sessions.delete(t);
+  for (const [ip, a] of attempts) {
+    const idle = now - (a.lastSeen || 0);
+    if (a.lockedUntil <= now && idle > LOCK_MS) attempts.delete(ip); // не активна и не залочена
+  }
+}
+const _sweepTimer = setInterval(sweep, 10 * 60 * 1000);
+if (_sweepTimer.unref) _sweepTimer.unref();
+
 module.exports = {
-  COOKIE, ensureAdmin, register, verify, approve, remove, pending, listUsers, isAdmin,
+  COOKIE, ensureAdmin, register, verify, approve, remove, pending, listUsers, isAdmin, exists,
   createSession, destroySession, cookieFor, clearCookie, parseCookies, userFromReq, validName,
   MAX_FAILS, lockMs, noteFail, clearFails,
 };

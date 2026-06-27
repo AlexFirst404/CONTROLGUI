@@ -70,8 +70,11 @@ if [ -f "$ICON_PNG" ] && command -v sips >/dev/null 2>&1 && command -v iconutil 
   iconutil -c icns "$TMPICON" -o "$APP/Contents/Resources/controlgui.icns" 2>/dev/null || true
 fi
 
-# ad-hoc подпись (без неё .app из интернета может не запускаться)
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+# ad-hoc подпись inside-out (вложенный node первым, потом бандл) — --deep устарел.
+# Вывод НЕ глушим (чтобы сбой был виден); сборку не валим (node/swiftc уже ad-hoc подписаны).
+codesign --force --sign - "$APP/Contents/Resources/bin/node" || echo "WARN: codesign node не удался"
+codesign --force --sign - "$APP/Contents/MacOS/controlgui" || echo "WARN: codesign бинаря не удался"
+codesign --force --sign - "$APP" || echo "WARN: codesign бандла не удался"
 
 # .pkg: установщик кладёт CONTROLGUI.app в /Applications
 OUT="$HERE/CONTROLGUI-${VERSION}-macos-${NARCH}.pkg"

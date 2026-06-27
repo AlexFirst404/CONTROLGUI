@@ -10,6 +10,18 @@ const users = require('./lib/users');
 
 const PORT = parseInt(process.env.PORT, 10) || 8400;
 
+// Watchdog родителя: если панель запущена нативным окном (macOS .app передаёт свой PID),
+// и это окно умерло ненормально (Force Quit/краш) — корректно выходим, освобождая порт.
+// Java-серверы при этом ВЫЖИВАЮТ (их усыновит следующий запуск через adoptOrphans).
+const PARENT_PID = parseInt(process.env.CONTROLGUI_PARENT_PID, 10);
+if (PARENT_PID) {
+  const wd = setInterval(() => {
+    try { process.kill(PARENT_PID, 0); } // сигнал 0 — только проверка существования
+    catch (e) { console.log('Родительское окно закрылось — выходим, серверы остаются жить.'); process.exit(0); }
+  }, 3000);
+  if (wd.unref) wd.unref();
+}
+
 function readJsonBody(req) {
   return new Promise((resolve) => {
     let data = '';

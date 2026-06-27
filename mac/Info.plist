@@ -22,21 +22,15 @@
   <string>11.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
-  <!-- панель работает на http://127.0.0.1 — разрешаем локальную загрузку в WKWebView -->
+  <!-- запрет второго экземпляра: не плодим лишний node на том же порту -->
+  <key>LSMultipleInstancesProhibited</key>
+  <true/>
+  <!-- панель на http://127.0.0.1 — loopback исключён из ATS через NSAllowsLocalNetworking
+       (IP-литералы как NSExceptionDomains не работают, поэтому отдельный блок не нужен) -->
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsLocalNetworking</key>
     <true/>
-    <key>NSExceptionDomains</key>
-    <dict>
-      <key>127.0.0.1</key>
-      <dict>
-        <key>NSExceptionAllowsInsecureHTTPLoads</key>
-        <true/>
-        <key>NSIncludesSubdomains</key>
-        <true/>
-      </dict>
-    </dict>
   </dict>
 </dict>
 </plist>

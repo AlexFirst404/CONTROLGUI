@@ -21,15 +21,21 @@ const MIME = {
 };
 
 function clientIp(req) {
-  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return xff || req.socket.remoteAddress || 'unknown';
+  // Node слушает :443 напрямую, без доверенного реверс-прокси -> X-Forwarded-For
+  // полностью подделывается клиентом, поэтому НЕ доверяем ему (иначе обход анти-брутфорса
+  // ротацией заголовка и таргетированный лок-DoS чужого IP). Ключуемся на реальном пире.
+  return req.socket.remoteAddress || 'unknown';
 }
 function readBody(req, limit) {
   return new Promise((resolve) => {
-    let d = '';
+    let d = ''; let done = false;
+    const fin = (v) => { if (!done) { done = true; resolve(v); } };
+    // при превышении лимита req.destroy() даёт 'close'/'aborted' (НЕ 'end'/'error') —
+    // без обработчика close промис висел бы вечно (зависший запрос).
     req.on('data', (c) => { d += c; if (d.length > (limit || 65536)) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(d || '{}')); } catch (e) { resolve({}); } });
-    req.on('error', () => resolve({}));
+    req.on('end', () => { try { fin(JSON.parse(d || '{}')); } catch (e) { fin({}); } });
+    req.on('close', () => fin({}));
+    req.on('error', () => fin({}));
   });
 }
 function json(res, code, obj) {
@@ -37,29 +43,37 @@ function json(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-// анти-спам регистрации агентов: не больше REG_MAX обращений с IP за окно
-const regHits = new Map(); // ip -> { count, resetAt }
-const REG_WINDOW_MS = 60 * 1000;
-const REG_MAX = 30;
-function regAllowed(ip) {
-  const now = Date.now();
-  const r = regHits.get(ip);
-  if (!r || now > r.resetAt) { regHits.set(ip, { count: 1, resetAt: now + REG_WINDOW_MS }); return true; }
-  r.count += 1;
-  return r.count <= REG_MAX;
+// универсальный лимитер «N обращений на ключ за окно» с самоочисткой (без роста памяти)
+function makeLimiter(windowMs, max) {
+  const hits = new Map();
+  const t = setInterval(() => { const now = Date.now(); for (const [k, r] of hits) if (now > r.resetAt) hits.delete(k); }, windowMs * 2);
+  if (t.unref) t.unref();
+  return (key) => {
+    const now = Date.now();
+    const r = hits.get(key);
+    if (!r || now > r.resetAt) { hits.set(key, { count: 1, resetAt: now + windowMs }); return true; }
+    r.count += 1;
+    return r.count <= max;
+  };
 }
+const agentRegLimit = makeLimiter(60 * 1000, 30); // /agent/register по IP
+const apiRegLimit = makeLimiter(60 * 1000, 10);   // /api/register по IP
+const linkLimit = makeLimiter(60 * 1000, 10);     // /api/link по аккаунту
+const MAX_PENDING_ACCOUNTS = 200;                  // потолок неодобренных заявок (анти-флуд)
 
 // ---------------- агенты (локальные панели) ----------------
 async function handleAgent(req, res, urlPath, url) {
   if (urlPath === '/agent/register' && req.method === 'POST') {
-    if (!regAllowed(clientIp(req))) return json(res, 429, { error: 'too many' });
+    if (!agentRegLimit(clientIp(req))) return json(res, 429, { error: 'too many' });
     const b = await readBody(req);
     if (!/^[a-f0-9]{32,64}$/i.test(String(b.panelToken || ''))) return json(res, 400, { error: 'bad token' });
     const { server, isNew } = servers.onRegister(b.panelToken, { name: b.name, type: b.type, version: b.version });
     return json(res, 200, { globalId: server.globalId, linkCode: server.linkCode || null, claimed: !!server.ownerAccount, name: server.name });
   }
   if (urlPath === '/agent/stream' && req.method === 'GET') {
-    const token = url.searchParams.get('token') || '';
+    // секрет — в заголовке Authorization (не в query, чтобы не утекал в логи); query — fallback
+    const auth = String(req.headers.authorization || '');
+    const token = (auth.startsWith('Bearer ') ? auth.slice(7) : '') || url.searchParams.get('token') || '';
     const s = servers.byToken(token);
     if (!s) { res.writeHead(401); return res.end(); }
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
@@ -70,7 +84,13 @@ async function handleAgent(req, res, urlPath, url) {
   if (urlPath === '/agent/result' && req.method === 'POST') {
     const b = await readBody(req, 256 * 1024);
     if (!servers.byToken(b.token)) return json(res, 401, { error: 'bad token' });
-    agents.result(String(b.reqId || ''), b.result);
+    agents.result(String(b.token), String(b.reqId || ''), b.result); // token-привязка результата
+    return json(res, 200, { ok: true });
+  }
+  if (urlPath === '/agent/deregister' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (!servers.byToken(b.token)) return json(res, 401, { error: 'bad token' });
+    servers.removeByToken(b.token); // панель удалила сервер -> убираем запись (не «призрак»)
     return json(res, 200, { ok: true });
   }
   if (urlPath === '/agent/status' && req.method === 'POST') {
@@ -78,7 +98,8 @@ async function handleAgent(req, res, urlPath, url) {
     const s = servers.byToken(b.token);
     if (!s) return json(res, 401, { error: 'bad token' });
     servers.updateStatus(b.token, { status: b.status, online: b.online, name: b.name, type: b.type, version: b.version });
-    return json(res, 200, { ok: true });
+    // отдаём агенту актуальное состояние привязки, чтобы панель показала «привязан» без рестарта
+    return json(res, 200, { ok: true, claimed: !!s.ownerAccount, linkCode: s.linkCode || null });
   }
   return false;
 }
@@ -86,6 +107,8 @@ async function handleAgent(req, res, urlPath, url) {
 // ---------------- аутентификация ----------------
 async function handleAuth(req, res, urlPath) {
   if (urlPath === '/api/register' && req.method === 'POST') {
+    if (!apiRegLimit(clientIp(req))) return json(res, 429, { error: 'Слишком много регистраций. Подождите минуту.' });
+    if (accounts.pending().length >= MAX_PENDING_ACCOUNTS) return json(res, 429, { error: 'Слишком много неодобренных заявок. Попробуйте позже.' });
     const b = await readBody(req);
     const r = accounts.register(b.username, b.password);
     if (r.error) return json(res, 400, r);
@@ -102,7 +125,7 @@ async function handleAuth(req, res, urlPath) {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': accounts.cookieFor(accounts.createSession(u.username)) });
       return res.end(JSON.stringify({ ok: true, user: u }));
     }
-    if (u && u.pending) return json(res, 403, { error: 'Аккаунт ждёт одобрения администратором' });
+    if (u && u.pending) { accounts.noteFail(ip); return json(res, 403, { error: 'Аккаунт ждёт одобрения администратором' }); }
     const a = accounts.noteFail(ip);
     if (accounts.lockMs(ip) > 0) return json(res, 429, { error: 'Слишком много неверных попыток. Блок на 5 минут.' });
     return json(res, 401, { error: 'Неверный ник или пароль. Осталось попыток: ' + (accounts.MAX_FAILS - a.fails) });
@@ -121,6 +144,7 @@ async function handleApi(req, res, urlPath, url, user) {
   if (urlPath === '/api/servers' && req.method === 'GET') return json(res, 200, { servers: servers.forUser(user) });
 
   if (urlPath === '/api/link' && req.method === 'POST') {
+    if (!linkLimit(String(user.username).toLowerCase())) return json(res, 429, { error: 'Слишком много попыток привязки. Подождите минуту.' });
     const b = await readBody(req);
     const r = servers.claimByCode(b.code, user.username);
     if (r.error) return json(res, 400, r);
@@ -150,6 +174,8 @@ async function handleApi(req, res, urlPath, url, user) {
     const b = await readBody(req);
     if (!accounts.validName(b.username)) return json(res, 400, { error: 'Некорректный ник' });
     if (b.remove) { servers.unassign(m[1], b.username); return json(res, 200, { ok: true }); }
+    // нельзя назначать несуществующему нику (висячий ACL дал бы доступ при будущей регистрации)
+    if (!accounts.exists(b.username)) return json(res, 400, { error: 'Пользователь не найден' });
     const r = servers.assign(m[1], b.username, b.perms);
     return json(res, r.error ? 400 : 200, r);
   }
@@ -179,33 +205,50 @@ function serveStatic(req, res, urlPath) {
 }
 
 async function handle(req, res) {
-  const url = new URL(req.url, 'https://localhost');
-  const urlPath = url.pathname;
   try {
+    // new URL ВНУТРИ try: на таргетах вроде `GET //` конструктор кидает — иначе
+    // это unhandledRejection и падение процесса (неаутентиф. remote-DoS одним запросом).
+    const url = new URL(req.url, 'https://localhost');
+    const urlPath = url.pathname;
     if (urlPath.startsWith('/agent/')) { const r = await handleAgent(req, res, urlPath, url); if (r !== false) return; res.writeHead(404); return res.end(); }
     if (await handleAuth(req, res, urlPath) !== false) return;
     if (urlPath.startsWith('/api/')) {
       const user = accounts.userFromReq(req);
       if (!user) return json(res, 401, { error: 'Нужен вход', login: true });
-      return handleApi(req, res, urlPath, url, user);
+      return await handleApi(req, res, urlPath, url, user); // await — чтобы throw попал в catch
     }
     return serveStatic(req, res, urlPath);
   } catch (e) {
-    json(res, 500, { error: 'Ошибка сервера' });
+    try { json(res, 500, { error: 'Ошибка сервера' }); } catch (e2) { /* ответ мог уже уйти */ }
   }
 }
+
+// online выводим из живого набора SSE-стримов; на старте гасим устаревший online
+servers.setLiveChecker(agents.isOnline);
+try { servers.resetAllOnline(); } catch (e) { /* */ }
+
+// последняя страховка от падения процесса (root remote-управление должно жить)
+process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e && e.message));
+process.on('uncaughtException', (e) => console.error('uncaughtException:', e && e.message));
 
 // сид админа
 const seed = accounts.ensureAdmin(process.env.CGR_ADMIN || 'admin');
 if (seed.created) {
-  console.log('  >>> Создан админ: логин=' + seed.username + '  пароль=' + seed.password);
-  try { fs.writeFileSync(path.join(require('./lib/store').DATA, 'ADMIN-CREDENTIALS.txt'), 'login: ' + seed.username + '\npassword: ' + seed.password + '\n'); } catch (e) { /* */ }
+  // пароль НЕ печатаем в stdout (попадает в journald) — только в файл 0600
+  const credPath = path.join(require('./lib/store').DATA, 'ADMIN-CREDENTIALS.txt');
+  try { fs.writeFileSync(credPath, 'login: ' + seed.username + '\npassword: ' + seed.password + '\n', { mode: 0o600 }); } catch (e) { /* */ }
+  console.log('  >>> Создан админ «' + seed.username + '». Пароль: ' + credPath + ' (chmod 600)');
 }
 
 const server = https.createServer({ cert: fs.readFileSync(CERT), key: fs.readFileSync(KEY) }, handle);
 server.listen(PORT, () => console.log('CONTROLGUI Remote слушает https://0.0.0.0:' + PORT));
 
-// 80 -> 443 редирект (необязательно)
+// 80 -> 443 редирект. Хост берём из env (а не из клиентского Host — open-redirect).
+const PUBHOST = process.env.CGR_PUBLIC_HOST || '';
 if (PORT === 443) {
-  http.createServer((req, res) => { res.writeHead(301, { Location: 'https://' + (req.headers.host || '').split(':')[0] + req.url }); res.end(); }).listen(80, () => {});
+  http.createServer((req, res) => {
+    const host = PUBHOST || (req.headers.host || '').split(':')[0];
+    res.writeHead(301, { Location: 'https://' + host + req.url });
+    res.end();
+  }).listen(80, () => {});
 }
