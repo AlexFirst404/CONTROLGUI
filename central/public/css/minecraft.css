@@ -19,13 +19,15 @@
   --sl-knob-w: 32px; --sl-knob-h: 34px; --sl-face-h: 22px;
 }
 
-/* Кастомный курсор окна. cursor.png — пиксель-арт 36×54 (×3). Объявляем его как
-   ресурс «3x» через image-set → отображается в 12×18 CSS-px и остаётся чётким на
-   retina (Mac). Без дескриптора 3x он рисовался в нативные 36×54 px — огромным на
-   маке. !important — чтобы курсор был ОДИН и тот же во ВСЕХ состояниях. */
+/* Кастомный курсор окна. cursor.png — пиксель-арт 36×54 (×3).
+   ВАЖНО: первая строка — ПРОСТОЙ url() — работает ВЕЗДЕ (Firefox/старые webview не понимают
+   image-set для cursor, и если ставить ТОЛЬКО image-set, вся декларация невалидна -> курсор
+   вообще не применяется = пропадает). Следующие строки переопределяют его на capable-движках
+   (Chromium/WebView2/WebKit), отображая мельче (12×18, чётко на retina). */
 *, *::before, *::after {
-  cursor: -webkit-image-set(url('/assets/cursor.png') 3x) 0 0, url('/assets/cursor.png') 0 0, auto !important;
-  cursor: image-set(url('/assets/cursor.png') 3x) 0 0, url('/assets/cursor.png') 0 0, auto !important;
+  cursor: url('/assets/cursor.png') 0 0, auto !important;
+  cursor: -webkit-image-set(url('/assets/cursor.png') 3x) 0 0, auto !important;
+  cursor: image-set(url('/assets/cursor.png') 3x) 0 0, auto !important;
 }
 /* бейдж удалённого сервера (добавлен по коду) */
 .srv-remote-badge { display: inline-block; vertical-align: middle; font-family: var(--font-head); font-size: 9px;
