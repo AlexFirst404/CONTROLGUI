@@ -4,7 +4,7 @@
 const servers = require('./servers');
 const agents = require('./agents');
 
-const RAW_LIMIT = 8 * 1024 * 1024; // тело проксируемого запроса (правка файлов и т.п.)
+const RAW_LIMIT = 50 * 1024 * 1024; // тело проксируемого запроса (правка файлов + загрузка до 50МБ)
 
 function readRaw(req) {
   return new Promise((resolve) => {
@@ -33,7 +33,7 @@ function denied(method, base) {
   if (s.length === 2) return method === 'POST' ? 'создание сервера' : null;       // /api/servers
   if (s.length === 3) return method === 'DELETE' ? 'удаление сервера' : null;      // /api/servers/<id>
   const action = s[3];                                                            // /api/servers/<id>/<action>
-  if (method === 'PUT' && (action === 'file-upload' || action === 'core' || action === 'resourcepack')) return 'загрузка больших файлов';
+  if (method === 'PUT' && (action === 'core' || action === 'resourcepack')) return 'загрузка ядра/текстурпака'; // file-upload (до 50МБ) разрешён
   if (method === 'GET' && action === 'backup') return 'скачивание бэкапа';
   return null;
 }

@@ -168,6 +168,10 @@
     $('#menu-users').classList.toggle('hidden', !(isAdmin || state.openMode));
     // «Выйти» — только когда есть вход
     $('#menu-logout').classList.toggle('hidden', state.openMode);
+    // удалённый режим: панель-локальные пункты не относятся к удалённому серверу — прячем
+    if (window.CG_REMOTE) {
+      $$('.menu-item[data-menu="create"], .menu-item[data-menu="settings"], .menu-item[data-menu="about"]').forEach((el) => el.classList.add('hidden'));
+    }
     // создание сервера
     $('#btn-goto-create').classList.toggle('hidden', !can('server.create'));
     // вкладки сервера (по любому из соответствующих прав)
@@ -950,6 +954,8 @@
       state.current = await API.server(state.currentId);
       renderServerHead();
       if (state.currentTab === 'console') loadStats();
+      // перерисовываем вкладку игроков — иначе OP/бан/вайтлист показывают старое состояние после действия
+      if (state.currentTab === 'players') renderPlayers(state.current);
     } catch (e) {
       showScreen('list');
       showToast(e.message);

@@ -12,6 +12,9 @@
 <link rel="stylesheet" href="css/minecraft.css">
 </head>
 <body class="theme-lime">
+<style>#cg-remote-bar{position:sticky;top:0;z-index:80;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 16px;background:#171717;border-bottom:2px solid #454545;font-family:'Minecraft Ten','Minecraft',sans-serif}#cg-remote-bar .cgrb-brand{color:#e6e6e6;text-decoration:none;font-size:16px;letter-spacing:1px}#cg-remote-bar .cgrb-brand b{color:#80da5b}#cg-remote-bar .cgrb-nav{display:flex;align-items:center;gap:16px;font-size:13px}#cg-remote-bar .cgrb-nav a{color:#80da5b;text-decoration:none}#cg-remote-bar #cgrb-user{color:#a9a9a9}#cg-remote-bar #cgrb-logout{color:#ff8a7e}</style><div id="cg-remote-bar"><a class="cgrb-brand" href="/">CONTROL<b>GUI</b> Remote</a><div class="cgrb-nav"><a href="/">← К серверам</a><span id="cgrb-user"></span><a href="#" id="cgrb-logout">Выйти</a></div></div>
+<script>fetch('/api/me').then(function(r){return r.json();}).then(function(d){if(d&&d.user){var e=document.getElementById('cgrb-user');if(e)e.textContent=d.user.username+(d.user.role==='admin'?' · админ':'');}}).catch(function(){});(function(){var l=document.getElementById('cgrb-logout');if(l)l.onclick=function(ev){ev.preventDefault();fetch('/api/logout',{method:'POST'}).then(function(){location.href='/';});};})();</script>
+
 <div class="bg-pattern"></div>
 <div class="shade"></div>
 
