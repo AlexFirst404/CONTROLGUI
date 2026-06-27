@@ -96,6 +96,10 @@ async function loadServers(){
       '<div class="acts"></div>';
     const acts = el.querySelector('.acts');
     if(can){
+      const mg=document.createElement('button'); mg.className='mc-btn sm accent'; mg.textContent='Управлять';
+      mg.title='Полное управление: консоль, файлы, игроки, настройки…';
+      mg.onclick=()=>{ location.href='/manage?s='+encodeURIComponent(s.globalId); };
+      acts.appendChild(mg);
       for(const [a,label,cls] of [['start','Старт','primary'],['stop','Стоп','danger'],['restart','Рестарт','']]){
         const b=document.createElement('button'); b.className='mc-btn sm '+cls; b.textContent=label;
         b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false;

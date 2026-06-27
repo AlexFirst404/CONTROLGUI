@@ -203,6 +203,7 @@ async function handleApi(req, res, urlPath, url, user) {
 function serveStatic(req, res, urlPath) {
   let p = urlPath === '/' ? '/index.html' : urlPath;
   if (p === '/admin') p = '/admin.html';
+  if (p === '/manage') p = '/manage.html'; // страница полного удалённого управления (UI панели 1:1)
   const file = path.normalize(path.join(PUB, p));
   if (!file.startsWith(PUB)) { res.writeHead(403); return res.end('Forbidden'); }
   fs.readFile(file, (err, data) => {
