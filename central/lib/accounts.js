@@ -24,8 +24,23 @@ function hashPw(password, salt) {
 function publicUser(u) {
   return {
     username: u.username, role: u.role, approved: !!u.approved, createdAt: u.createdAt,
-    discord: u.discord ? { id: u.discord.id, name: u.discord.name } : null,
+    discord: u.discord ? { id: u.discord.id, name: u.discord.name, avatar: u.discord.avatar || null } : null,
   };
+}
+
+/* Смена пароля по текущему паролю. */
+function changePassword(username, currentPw, newPw) {
+  if (String(newPw || '').length < 6) return { error: 'Новый пароль: минимум 6 символов' };
+  const list = all();
+  const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
+  if (!u) return { error: 'Аккаунт не найден' };
+  const cand = Buffer.from(hashPw(currentPw, u.salt));
+  const stored = Buffer.from(u.hash);
+  if (cand.length !== stored.length || !crypto.timingSafeEqual(cand, stored)) return { error: 'Текущий пароль неверный' };
+  const salt = crypto.randomBytes(16).toString('hex');
+  u.salt = salt; u.hash = hashPw(newPw, salt);
+  saveAll(list);
+  return { ok: true };
 }
 
 /* Логин: СТРОКА 1–32 символа, буквы/цифры/_/-. typeof-проверка обязательна —
@@ -128,7 +143,7 @@ function setDiscord(username, discord) {
     const taken = list.find((a) => a.discord && String(a.discord.id) === id
       && String(a.username).toLowerCase() !== String(username).toLowerCase());
     if (taken) return { error: 'Этот Discord уже привязан к другому аккаунту' };
-    u.discord = { id, name: String(discord.name || ''), linkedAt: new Date().toISOString() };
+    u.discord = { id, name: String(discord.name || ''), avatar: discord.avatar || null, linkedAt: new Date().toISOString() };
   } else {
     delete u.discord;
   }
@@ -198,7 +213,7 @@ const _sweepTimer = setInterval(sweep, 10 * 60 * 1000);
 if (_sweepTimer.unref) _sweepTimer.unref();
 
 module.exports = {
-  COOKIE, ensureAdmin, register, verify, approve, remove, rename, setDiscord, count,
+  COOKIE, ensureAdmin, register, verify, approve, remove, rename, setDiscord, changePassword, count,
   pending, listUsers, approvedNames, isAdmin, exists,
   createSession, destroySession, cookieFor, clearCookie, parseCookies, userFromReq, validName,
   MAX_FAILS, lockMs, noteFail, clearFails,

@@ -94,6 +94,7 @@ window.API = (function () {
     centralLink: (code) => call('POST', '/api/central/link', { code: code }),
     centralMe: () => call('GET', '/api/central/me'),
     centralRename: (newName) => call('POST', '/api/central/rename', { newName: newName }),
+    centralChangePassword: (current, next) => call('POST', '/api/central/password', { current: current, next: next }),
     centralDiscordLink: () => call('POST', '/api/central/discord/link'),
     centralDiscordUnlink: () => call('POST', '/api/central/discord/unlink'),
     usersList: () => call('GET', '/api/users'),

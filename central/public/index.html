@@ -123,7 +123,8 @@ async function load(){
 }
 function renderUser(){
   const admin = me.role==='admin';
-  $('#userbar').innerHTML = '<span class="muted">'+me.username+(admin?' · админ':'')+'</span>'+
+  const av = (me.discord&&me.discord.avatar) ? '<img alt="" src="'+esc(me.discord.avatar)+'" style="width:24px;height:24px;border-radius:50%;border:1px solid #454545;vertical-align:middle;margin-right:6px">' : '';
+  $('#userbar').innerHTML = av+'<span class="muted">'+esc(me.username)+(admin?' · админ':'')+'</span>'+
     (admin?' <a class="mc-btn sm" href="/admin">Админка</a>':'')+
     ' <button class="mc-btn sm" id="logout">Выйти</button>';
   $('#logout').onclick = async()=>{ await api('POST','/api/logout'); load(); };

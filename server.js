@@ -42,6 +42,7 @@ async function handleCentralRoutes(req, res, urlPath, cc) {
   if (urlPath === '/api/central/link' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.linkByCode(String(b.code || '')); return sendJson(res, r.error ? 400 : 200, r); }
   if (urlPath === '/api/central/me' && req.method === 'GET') return sendJson(res, 200, await cc.me());
   if (urlPath === '/api/central/rename' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.rename(String(b.newName || '')); return sendJson(res, r.error ? 400 : 200, r); }
+  if (urlPath === '/api/central/password' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.changePassword(String(b.current || ''), String(b.next || '')); return sendJson(res, r.error ? 400 : 200, r); }
   if (urlPath === '/api/central/discord/link' && req.method === 'POST') { const r = await cc.discordLinkInit(); return sendJson(res, r.error ? 400 : 200, r); }
   if (urlPath === '/api/central/discord/unlink' && req.method === 'POST') { const r = await cc.discordUnlink(); return sendJson(res, r.error ? 400 : 200, r); }
   return sendJson(res, 404, { error: 'Не найдено' });

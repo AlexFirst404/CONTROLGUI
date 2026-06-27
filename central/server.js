@@ -266,6 +266,12 @@ async function handleApi(req, res, urlPath, url, user) {
     servers.renameAccount(user.username, b.newName); // каскад ownerAccount/access
     return json(res, 200, { ok: true, user: r.user });
   }
+  if (urlPath === '/api/account/password' && req.method === 'POST') {
+    if (!renameLimit(String(user.username).toLowerCase())) return json(res, 429, { error: 'Слишком часто. Подождите минуту.' });
+    const b = await readBody(req);
+    const r = accounts.changePassword(user.username, b.current, b.next);
+    return json(res, r.error ? 400 : 200, r);
+  }
   if (urlPath === '/api/account/discord/link-init' && req.method === 'POST') {
     if (!discord.enabled()) return json(res, 503, { error: 'Discord ещё не настроен администратором' });
     const lt = discord.makeLinkToken(user.username);

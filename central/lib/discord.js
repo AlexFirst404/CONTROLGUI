@@ -54,7 +54,12 @@ async function fetchUser(accessToken) {
   try { me = await getJson('discord.com', '/api/users/@me', accessToken); } catch (e) { return { error: 'Discord недоступен' }; }
   if (me.status !== 200 || !me.json.id) return { error: 'Discord: не удалось получить профиль' };
   const name = me.json.username + (me.json.discriminator && me.json.discriminator !== '0' ? '#' + me.json.discriminator : '');
-  return { id: String(me.json.id), name };
+  let avatar = null;
+  if (me.json.avatar) {
+    const ext = String(me.json.avatar).startsWith('a_') ? 'gif' : 'png';
+    avatar = 'https://cdn.discordapp.com/avatars/' + me.json.id + '/' + me.json.avatar + '.' + ext + '?size=128';
+  }
+  return { id: String(me.json.id), name, avatar };
 }
 
 module.exports = { enabled, authorizeUrl, redirectUri, makeState, takeState, makeLinkToken, takeLinkToken, fetchUser };

@@ -840,10 +840,19 @@
     $('#pf-discord-unlinked').classList.toggle('hidden', linked || !enabled);
     $('#pf-discord-off').classList.toggle('hidden', linked || enabled);
     if (linked) $('#pf-discord-name').textContent = u.discord.name || u.discord.id;
+    const av = $('#pf-avatar');
+    if (av) { const url = u && u.discord && u.discord.avatar; if (url) { av.src = url; av.style.display = ''; } else { av.style.display = 'none'; av.removeAttribute('src'); } }
   }
   function setupProfile() {
     if (profileBound || !$('#screen-profile')) return;
     profileBound = true;
+    $('#pf-pw-btn').addEventListener('click', async () => {
+      const err = $('#pf-pw-err'); err.className = 'err'; err.textContent = '';
+      const cur = $('#pf-pw-cur').value; const nw = $('#pf-pw-new').value;
+      if (!cur || nw.length < 6) { err.textContent = 'Текущий пароль и новый (минимум 6 символов).'; return; }
+      try { await API.centralChangePassword(cur, nw); $('#pf-pw-cur').value = ''; $('#pf-pw-new').value = ''; err.className = 'err ok'; err.textContent = 'Пароль изменён.'; showToast('Пароль изменён.', 'ok'); }
+      catch (e) { err.className = 'err'; err.textContent = e.message; }
+    });
     $('#pf-rename-btn').addEventListener('click', async () => {
       const err = $('#pf-rename-err'); err.className = 'err'; err.textContent = '';
       const nn = $('#pf-rename-input').value.trim();

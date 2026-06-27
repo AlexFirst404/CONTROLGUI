@@ -53,12 +53,13 @@ const bar =
   '<div id="cg-remote-bar">' +
   '<a class="cgrb-brand" href="/">CONTROL<b>GUI</b> Remote · <span class="cgrb-sub">управление</span></a>' +
   '<div class="cgrb-nav">' +
+  '<img id="cgrb-avatar" alt="" style="width:26px;height:26px;border-radius:50%;border:1px solid #454545;display:none;vertical-align:middle;margin-right:6px">' +
   '<span id="cgrb-user"></span>' +
   '<a class="mc-btn sm" href="/">← К серверам</a>' +
   '<button class="mc-btn sm danger" id="cgrb-logout">Выйти</button>' +
   '</div></div>\n' +
   '<script>' +
-  "fetch('/api/me').then(function(r){return r.json();}).then(function(d){if(d&&d.user){var e=document.getElementById('cgrb-user');if(e)e.textContent=d.user.username+(d.user.role==='admin'?' · админ':'');}}).catch(function(){});" +
+  "fetch('/api/me').then(function(r){return r.json();}).then(function(d){if(d&&d.user){var e=document.getElementById('cgrb-user');if(e)e.textContent=d.user.username+(d.user.role==='admin'?' · админ':'');var a=document.getElementById('cgrb-avatar');if(a&&d.user.discord&&d.user.discord.avatar){a.src=d.user.discord.avatar;a.style.display='inline-block';}}}).catch(function(){});" +
   "(function(){var l=document.getElementById('cgrb-logout');if(l)l.onclick=function(ev){ev.preventDefault();fetch('/api/logout',{method:'POST'}).then(function(){location.href='/';});};})();" +
   '</script>\n';
 const bodyTag = html.match(/<body[^>]*>/);
