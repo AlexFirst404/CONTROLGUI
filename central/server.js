@@ -63,8 +63,27 @@ function makeLimiter(windowMs, max) {
 const agentRegLimit = makeLimiter(60 * 1000, 30); // /agent/register по IP
 const apiRegLimit = makeLimiter(60 * 1000, 10);   // /api/register по IP
 const linkLimit = makeLimiter(60 * 1000, 10);     // /api/link по аккаунту
+const linkIpLimit = makeLimiter(60 * 1000, 15);   // /api/link по IP (анти-брутфорс кода)
+const linkGlobalLimit = makeLimiter(60 * 1000, 120); // глобальный потолок попыток привязки
 const renameLimit = makeLimiter(60 * 1000, 5);    // /api/account/rename по аккаунту
 const MAX_ACCOUNTS = 5000;                         // потолок всех аккаунтов (анти-флуд при авто-одобрении)
+
+// анти-брутфорс кода привязки: после серии неверных кодов — блок IP на 10 минут
+// (авто-одобрение позволяет плодить аккаунты, поэтому ключуемся ещё и на IP, не только на нике)
+const linkFails = new Map(); // ip -> { fails, lockedUntil, lastSeen }
+function linkLocked(ip) { const a = linkFails.get(ip); return a && a.lockedUntil > Date.now() ? a.lockedUntil - Date.now() : 0; }
+function noteLinkFail(ip) {
+  const a = linkFails.get(ip) || { fails: 0, lockedUntil: 0 };
+  a.fails += 1; a.lastSeen = Date.now();
+  if (a.fails >= 10) { a.lockedUntil = Date.now() + 10 * 60 * 1000; a.fails = 0; }
+  linkFails.set(ip, a);
+}
+function clearLinkFails(ip) { linkFails.delete(ip); }
+const _linkSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, a] of linkFails) { if (a.lockedUntil <= now && (now - (a.lastSeen || 0)) > 10 * 60 * 1000) linkFails.delete(ip); }
+}, 10 * 60 * 1000);
+if (_linkSweep.unref) _linkSweep.unref();
 
 // ---------------- агенты (локальные панели) ----------------
 async function handleAgent(req, res, urlPath, url) {
@@ -221,13 +240,20 @@ async function handleDiscordOAuth(req, res, urlPath, url) {
 async function handleApi(req, res, urlPath, url, user) {
   if (urlPath === '/api/me') return json(res, 200, { user, discordEnabled: discord.enabled() });
   if (urlPath === '/api/servers' && req.method === 'GET') return json(res, 200, { servers: servers.forUser(user) });
-  if (urlPath === '/api/accounts' && req.method === 'GET') return json(res, 200, { users: accounts.approvedNames() }); // для выбора при выдаче доступа
+  // список одобренных ников — ТОЛЬКО админу (владельцы выдают доступ по нику, без утечки списка)
+  if (urlPath === '/api/accounts' && req.method === 'GET') return json(res, 200, { users: accounts.isAdmin(user) ? accounts.approvedNames() : [] });
 
   if (urlPath === '/api/link' && req.method === 'POST') {
-    if (!linkLimit(String(user.username).toLowerCase())) return json(res, 429, { error: 'Слишком много попыток привязки. Подождите минуту.' });
+    const ip = clientIp(req);
+    const locked = linkLocked(ip);
+    if (locked > 0) return json(res, 429, { error: 'Слишком много неверных кодов. Подождите ' + Math.ceil(locked / 60000) + ' мин.' });
+    if (!linkLimit(String(user.username).toLowerCase()) || !linkIpLimit(ip) || !linkGlobalLimit('global')) {
+      return json(res, 429, { error: 'Слишком много попыток привязки. Подождите минуту.' });
+    }
     const b = await readBody(req);
     const r = servers.claimByCode(b.code, user.username);
-    if (r.error) return json(res, 400, r);
+    if (r.error) { noteLinkFail(ip); return json(res, 400, r); }
+    clearLinkFails(ip);
     return json(res, 200, { ok: true, server: servers.publicServer(r.server, user) });
   }
 

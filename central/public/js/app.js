@@ -172,7 +172,8 @@
     $('#menu-logout').classList.toggle('hidden', state.openMode);
     // удалённый режим: панель-локальные пункты не относятся к удалённому серверу — прячем
     if (window.CG_REMOTE) {
-      $$('.menu-item[data-menu="create"], .menu-item[data-menu="remote"], .menu-item[data-menu="settings"], .menu-item[data-menu="about"]').forEach((el) => el.classList.add('hidden'));
+      // удалённое управление одним сервером: убираем промежуточный экран «Серверы» и локальные пункты
+      $$('.menu-item[data-menu="home"], .menu-item[data-menu="create"], .menu-item[data-menu="remote"], .menu-item[data-menu="settings"], .menu-item[data-menu="about"]').forEach((el) => el.classList.add('hidden'));
     }
     // создание сервера
     $('#btn-goto-create').classList.toggle('hidden', !can('server.create'));
@@ -2723,15 +2724,6 @@
 
       const actions = document.createElement('span');
       actions.className = 'pl-inst-actions';
-      // карандаш — редактировать (открыть в файлах), слева от корзины
-      if (canEdit) {
-        const edit = document.createElement('button');
-        edit.className = 'mc-btn sm';
-        edit.title = 'Открыть в файлах для настройки';
-        edit.appendChild(picon('edit'));
-        edit.addEventListener('click', () => editContent(kind, p));
-        actions.appendChild(edit);
-      }
       // корзина — удалить
       if (canDelete) {
         const del = document.createElement('button');
@@ -4242,6 +4234,10 @@
       { title: 'Удаление сервера' }
     );
     if (!ok) return;
+    // повторное подтверждение: ввести точное название сервера
+    const typed = await promptDialog('Окончательное подтверждение. Введите название сервера, чтобы удалить его навсегда:', '', server.name);
+    if (typed == null) return;
+    if (typed.trim() !== server.name) { showToast('Название не совпало — удаление отменено.'); return; }
     await guard(async () => {
       await API.remove(id);
       showToast('Сервер «' + server.name + '» удалён.', 'ok');

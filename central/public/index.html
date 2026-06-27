@@ -56,14 +56,25 @@
   </div>
 </div>
 
+<style>
+  #asg-perms{column-count:2;column-gap:22px}
+  #asg-perms .asg-grp{break-inside:avoid}
+  .asg-perm{display:flex;align-items:center;gap:10px;padding:3px 0;break-inside:avoid;cursor:pointer}
+  .asg-perm input[type=checkbox]{appearance:none;-webkit-appearance:none;width:38px;height:20px;border-radius:11px;background:#3a3a3a;border:2px solid #555;position:relative;cursor:pointer;transition:.15s;flex:0 0 auto;margin:0}
+  .asg-perm input[type=checkbox]::after{content:"";position:absolute;top:1px;left:1px;width:14px;height:14px;border-radius:50%;background:#bbb;transition:.15s}
+  .asg-perm input[type=checkbox]:checked{background:#3a6a28;border-color:#5cb53d}
+  .asg-perm input[type=checkbox]:checked::after{left:18px;background:#80da5b}
+  @media (max-width:560px){ #asg-perms{column-count:1} }
+</style>
 <!-- модалка выдачи доступа -->
 <div id="asg-modal" class="asg-overlay hidden">
-  <div class="card" style="max-width:560px;width:94%;max-height:90vh;overflow:auto">
+  <div class="card" style="max-width:760px;width:94%;max-height:90vh;overflow:auto">
     <h2 id="asg-title">Доступ к серверу</h2>
     <div id="asg-access"></div>
     <hr class="sep" style="margin:14px 0">
-    <label>Пользователь (одобренный аккаунт)</label>
+    <label id="asg-user-label">Пользователь (одобренный аккаунт)</label>
     <select class="fld" id="asg-user"></select>
+    <input class="fld" id="asg-user-nick" placeholder="Введите ник пользователя" autocomplete="off" style="display:none">
     <div class="row" style="margin:12px 0 6px">
       <span class="label-dim">Пресеты:</span>
       <button class="mc-btn sm" id="asg-preset-full">Полный</button>
@@ -140,8 +151,10 @@ async function loadServers(){
       acts.appendChild(mg);
       for(const [a,label,cls] of [['start','Старт','primary'],['stop','Стоп','danger'],['restart','Рестарт','']]){
         const b=document.createElement('button'); b.className='mc-btn sm '+cls; b.textContent=label;
-        b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false;
-          if(rr.d&&rr.d.error) toast(rr.d.error); setTimeout(loadServers,1000); };
+        b.onclick=async()=>{
+          if(!await confirmModal(label+' сервер «'+s.name+'»?', label)) return;
+          b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false;
+          if(rr.d&&rr.d.error) toast(rr.d.error); else toast(label+': команда отправлена.',true); setTimeout(loadServers,1000); };
         acts.appendChild(b);
       }
     }
@@ -203,26 +216,39 @@ async function assignPrompt(s){
     row.innerHTML='<span class="grow">'+esc(a.username)+' <span class="label-dim">('+(a.perms&&a.perms.length?a.perms.length+' прав':'просмотр')+')</span></span>';
     const ed=document.createElement('button'); ed.className='mc-btn sm'; ed.textContent='Изменить';
     ed.title='Редактировать права этого пользователя';
-    ed.onclick=()=>{ const sel=$('#asg-user'); sel.value=a.username; if(sel.value!==a.username){ const o=document.createElement('option'); o.value=a.username; o.textContent=a.username; sel.appendChild(o); sel.value=a.username; } renderAsgPerms(a.perms||[]); $('#asg-err').textContent=''; sel.scrollIntoView({block:'nearest'}); };
+    ed.onclick=()=>{ const isAdmin=me&&me.role==='admin'; if(isAdmin){ const sel=$('#asg-user'); sel.value=a.username; if(sel.value!==a.username){ const o=document.createElement('option'); o.value=a.username; o.textContent=a.username; sel.appendChild(o); sel.value=a.username; } } else { $('#asg-user-nick').value=a.username; } renderAsgPerms(a.perms||[]); $('#asg-err').textContent=''; };
     const rm=document.createElement('button'); rm.className='mc-btn sm danger'; rm.textContent='Забрать';
     rm.onclick=async()=>{ if(await confirmModal('Забрать доступ у «'+a.username+'»?','Забрать доступ')){ const r=await api('POST','/api/servers/'+s.globalId+'/assign',{username:a.username,remove:true}); if(r.d&&r.d.error)toast(r.d.error); else { toast('Доступ забран.',true); refreshAssign(s.globalId); } } };
     row.appendChild(ed); row.appendChild(rm); acc.appendChild(row);
   }
-  // выбор пользователя из списка одобренных (не владелец)
-  const sel=$('#asg-user'); sel.innerHTML='';
-  let users=[]; try{ const r=await api('GET','/api/accounts'); users=(r.d&&r.d.users)||[]; }catch(e){}
-  users=users.filter(u=> !s.owner || u.toLowerCase()!==String(s.owner).toLowerCase());
-  sel.innerHTML = users.length ? ('<option value="">— выберите —</option>'+users.map(u=>'<option value="'+esc(u)+'">'+esc(u)+'</option>').join('')) : '<option value="">Нет одобренных пользователей</option>';
+  // выбор получателя: админ — из списка одобренных аккаунтов; владелец — по нику (без списка юзеров)
+  const sel=$('#asg-user'); const nick=$('#asg-user-nick');
+  const isAdmin = me && me.role==='admin';
+  sel.style.display = isAdmin ? '' : 'none';
+  nick.style.display = isAdmin ? 'none' : '';
+  $('#asg-user-label').textContent = isAdmin ? 'Пользователь (одобренный аккаунт)' : 'Ник пользователя (точное совпадение)';
+  nick.value='';
+  if(isAdmin){
+    sel.innerHTML='';
+    let users=[]; try{ const r=await api('GET','/api/accounts'); users=(r.d&&r.d.users)||[]; }catch(e){}
+    users=users.filter(u=> !s.owner || u.toLowerCase()!==String(s.owner).toLowerCase());
+    sel.innerHTML = users.length ? ('<option value="">— выберите —</option>'+users.map(u=>'<option value="'+esc(u)+'">'+esc(u)+'</option>').join('')) : '<option value="">Нет одобренных пользователей</option>';
+    sel.onchange=()=>renderAsgPerms(permsOfUser(s, sel.value)||[]);
+  }
   renderAsgPerms([]);
-  sel.onchange=()=>renderAsgPerms(permsOfUser(s, sel.value)||[]);
   show('#asg-modal', true);
 }
 $('#asg-preset-full') && ($('#asg-preset-full').onclick=()=>{ $$('#asg-perms input').forEach(c=>c.checked=true); });
 $('#asg-preset-view') && ($('#asg-preset-view').onclick=()=>{ $$('#asg-perms input').forEach(c=>{ c.checked=(c.value==='console.view'||c.value==='logs.view'||c.value==='files.read'); }); });
 $('#asg-preset-none') && ($('#asg-preset-none').onclick=()=>{ $$('#asg-perms input').forEach(c=>c.checked=false); });
 $('#asg-cancel') && ($('#asg-cancel').onclick=()=>show('#asg-modal',false));
+// закрытие модалки по клику вне карточки и по Esc
+$('#asg-modal') && ($('#asg-modal').onclick=(e)=>{ if(e.target.id==='asg-modal') show('#asg-modal',false); });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ show('#asg-modal',false); show('#cf-modal',false); } });
 $('#asg-save') && ($('#asg-save').onclick=async()=>{
-  const u=$('#asg-user').value; if(!u){ $('#asg-err').textContent='Выберите пользователя'; return; }
+  const isAdmin=me&&me.role==='admin';
+  const u=(isAdmin?$('#asg-user').value:$('#asg-user-nick').value.trim());
+  if(!u){ $('#asg-err').textContent= isAdmin?'Выберите пользователя':'Введите ник пользователя'; return; }
   const perms=$$('#asg-perms input').filter(c=>c.checked).map(c=>c.value);
   const r=await api('POST','/api/servers/'+assignTarget.globalId+'/assign',{username:u,perms:perms});
   if(r.d&&r.d.error){ $('#asg-err').textContent=r.d.error; } else { toast('Доступ обновлён для «'+u+'».', true); refreshAssign(assignTarget.globalId); }
