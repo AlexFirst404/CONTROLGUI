@@ -19,10 +19,16 @@
   --sl-knob-w: 32px; --sl-knob-h: 34px; --sl-face-h: 22px;
 }
 
-/* Кастомный курсор окна. cursor.png — пиксель-арт, перекодирован чисто (исходный
-   12×18 Chromium/WebView2 молча отклонял). !important — чтобы курсор был ОДИН и тот
-   же во ВСЕХ состояниях (на кнопках, ссылках, полях ввода — везде), а не системный. */
-*, *::before, *::after { cursor: url('/assets/cursor.png') 0 0, auto !important; }
+/* Кастомный курсор окна. cursor.png — пиксель-арт 36×54 (×3). Объявляем его как
+   ресурс «3x» через image-set → отображается в 12×18 CSS-px и остаётся чётким на
+   retina (Mac). Без дескриптора 3x он рисовался в нативные 36×54 px — огромным на
+   маке. !important — чтобы курсор был ОДИН и тот же во ВСЕХ состояниях. */
+*, *::before, *::after {
+  cursor: -webkit-image-set(url('/assets/cursor.png') 3x) 0 0, url('/assets/cursor.png') 0 0, auto !important;
+  cursor: image-set(url('/assets/cursor.png') 3x) 0 0, url('/assets/cursor.png') 0 0, auto !important;
+}
+/* html тоже фиксируем — снижает «сброс» текстуры курсора во время инерц. скролла в WebKit */
+html { cursor: -webkit-image-set(url('/assets/cursor.png') 3x) 0 0, auto; }
 
 /* темы кита: меняют только акцент и цвета primary-кнопки */
 .theme-lime {

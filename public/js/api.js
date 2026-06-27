@@ -51,6 +51,8 @@ window.API = (function () {
     command: (id, command) => call('POST', '/api/servers/' + id + '/command', { command: command }),
     properties: (id) => call('GET', '/api/servers/' + id + '/properties'),
     saveProperties: (id, body) => call('PUT', '/api/servers/' + id + '/properties', body),
+    remoteGet: (id) => call('GET', '/api/servers/' + id + '/remote'),
+    remoteSet: (id, enabled) => call('POST', '/api/servers/' + id + '/remote', { enabled: enabled }),
     consoleStream: (id) => new EventSource('/api/servers/' + id + '/console'),
     stats: (id) => call('GET', '/api/servers/' + id + '/stats'),
     player: (id, name) => call('GET', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),

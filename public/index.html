@@ -412,6 +412,25 @@
 
     <!-- Вкладка: настройки -->
     <div class="tab-pane hidden" id="tab-settings">
+      <div class="mc-card form-panel" id="remote-card">
+        <div class="section-title"><i class="pi" data-ic="globe"></i> Удалённое управление</div>
+        <div class="hint" style="margin:0 0 10px">Управляйте этим сервером из любой точки через сайт CONTROLGUI Remote.
+          После включения панель установит защищённый исходящий туннель к центральному серверу (работает за роутером, проброс портов не нужен).
+          Доступны только команды Старт / Стоп / Рестарт — произвольный код не передаётся.</div>
+        <label class="check-row" id="remote-toggle-row" style="margin:0">
+          <span class="mc-check" id="remote-toggle"><span class="tick"></span></span>
+          <span>Включить удалённое управление</span>
+        </label>
+        <div id="remote-status" class="hidden" style="margin-top:12px">
+          <div class="hint" id="remote-code-block" style="margin:0 0 8px">
+            Код привязки (введите его на главной странице <b id="remote-host">сайта</b>, чтобы привязать сервер к своему аккаунту):
+            <div style="font-family:ui-monospace,Consolas,monospace;font-size:26px;letter-spacing:4px;color:var(--mc-accent-bright,#80da5b);margin-top:6px" id="remote-code">—</div>
+          </div>
+          <div class="hint" id="remote-claimed-block" style="margin:0 0 8px;display:none">✓ Сервер привязан к аккаунту владельца.</div>
+          <div class="label-dim" style="font-size:12px">ID сервера: <span id="remote-gid">—</span> · туннель: <span id="remote-online">—</span></div>
+        </div>
+      </div>
+
       <div class="mc-card form-panel" id="core-card">
         <div class="section-title">Ядро сервера</div>
         <div class="hint" id="core-info" style="margin:0 0 10px">Текущее ядро: <b id="core-current">—</b>. Можно скачать его заново (если файлы повредились) или загрузить своё ядро .jar. Сервер должен быть остановлен.</div>

@@ -1857,9 +1857,53 @@
       renderIconCard();
       loadRpCard();
       renderCoreCard();
+      renderRemoteCard();
     } catch (e) {
       showToast(e.message);
     }
+  }
+
+  // ---------- удалённое управление (туннель к CONTROLGUI Remote) ----------
+
+  function paintRemote(info) {
+    const card = $('#remote-card');
+    if (!card) return;
+    const on = !!(info && info.enabled);
+    $('#remote-toggle').classList.toggle('on', on);
+    $('#remote-status').classList.toggle('hidden', !on);
+    if (!on) return;
+    try { $('#remote-host').textContent = String(info.central || '').replace(/^https?:\/\//, ''); } catch (e) { /* */ }
+    $('#remote-gid').textContent = info.globalId || '—';
+    $('#remote-online').textContent = info.online ? 'на связи' : 'подключение…';
+    const claimed = !!info.claimed;
+    $('#remote-claimed-block').style.display = claimed ? '' : 'none';
+    $('#remote-code-block').style.display = claimed ? 'none' : '';
+    if (!claimed) $('#remote-code').textContent = info.linkCode || '—';
+  }
+
+  function renderRemoteCard() {
+    const card = $('#remote-card');
+    if (!card) return;
+    // функция настроек — тем, кто может править настройки
+    card.classList.toggle('hidden', !can('settings.edit'));
+    if (!can('settings.edit') || !state.currentId) return;
+    API.remoteGet(state.currentId).then(paintRemote).catch(() => {});
+  }
+
+  async function toggleRemote() {
+    if (!state.currentId) return;
+    const turnOn = !$('#remote-toggle').classList.contains('on');
+    if (!turnOn) {
+      const ok = await confirmDialog('Выключить удалённое управление этим сервером? Туннель к центральному серверу закроется.',
+        { title: 'Удалённое управление', yesText: 'Выключить', danger: true });
+      if (!ok) return;
+    }
+    await guard(async () => {
+      if (turnOn) showToast('Подключаюсь к центральному серверу…', 'ok');
+      const info = await API.remoteSet(state.currentId, turnOn);
+      paintRemote(info);
+      showToast(turnOn ? 'Удалённое управление включено.' : 'Удалённое управление выключено.', 'ok');
+    });
   }
 
   // ---------- ядро сервера (повторное скачивание / своё ядро) ----------
@@ -3926,6 +3970,9 @@
     // ядро сервера (повторное скачивание / своё ядро)
     $('#core-redownload').addEventListener('click', redownloadCore);
     $('#core-upload-btn').addEventListener('click', () => $('#core-file').click());
+
+    // удалённое управление — клик по тогглу вкл/выкл через API (флаг ставится по факту)
+    $('#remote-toggle-row').addEventListener('click', (e) => { e.preventDefault(); toggleRemote(); });
     $('#core-file').addEventListener('change', (event) => {
       const f = event.target.files[0];
       event.target.value = '';

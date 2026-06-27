@@ -143,6 +143,8 @@ server.listen(PORT, () => {
   console.log('');
   // найти java-процессы серверов, запущенные прошлым экземпляром панели
   try { manager.adoptOrphans(); } catch (e) { console.error('Поиск осиротевших процессов:', e.message); }
+  // переподключить туннели удалённого управления (серверы с включённой функцией)
+  try { require('./lib/remote').initAll(); } catch (e) { console.error('Удалённое управление:', e.message); }
 });
 
 server.on('error', (err) => {

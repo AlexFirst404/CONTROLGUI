@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONTROLGUI Remote — админ</title>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand">CONTROL<b>GUI</b> Remote · админ</div>
+    <div class="row"><a class="btn sm" href="/">На главную</a> <button class="btn sm" id="logout">Выйти</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Заявки на регистрацию <span class="muted" id="pcount"></span></h2>
+    <div id="pending"></div>
+  </div>
+
+  <div class="card">
+    <h2>Все серверы</h2>
+    <div id="servers"></div>
+  </div>
+
+  <div class="card">
+    <h2>Пользователи</h2>
+    <table><thead><tr><th>Ник</th><th>Роль</th><th>Статус</th><th></th></tr></thead><tbody id="users"></tbody></table>
+  </div>
+</div>
+
+<script>
+const $=(s)=>document.querySelector(s);
+async function api(m,u,b){ const r=await fetch(u,{method:m,headers:b?{'Content-Type':'application/json'}:undefined,body:b?JSON.stringify(b):undefined}); let d={}; try{d=await r.json();}catch(e){} return {ok:r.ok,status:r.status,d}; }
+function esc(x){ return String(x==null?'':x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+$('#logout').onclick=async()=>{ await api('POST','/api/logout'); location.href='/'; };
+
+async function guard(){ const r=await api('GET','/api/me'); if(!r.d||!r.d.user){ location.href='/'; return false; } if(r.d.user.role!=='admin'){ location.href='/'; return false; } return true; }
+
+async function loadUsers(){
+  const r=await api('GET','/api/admin/users'); const u=r.d||{};
+  const pend=u.pending||[]; $('#pcount').textContent=pend.length?('('+pend.length+')'):'';
+  $('#pending').innerHTML = pend.length? '' : '<div class="muted">Нет ожидающих заявок.</div>';
+  for(const p of pend){
+    const el=document.createElement('div'); el.className='srv';
+    el.innerHTML='<div class="grow"><div class="nm">'+esc(p.username)+'</div><div class="meta">'+esc(p.createdAt||'')+'</div></div>';
+    const ok=document.createElement('button'); ok.className='btn sm primary'; ok.textContent='Одобрить';
+    ok.onclick=async()=>{ await api('POST','/api/admin/approve',{username:p.username}); loadUsers(); };
+    const no=document.createElement('button'); no.className='btn sm danger'; no.textContent='Отклонить';
+    no.onclick=async()=>{ if(confirm('Отклонить '+p.username+'?')){ await api('POST','/api/admin/reject',{username:p.username}); loadUsers(); } };
+    el.appendChild(ok); el.appendChild(no); $('#pending').appendChild(el);
+  }
+  const tb=$('#users'); tb.innerHTML='';
+  for(const us of (u.users||[])){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+esc(us.username)+'</td><td>'+esc(us.role)+'</td><td>'+(us.approved?'<span class="ok">одобрен</span>':'<span class="muted">ждёт</span>')+'</td><td></td>';
+    if(us.role!=='admin'){ const d=document.createElement('button'); d.className='btn sm danger'; d.textContent='Удалить';
+      d.onclick=async()=>{ if(confirm('Удалить пользователя '+us.username+'?')){ await api('POST','/api/admin/reject',{username:us.username}); loadUsers(); } };
+      tr.lastChild.appendChild(d); }
+    tb.appendChild(tr);
+  }
+}
+async function loadServers(){
+  const r=await api('GET','/api/admin/servers'); const list=(r.d&&r.d.servers)||[];
+  const box=$('#servers'); if(!list.length){ box.innerHTML='<div class="muted">Пока нет подключённых серверов.</div>'; return; }
+  box.innerHTML='';
+  for(const s of list){
+    const el=document.createElement('div'); el.className='srv';
+    el.innerHTML='<span class="dot'+(s.online?' on':'')+'"></span><div class="grow"><div class="nm">'+esc(s.name)+'</div>'+
+      '<div class="meta">'+(s.type?esc(s.type)+' ':'')+(s.version?esc(s.version):'')+' · '+esc(s.status||'—')+' · владелец: '+(s.owner?esc(s.owner):'<i>не привязан</i>')+
+      ' · доступ: '+((s.access||[]).map(a=>esc(a.username)).join(', ')||'—')+'</div></div>'+
+      (s.status==='running'?'<span class="badge run">RUNNING</span>':'')+'<div class="row acts"></div>';
+    const acts=el.querySelector('.acts');
+    for(const [a,l,c] of [['start','Старт','primary'],['stop','Стоп','danger'],['restart','Рестарт','']]){
+      const b=document.createElement('button'); b.className='btn sm '+c; b.textContent=l;
+      b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false; if(rr.d&&rr.d.error)alert(rr.d.error); setTimeout(loadServers,1000); };
+      acts.appendChild(b);
+    }
+    const asg=document.createElement('button'); asg.className='btn sm'; asg.textContent='Назначить';
+    asg.onclick=async()=>{ const u=prompt('Назначить сервер пользователю (ник):'); if(!u)return; const manage=confirm('Разрешить управление? OK=да, Отмена=только просмотр.');
+      const rr=await api('POST','/api/servers/'+s.globalId+'/assign',{username:u.trim(),perms:manage?['start','stop','restart']:[]}); if(rr.d&&rr.d.error)alert(rr.d.error); else loadServers(); };
+    acts.appendChild(asg);
+    const rm=document.createElement('button'); rm.className='btn sm danger'; rm.textContent='Убрать';
+    rm.onclick=async()=>{ if(confirm('Убрать сервер «'+s.name+'» из реестра?')){ await api('POST','/api/admin/remove-server',{globalId:s.globalId}); loadServers(); } };
+    acts.appendChild(rm);
+    box.appendChild(el);
+  }
+}
+(async()=>{ if(await guard()){ loadUsers(); loadServers(); setInterval(loadServers, 8000); } })();
+</script>
+</body>
+</html>

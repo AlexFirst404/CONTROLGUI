@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONTROLGUI Remote</title>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand">CONTROL<b>GUI</b> Remote</div>
+    <div class="row" id="userbar"></div>
+  </div>
+
+  <!-- АВТОРИЗАЦИЯ -->
+  <div id="auth" class="card hidden" style="max-width:420px;margin:40px auto">
+    <div class="tabs">
+      <button class="btn active" id="tab-login">Вход</button>
+      <button class="btn" id="tab-reg">Регистрация</button>
+    </div>
+    <form id="form-login">
+      <label>Логин</label><input id="li-user" autocomplete="username" required>
+      <label>Пароль</label><input id="li-pass" type="password" autocomplete="current-password" required>
+      <div class="err" id="li-err"></div>
+      <div class="row" style="margin-top:12px"><button class="btn primary grow" type="submit">Войти</button></div>
+    </form>
+    <form id="form-reg" class="hidden">
+      <label>Логин (ник)</label><input id="rg-user" required>
+      <label>Пароль (мин. 6)</label><input id="rg-pass" type="password" required>
+      <div class="err" id="rg-err"></div>
+      <div class="muted" style="margin-top:6px">После регистрации аккаунт ждёт одобрения администратором.</div>
+      <div class="row" style="margin-top:12px"><button class="btn primary grow" type="submit">Зарегистрироваться</button></div>
+    </form>
+  </div>
+
+  <!-- ПРИЛОЖЕНИЕ -->
+  <div id="app" class="hidden">
+    <div class="card">
+      <h2>Привязать сервер</h2>
+      <div class="muted">Включите «Удалённое управление» в настройках сервера в панели CONTROLGUI — там покажется код. Введите его здесь.</div>
+      <div class="row" style="margin-top:10px">
+        <input id="link-code" class="grow" placeholder="Код привязки (напр. AB12-CD34)" maxlength="9" style="text-transform:uppercase">
+        <button class="btn primary" id="link-btn">Привязать</button>
+      </div>
+      <div class="err" id="link-err"></div>
+    </div>
+    <div class="card">
+      <h2>Мои серверы</h2>
+      <div id="servers"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+async function api(method, url, body){
+  const r = await fetch(url, { method, headers: body?{'Content-Type':'application/json'}:undefined, body: body?JSON.stringify(body):undefined });
+  let d={}; try{ d=await r.json(); }catch(e){}
+  return { ok:r.ok, status:r.status, d };
+}
+function show(el,on){ $(el).classList.toggle('hidden', !on); }
+
+let me = null;
+async function load(){
+  const r = await api('GET','/api/me');
+  me = r.d && r.d.user;
+  if(me){ show('#auth',false); show('#app',true); renderUser(); loadServers(); }
+  else { show('#auth',true); show('#app',false); $('#userbar').innerHTML=''; }
+}
+function renderUser(){
+  const admin = me.role==='admin';
+  $('#userbar').innerHTML = '<span class="muted">'+me.username+(admin?' · админ':'')+'</span>'+
+    (admin?' <a class="btn sm" href="/admin">Админка</a>':'')+
+    ' <button class="btn sm" id="logout">Выйти</button>';
+  $('#logout').onclick = async()=>{ await api('POST','/api/logout'); load(); };
+}
+async function loadServers(){
+  const r = await api('GET','/api/servers');
+  const list = (r.d && r.d.servers) || [];
+  const box = $('#servers');
+  if(!list.length){ box.innerHTML = '<div class="muted">У вас нет доступных удалённых серверов. Привяжите свой по коду выше'+(me.role==='admin'?' (или вам назначат).':' или попросите админа назначить.')+'</div>'; return; }
+  box.innerHTML='';
+  for(const s of list){
+    const can = s.role==='owner'||s.role==='admin'||s.role==='assigned';
+    const el = document.createElement('div'); el.className='srv';
+    el.innerHTML = '<span class="dot'+(s.online?' on':'')+'" title="'+(s.online?'панель на связи':'панель офлайн')+'"></span>'+
+      '<div class="grow"><div class="nm">'+esc(s.name)+'</div>'+
+      '<div class="meta">'+(s.type?esc(s.type)+' ':'')+(s.version?esc(s.version):'')+' · статус: '+esc(s.status||'—')+(s.owner?' · владелец: '+esc(s.owner):'')+'</div></div>'+
+      (s.role==='owner'?'<span class="badge own">МОЙ</span>':'')+
+      (s.status==='running'?'<span class="badge run">RUNNING</span>':'')+
+      '<div class="row acts"></div>';
+    const acts = el.querySelector('.acts');
+    if(can){
+      for(const [a,label] of [['start','Старт'],['stop','Стоп'],['restart','Рестарт']]){
+        const b=document.createElement('button'); b.className='btn sm'+(a==='start'?' primary':a==='stop'?' danger':''); b.textContent=label;
+        b.onclick=async()=>{ b.disabled=true; const rr=await api('POST','/api/servers/'+s.globalId+'/action',{action:a}); b.disabled=false;
+          if(rr.d&&rr.d.error) alert(rr.d.error); setTimeout(loadServers,1000); };
+        acts.appendChild(b);
+      }
+    }
+    if(s.role==='owner'||s.role==='admin'){
+      const ab=document.createElement('button'); ab.className='btn sm'; ab.textContent='Доступ…';
+      ab.onclick=()=>assignPrompt(s); acts.appendChild(ab);
+    }
+    box.appendChild(el);
+  }
+}
+async function assignPrompt(s){
+  const u = prompt('Выдать доступ пользователю (ник). Текущие: '+(s.access||[]).map(a=>a.username+(a.perms.length?' (упр.)':' (просмотр)')).join(', '));
+  if(!u) return;
+  const manage = confirm('Разрешить управление (старт/стоп/рестарт)? OK = да, Отмена = только просмотр.');
+  const r = await api('POST','/api/servers/'+s.globalId+'/assign',{username:u.trim(), perms: manage?['start','stop','restart']:[]});
+  if(r.d&&r.d.error) alert(r.d.error); else loadServers();
+}
+function esc(x){ return String(x==null?'':x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+$('#tab-login').onclick=()=>{ $('#tab-login').classList.add('active'); $('#tab-reg').classList.remove('active'); show('#form-login',true); show('#form-reg',false); };
+$('#tab-reg').onclick=()=>{ $('#tab-reg').classList.add('active'); $('#tab-login').classList.remove('active'); show('#form-login',false); show('#form-reg',true); };
+$('#form-login').onsubmit=async(e)=>{ e.preventDefault(); const r=await api('POST','/api/login',{username:$('#li-user').value,password:$('#li-pass').value});
+  if(r.ok) load(); else $('#li-err').textContent=(r.d&&r.d.error)||'Ошибка'; };
+$('#form-reg').onsubmit=async(e)=>{ e.preventDefault(); const r=await api('POST','/api/register',{username:$('#rg-user').value,password:$('#rg-pass').value});
+  if(r.ok){ $('#rg-err').className='err ok'; $('#rg-err').textContent='Заявка отправлена — ждите одобрения админа.'; } else { $('#rg-err').className='err'; $('#rg-err').textContent=(r.d&&r.d.error)||'Ошибка'; } };
+$('#link-btn').onclick=async()=>{ const r=await api('POST','/api/link',{code:$('#link-code').value});
+  if(r.d&&r.d.error){ $('#link-err').className='err'; $('#link-err').textContent=r.d.error; } else { $('#link-err').className='err ok'; $('#link-err').textContent='Сервер привязан!'; $('#link-code').value=''; loadServers(); } };
+load();
+</script>
+</body>
+</html>
