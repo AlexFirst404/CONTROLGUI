@@ -1,0 +1,63 @@
+name: Build macOS PKG
+
+# Собирает .pkg-установщик (Apple Silicon + Intel) на macOS-раннерах. Окно нативное
+# (Swift + WKWebView). Запуск: при изменении сборки/панели на ветке linux-deb, либо
+# вручную: Actions → Build macOS PKG → Run workflow.
+on:
+  push:
+    branches: [linux-deb]
+    paths:
+      - 'mac/**'
+      - 'server.js'
+      - 'lib/**'
+      - 'public/**'
+      - '.github/workflows/pkg.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия (для имени файла)'
+        required: true
+        default: '1.3.0'
+      release_tag:
+        description: 'Тег релиза, куда заливать .pkg'
+        required: true
+        default: 'v1.3.0-linux'
+
+permissions:
+  contents: write
+
+env:
+  VERSION: ${{ github.event.inputs.version || '1.3.0' }}
+  RELEASE_TAG: ${{ github.event.inputs.release_tag || 'v1.3.0-linux' }}
+
+jobs:
+  pkg:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-14, arch: arm64 }
+          - { runner: macos-13, arch: x64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Собрать PKG
+        run: |
+          chmod +x mac/build-pkg.sh
+          ./mac/build-pkg.sh "$VERSION"
+          ls -lh mac/*.pkg
+
+      - name: Прикрепить к релизу
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" mac/*.pkg --clobber --repo "${{ github.repository }}"
+
+      - name: Сохранить как артефакты сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlgui-pkg-${{ matrix.arch }}
+          path: mac/*.pkg
