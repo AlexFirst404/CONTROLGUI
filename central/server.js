@@ -153,14 +153,30 @@ async function handleAuth(req, res, urlPath) {
   return false;
 }
 
+const PAGE_CSS = 'body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
+  + 'background:#1a1a1a;color:#e6e6e6;font-family:system-ui,Segoe UI,sans-serif;text-align:center}'
+  + '.c{max-width:420px;padding:28px}h1{color:#80da5b;font-size:20px;margin:0 0 10px}'
+  + 'p{color:#bdbdbd;line-height:1.5}';
 function htmlPage(res, code, title, msg) {
   res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end('<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>' + title + '</title>'
-    + '<style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
-    + 'background:#1a1a1a;color:#e6e6e6;font-family:system-ui,Segoe UI,sans-serif;text-align:center}'
-    + '.c{max-width:420px;padding:28px}h1{color:#80da5b;font-size:20px;margin:0 0 10px}'
-    + 'p{color:#bdbdbd;line-height:1.5}</style></head><body><div class="c"><h1>' + title + '</h1><p>'
+    + '<style>' + PAGE_CSS + '</style></head><body><div class="c"><h1>' + title + '</h1><p>'
     + msg + '</p></div></body></html>');
+}
+/* Страница callback implicit-grant: достаёт access_token из #fragment и шлёт на /finish. */
+function discordCallbackPage(res) {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end('<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Discord</title><style>' + PAGE_CSS
+    + '</style></head><body><div class="c" id="box"><h1>Привязка Discord…</h1><p>Секунду…</p></div><script>'
+    + '(function(){function show(t,m){document.getElementById("box").innerHTML="<h1>"+t+"</h1><p>"+m+"</p>";}'
+    + 'var p=new URLSearchParams((location.hash||"").replace(/^#/,""));'
+    + 'var at=p.get("access_token"),st=p.get("state"),err=p.get("error");'
+    + 'try{history.replaceState(null,"",location.pathname);}catch(e){}'
+    + 'if(err){show("Не получилось","Discord вернул ошибку: "+err);return;}'
+    + 'if(!at){show("Не получилось","Не получили токен от Discord. Повторите привязку из приложения.");return;}'
+    + 'fetch("/api/account/discord/finish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({state:st,access_token:at})})'
+    + '.then(function(r){return r.json();}).then(function(d){if(d&&d.ok){show("Discord привязан","Аккаунт <b>"+(d.name||"")+"</b> привязан. Закройте это окно и вернитесь в приложение.");}else{show("Не получилось",(d&&d.error)||"Ошибка привязки");}})'
+    + '.catch(function(){show("Ошибка сети","Не удалось связаться с сервером.");});})();</script></body></html>');
 }
 
 // ---------------- Discord OAuth (публично: state/lt вместо cookie-сессии) ----------------
@@ -177,18 +193,20 @@ async function handleDiscordOAuth(req, res, urlPath, url) {
     res.writeHead(302, { Location: discord.authorizeUrl(state) });
     return res.end();
   }
-  // callback от Discord (браузер пользователя)
+  // callback от Discord (implicit): токен в #fragment — отдаём страницу с JS, которая шлёт его на /finish
   if (urlPath === '/api/account/discord/callback' && req.method === 'GET') {
-    const code = url.searchParams.get('code') || '';
-    const state = url.searchParams.get('state') || '';
-    const v = discord.takeState(state);
-    if (!v || !code) return htmlPage(res, 400, 'Ошибка', 'Ссылка устарела или недействительна. Повторите привязку из приложения.');
-    let prof;
-    try { prof = await discord.exchange(code); } catch (e) { prof = { error: 'Discord недоступен' }; }
-    if (prof.error) return htmlPage(res, 502, 'Не получилось', prof.error + '. Повторите попытку.');
+    return discordCallbackPage(res);
+  }
+  // приём токена со страницы callback: валидируем у Discord и привязываем (публично — state защищает)
+  if (urlPath === '/api/account/discord/finish' && req.method === 'POST') {
+    const b = await readBody(req, 16 * 1024);
+    const v = discord.takeState(String(b.state || ''));
+    if (!v) return json(res, 400, { error: 'Ссылка устарела. Повторите привязку из приложения.' });
+    const prof = await discord.fetchUser(String(b.access_token || ''));
+    if (prof.error) return json(res, 502, { error: prof.error });
     const r = accounts.setDiscord(v.username, prof);
-    if (r.error) return htmlPage(res, 409, 'Не получилось', r.error);
-    return htmlPage(res, 200, 'Discord привязан', 'Аккаунт <b>' + prof.name + '</b> привязан. Можно закрыть это окно и вернуться в приложение.');
+    if (r.error) return json(res, 409, { error: r.error });
+    return json(res, 200, { ok: true, name: prof.name });
   }
   return false;
 }

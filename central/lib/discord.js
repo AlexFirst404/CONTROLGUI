@@ -1,15 +1,18 @@
 'use strict';
 /* Discord OAuth2 (scope=identify), без npm — https напрямую.
-   Включается, когда заданы DISCORD_CLIENT_ID и DISCORD_CLIENT_SECRET (env на VPS).
-   redirect_uri выводится из текущего эндпоинта центра (settings.endpoint). */
+   IMPLICIT grant (response_type=token): нужен только DISCORD_CLIENT_ID (публичный) —
+   client secret НЕ требуется (у нас есть только bot-токен). Токен возвращается в
+   #fragment браузеру, callback-страница шлёт его на /finish, сервер валидирует его
+   через GET /users/@me (личность подтверждает сам Discord). redirect_uri регистрируется
+   в дашборде приложения вручную. redirect_uri выводится из settings.endpoint. */
 const https = require('https');
 const crypto = require('crypto');
 const settings = require('./settings');
 
 function cfg() {
-  return { clientId: process.env.DISCORD_CLIENT_ID || '', clientSecret: process.env.DISCORD_CLIENT_SECRET || '' };
+  return { clientId: process.env.DISCORD_CLIENT_ID || '' };
 }
-function enabled() { const c = cfg(); return !!(c.clientId && c.clientSecret); }
+function enabled() { return !!cfg().clientId; }
 
 function redirectUri() {
   const e = settings.endpoint();
@@ -20,7 +23,7 @@ function authorizeUrl(state) {
   const c = cfg();
   const p = new URLSearchParams({
     client_id: c.clientId, redirect_uri: redirectUri(),
-    response_type: 'code', scope: 'identify', state, prompt: 'consent',
+    response_type: 'token', scope: 'identify', state, prompt: 'consent',
   });
   return 'https://discord.com/api/oauth2/authorize?' + p.toString();
 }
@@ -36,33 +39,22 @@ function takeLinkToken(t) { const v = linkTokens.get(t); if (!v) return null; li
 const _t = setInterval(() => { const now = Date.now(); for (const [k, v] of states) if (now > v.expires) states.delete(k); for (const [k, v] of linkTokens) if (now > v.expires) linkTokens.delete(k); }, 5 * 60 * 1000);
 if (_t.unref) _t.unref();
 
-function postForm(host, p, form) {
-  return new Promise((resolve, reject) => {
-    const body = new URLSearchParams(form).toString();
-    const req = https.request({ host, path: p, method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } },
-      (res) => { let d = ''; res.on('data', (c) => d += c); res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(d || '{}') }); } catch (e) { resolve({ status: res.statusCode, json: {} }); } }); });
-    req.on('error', reject); req.write(body); req.end();
-  });
-}
 function getJson(host, p, token) {
   return new Promise((resolve, reject) => {
     const req = https.request({ host, path: p, method: 'GET', headers: { Authorization: 'Bearer ' + token } },
       (res) => { let d = ''; res.on('data', (c) => d += c); res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(d || '{}') }); } catch (e) { resolve({ status: res.statusCode, json: {} }); } }); });
-    req.on('error', reject); req.end();
+    req.on('error', reject); req.setTimeout(10000, () => req.destroy(new Error('timeout'))); req.end();
   });
 }
 
-/* code -> токен -> профиль. {id, name} или {error}. */
-async function exchange(code) {
-  const c = cfg();
-  const tok = await postForm('discord.com', '/api/oauth2/token', {
-    client_id: c.clientId, client_secret: c.clientSecret, grant_type: 'authorization_code', code, redirect_uri: redirectUri(),
-  });
-  if (tok.status !== 200 || !tok.json.access_token) return { error: 'Discord: не удалось получить токен' };
-  const me = await getJson('discord.com', '/api/users/@me', tok.json.access_token);
+/* access_token (из implicit-фрагмента) -> профиль. Личность подтверждает сам Discord. {id, name} или {error}. */
+async function fetchUser(accessToken) {
+  if (!/^[A-Za-z0-9._-]{8,256}$/.test(String(accessToken || ''))) return { error: 'Некорректный токен' };
+  let me;
+  try { me = await getJson('discord.com', '/api/users/@me', accessToken); } catch (e) { return { error: 'Discord недоступен' }; }
   if (me.status !== 200 || !me.json.id) return { error: 'Discord: не удалось получить профиль' };
   const name = me.json.username + (me.json.discriminator && me.json.discriminator !== '0' ? '#' + me.json.discriminator : '');
   return { id: String(me.json.id), name };
 }
 
-module.exports = { enabled, authorizeUrl, redirectUri, makeState, takeState, makeLinkToken, takeLinkToken, exchange };
+module.exports = { enabled, authorizeUrl, redirectUri, makeState, takeState, makeLinkToken, takeLinkToken, fetchUser };
