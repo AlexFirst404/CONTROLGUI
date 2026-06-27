@@ -8,6 +8,7 @@ const path = require('path');
 const accounts = require('./lib/accounts');
 const servers = require('./lib/servers');
 const agents = require('./lib/agents');
+const proxy = require('./lib/proxy');
 
 const PORT = parseInt(process.env.PORT, 10) || 443;
 const CERT = process.env.CGR_CERT || path.join(__dirname, 'cert', 'cert.pem');
@@ -86,6 +87,12 @@ async function handleAgent(req, res, urlPath, url) {
     const b = await readBody(req, 256 * 1024);
     if (!servers.byToken(b.token)) return json(res, 401, { error: 'bad token' });
     agents.result(String(b.token), String(b.reqId || ''), b.result); // token-привязка результата
+    return json(res, 200, { ok: true });
+  }
+  if (urlPath === '/agent/chunk' && req.method === 'POST') {
+    const b = await readBody(req, 4 * 1024 * 1024);
+    if (!servers.byToken(b.token)) return json(res, 401, { error: 'bad token' });
+    agents.chunk(String(b.token), String(b.reqId || ''), b);
     return json(res, 200, { ok: true });
   }
   if (urlPath === '/agent/deregister' && req.method === 'POST') {
@@ -213,6 +220,13 @@ async function handle(req, res) {
     const urlPath = url.pathname;
     if (urlPath.startsWith('/agent/')) { const r = await handleAgent(req, res, urlPath, url); if (r !== false) return; res.writeHead(404); return res.end(); }
     if (await handleAuth(req, res, urlPath) !== false) return;
+    // полное удалённое управление: /r/<globalId>/<путь панели> -> туннель (нужна сессия)
+    if (urlPath.startsWith('/r/')) {
+      const user = accounts.userFromReq(req);
+      if (!user) return json(res, 401, { error: 'Нужен вход', login: true });
+      if (await proxy.handle(req, res, urlPath, user, json)) return;
+      return json(res, 404, { error: 'Не найдено' });
+    }
     if (urlPath.startsWith('/api/')) {
       const user = accounts.userFromReq(req);
       if (!user) return json(res, 401, { error: 'Нужен вход', login: true });
