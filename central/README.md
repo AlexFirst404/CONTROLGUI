@@ -19,10 +19,23 @@ HTTPS на самоподписанном сертификате.
 ## Деплой
 ```sh
 scp -r central root@IP:/opt/controlgui-remote
-ssh root@IP 'bash /opt/controlgui-remote/deploy/setup.sh'
+ssh root@IP 'sed -i "s/\r$//" /opt/controlgui-remote/deploy/*.sh; sh /opt/controlgui-remote/deploy/setup.sh'
 ```
-Скрипт ставит Node, генерирует серт на IP, заводит systemd-сервис на :443, открывает
-firewall. Пароль первого админа — в `data/ADMIN-CREDENTIALS.txt`.
+Скрипт ставит Node, создаёт непривилегированного пользователя `cgremote`, генерирует серт
+на IP, заводит sandbox'нутый systemd-сервис на :443 (CAP_NET_BIND_SERVICE, NoNewPrivileges,
+ProtectSystem=strict), добавляет правила firewall. Пароль первого админа — в
+`data/ADMIN-CREDENTIALS.txt` (chmod 600). `sed` снимает CR на случай, если архив собран на Windows.
+
+### Пиннинг серта (важно при ПЕРЕ-деплое)
+Панель пинит точный отпечаток серта (`lib/central-cert.pem`). Сервер серт НЕ регенерирует,
+если `cert/cert.pem` уже есть — поэтому обычный апдейт кода пин не ломает. Но если
+разворачиваешь на ЧИСТЫЙ сервер (новый серт), нужно: забрать новый `cert/cert.pem` с VPS →
+положить в `lib/central-cert.pem` панели → пересобрать установщики (иначе туннель не поднимется
+из-за несовпадения пина).
+
+### Бэкап
+`data/*.json` — единственная копия аккаунтов и реестра. Атомарная запись (tmp+rename) делает
+`cp` безопасным в любой момент. Настройте периодический off-box бэкап (cron/systemd-timer).
 
 ## Данные
 JSON в `data/` (атомарная запись tmp+rename): `accounts.json`, `servers.json`.
