@@ -373,14 +373,6 @@
     </div>
 
     <div class="mc-card form-panel" style="max-width:520px;margin:16px auto 0">
-      <div class="section-title">Смена пароля</div>
-      <label class="mc-label">Текущий пароль<input class="fld" id="pf-pw-cur" type="password" autocomplete="current-password"></label>
-      <label class="mc-label" style="margin-top:10px">Новый пароль (мин. 6)<input class="fld" id="pf-pw-new" type="password" autocomplete="new-password"></label>
-      <div class="err" id="pf-pw-err"></div>
-      <button class="mc-btn sm primary" id="pf-pw-btn" style="margin-top:12px"><i class="pi" data-ic="check"></i> Сменить пароль</button>
-    </div>
-
-    <div class="mc-card form-panel" style="max-width:520px;margin:16px auto 0">
       <div class="section-title">Discord</div>
       <div id="pf-discord-linked" class="hidden">
         <div class="hint" style="margin:0 0 12px">Привязан: <b id="pf-discord-name"></b></div>
@@ -397,9 +389,23 @@
 
     <div class="btn-row btn-row-left" style="max-width:520px;margin:18px auto 0">
       <button class="mc-btn" id="pf-back"><i class="pi" data-ic="server"></i> К серверам</button>
+      <button class="mc-btn" id="pf-pw-open" style="background:#c8731f;border-color:#e7913a;color:#fff"><i class="pi" data-ic="key"></i> Сбросить пароль</button>
       <button class="mc-btn danger" id="pf-logout"><i class="pi" data-ic="close"></i> Выйти из аккаунта</button>
     </div>
   </section>
+
+  <!-- МОДАЛКА: смена пароля -->
+  <div id="pw-modal" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head"><span>Смена пароля</span><button class="mc-btn sm" id="pw-close"><i class="pi" data-ic="close"></i></button></div>
+      <div class="modal-body">
+        <label class="mc-label">Текущий пароль<input class="fld" id="pwm-cur" type="password" autocomplete="current-password"></label>
+        <label class="mc-label" style="margin-top:10px">Новый пароль (мин. 6)<input class="fld" id="pwm-new" type="password" autocomplete="new-password"></label>
+        <div class="err" id="pwm-err"></div>
+        <button class="mc-btn primary" id="pwm-save" style="margin-top:14px;width:100%"><i class="pi" data-ic="check"></i> Сменить пароль</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ЭКРАН: ПОЛЬЗОВАТЕЛИ -->
   <section id="screen-users" class="screen hidden">

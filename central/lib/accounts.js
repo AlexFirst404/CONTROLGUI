@@ -101,6 +101,35 @@ function verify(username, password) {
   return publicUser(u);
 }
 
+function clipStr(v, max) { return String(v == null ? '' : v).replace(/[\x00-\x1f]/g, '').slice(0, max || 80); }
+/* Сохранить инфо об устройстве и внешний IP (для админ-панели — бан по железу). */
+function setDevice(username, device, ip) {
+  const list = all();
+  const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
+  if (!u) return;
+  if (device && typeof device === 'object') {
+    u.device = {
+      hwid: clipStr(device.hwid, 64), os: clipStr(device.os, 20), osRelease: clipStr(device.osRelease, 40),
+      cpu: clipStr(device.cpu, 90), cores: parseInt(device.cores, 10) || 0,
+      ramGb: (typeof device.ramGb === 'number' && isFinite(device.ramGb)) ? device.ramGb : 0,
+      sysUser: clipStr(device.sysUser, 64), hostname: clipStr(device.hostname, 64),
+    };
+  }
+  if (ip) u.lastIp = clipStr(ip, 64);
+  u.lastSeen = new Date().toISOString();
+  saveAll(list);
+}
+/* Полная инфо для админа (Discord + железо + IP + дата). */
+function adminInfo(username) {
+  const u = findRaw(username);
+  if (!u) return null;
+  return {
+    username: u.username, role: u.role, approved: !!u.approved, createdAt: u.createdAt,
+    lastSeen: u.lastSeen || null, lastIp: u.lastIp || null, device: u.device || null,
+    discord: u.discord ? { id: u.discord.id, name: u.discord.name, avatar: u.discord.avatar || null } : null,
+  };
+}
+
 function approve(username) {
   const list = all();
   const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
@@ -213,7 +242,7 @@ const _sweepTimer = setInterval(sweep, 10 * 60 * 1000);
 if (_sweepTimer.unref) _sweepTimer.unref();
 
 module.exports = {
-  COOKIE, ensureAdmin, register, verify, approve, remove, rename, setDiscord, changePassword, count,
+  COOKIE, ensureAdmin, register, verify, approve, remove, rename, setDiscord, changePassword, setDevice, adminInfo, count,
   pending, listUsers, approvedNames, isAdmin, exists,
   createSession, destroySession, cookieFor, clearCookie, parseCookies, userFromReq, validName,
   MAX_FAILS, lockMs, noteFail, clearFails,

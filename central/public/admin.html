@@ -56,6 +56,13 @@
     </div>
   </div>
 </div>
+<div id="info-modal" class="asg-overlay hidden">
+  <div class="card" style="max-width:520px;width:94%;max-height:90vh;overflow:auto">
+    <h2 id="info-title">Пользователь</h2>
+    <div id="info-body"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="mc-btn sm" id="info-close">Закрыть</button></div>
+  </div>
+</div>
 
 <script>
 const $=(s)=>document.querySelector(s);
@@ -87,12 +94,40 @@ async function loadUsers(){
   for(const us of (u.users||[])){
     const tr=document.createElement('tr');
     tr.innerHTML='<td>'+esc(us.username)+'</td><td>'+esc(us.role)+'</td><td>'+(us.approved?'<span class="ok">одобрен</span>':'<span class="muted">ждёт</span>')+'</td><td></td>';
+    const info=document.createElement('button'); info.className='mc-btn sm'; info.textContent='Инфо'; info.style.marginRight='6px';
+    info.onclick=()=>showUserInfo(us.username); tr.lastChild.appendChild(info);
     if(us.role!=='admin'){ const d=document.createElement('button'); d.className='mc-btn sm danger'; d.textContent='Удалить';
       d.onclick=async()=>{ if(await confirmModal('Удалить пользователя «'+us.username+'»?','Удалить')){ await api('POST','/api/admin/reject',{username:us.username}); toast('Пользователь удалён.',true); loadUsers(); } };
       tr.lastChild.appendChild(d); }
     tb.appendChild(tr);
   }
 }
+async function showUserInfo(username){
+  $('#info-title').textContent='Пользователь: '+username;
+  const box=$('#info-body'); box.innerHTML='<div class="muted">Загрузка…</div>'; show('#info-modal',true);
+  const r=await api('GET','/api/admin/user-info?username='+encodeURIComponent(username));
+  const i=r.d&&r.d.info;
+  if(!i){ box.innerHTML='<div class="muted">Нет данных.</div>'; return; }
+  const d=i.device||{}; const fmt=(v)=>v?new Date(v).toLocaleString('ru-RU'):'—';
+  const rows=[
+    ['Зарегистрирован', fmt(i.createdAt)],
+    ['Последний вход', fmt(i.lastSeen)],
+    ['Внешний IP', i.lastIp||'—'],
+    ['HWID (железо)', d.hwid||'—'],
+    ['Система', (d.os||'—')+(d.osRelease?' '+d.osRelease:'')],
+    ['Процессор', (d.cpu||'—')+(d.cores?' · '+d.cores+' ядр.':'')],
+    ['Оперативка', d.ramGb?d.ramGb+' ГБ':'—'],
+    ['Пользователь ОС', d.sysUser||'—'],
+    ['Имя машины', d.hostname||'—'],
+    ['Discord', i.discord?(i.discord.name+' ('+i.discord.id+')'):'не привязан'],
+  ];
+  let html='';
+  if(i.discord&&i.discord.avatar) html+='<div style="text-align:center;margin:0 0 12px"><img alt="" src="'+esc(i.discord.avatar)+'" style="width:60px;height:60px;border-radius:50%;border:2px solid #454545"></div>';
+  html+='<table>'+rows.map((r)=>'<tr><td class="muted" style="padding:4px 14px 4px 0;white-space:nowrap;vertical-align:top">'+esc(r[0])+'</td><td style="word-break:break-all">'+esc(r[1])+'</td></tr>').join('')+'</table>';
+  box.innerHTML=html;
+}
+$('#info-close') && ($('#info-close').onclick=()=>show('#info-modal',false));
+$('#info-modal') && ($('#info-modal').onclick=(e)=>{ if(e.target.id==='info-modal') show('#info-modal',false); });
 async function loadServers(){
   const r=await api('GET','/api/admin/servers'); const list=(r.d&&r.d.servers)||[];
   const box=$('#servers'); if(!list.length){ box.innerHTML='<div class="muted">Пока нет подключённых серверов.</div>'; return; }

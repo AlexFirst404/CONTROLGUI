@@ -846,11 +846,18 @@
   function setupProfile() {
     if (profileBound || !$('#screen-profile')) return;
     profileBound = true;
-    $('#pf-pw-btn').addEventListener('click', async () => {
-      const err = $('#pf-pw-err'); err.className = 'err'; err.textContent = '';
-      const cur = $('#pf-pw-cur').value; const nw = $('#pf-pw-new').value;
+    // смена пароля — в отдельной модалке (кнопка «Сбросить пароль»)
+    $('#pf-pw-open').addEventListener('click', () => {
+      $('#pwm-cur').value = ''; $('#pwm-new').value = ''; $('#pwm-err').textContent = '';
+      $('#pw-modal').classList.remove('hidden'); setTimeout(() => $('#pwm-cur').focus(), 40);
+    });
+    $('#pw-close').addEventListener('click', () => $('#pw-modal').classList.add('hidden'));
+    $('#pw-modal').addEventListener('click', (e) => { if (e.target.id === 'pw-modal') $('#pw-modal').classList.add('hidden'); });
+    $('#pwm-save').addEventListener('click', async () => {
+      const err = $('#pwm-err'); err.className = 'err'; err.textContent = '';
+      const cur = $('#pwm-cur').value; const nw = $('#pwm-new').value;
       if (!cur || nw.length < 6) { err.textContent = 'Текущий пароль и новый (минимум 6 символов).'; return; }
-      try { await API.centralChangePassword(cur, nw); $('#pf-pw-cur').value = ''; $('#pf-pw-new').value = ''; err.className = 'err ok'; err.textContent = 'Пароль изменён.'; showToast('Пароль изменён.', 'ok'); }
+      try { await API.centralChangePassword(cur, nw); $('#pw-modal').classList.add('hidden'); showToast('Пароль изменён.', 'ok'); }
       catch (e) { err.className = 'err'; err.textContent = e.message; }
     });
     $('#pf-rename-btn').addEventListener('click', async () => {

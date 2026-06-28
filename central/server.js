@@ -151,6 +151,7 @@ async function handleAuth(req, res, urlPath) {
     // авто-одобрение (v1.4): сразу логиним — «просто логин и пароль» работает с первого запуска
     const u = accounts.verify(b.username, b.password);
     if (!u || u.pending) return json(res, 200, { ok: true }); // на всякий случай — деградация
+    accounts.setDevice(u.username, b.device, clientIp(req)); // железо/IP для админ-панели
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': accounts.cookieFor(accounts.createSession(u.username)) });
     return res.end(JSON.stringify({ ok: true, user: u }));
   }
@@ -162,6 +163,7 @@ async function handleAuth(req, res, urlPath) {
     const u = accounts.verify(b.username, b.password);
     if (u && !u.pending) {
       accounts.clearFails(ip);
+      accounts.setDevice(u.username, b.device, ip); // железо/IP для админ-панели
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': accounts.cookieFor(accounts.createSession(u.username)) });
       return res.end(JSON.stringify({ ok: true, user: u }));
     }
@@ -266,6 +268,11 @@ async function handleApi(req, res, urlPath, url, user) {
     servers.renameAccount(user.username, b.newName); // каскад ownerAccount/access
     return json(res, 200, { ok: true, user: r.user });
   }
+  if (urlPath === '/api/account/device' && req.method === 'POST') {
+    const b = await readBody(req);
+    accounts.setDevice(user.username, b.device, clientIp(req));
+    return json(res, 200, { ok: true });
+  }
   if (urlPath === '/api/account/password' && req.method === 'POST') {
     if (!renameLimit(String(user.username).toLowerCase())) return json(res, 429, { error: 'Слишком часто. Подождите минуту.' });
     const b = await readBody(req);
@@ -317,6 +324,7 @@ async function handleApi(req, res, urlPath, url, user) {
   if (urlPath.startsWith('/api/admin/')) {
     if (!accounts.isAdmin(user)) return json(res, 403, { error: 'Только админ' });
     if (urlPath === '/api/admin/users') return json(res, 200, { users: accounts.listUsers(), pending: accounts.pending() });
+    if (urlPath === '/api/admin/user-info' && req.method === 'GET') return json(res, 200, { info: accounts.adminInfo(url.searchParams.get('username') || '') });
     if (urlPath === '/api/admin/servers') return json(res, 200, { servers: servers.all().map((s) => servers.publicServer(s, user)) });
     if (urlPath === '/api/admin/approve' && req.method === 'POST') { const b = await readBody(req); accounts.approve(b.username); return json(res, 200, { ok: true }); }
     if (urlPath === '/api/admin/reject' && req.method === 'POST') { const b = await readBody(req); accounts.remove(b.username); return json(res, 200, { ok: true }); }
