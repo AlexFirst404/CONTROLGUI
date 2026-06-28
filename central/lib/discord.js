@@ -10,9 +10,10 @@ const crypto = require('crypto');
 const settings = require('./settings');
 
 function cfg() {
-  return { clientId: process.env.DISCORD_CLIENT_ID || '' };
+  return { clientId: process.env.DISCORD_CLIENT_ID || '', botToken: process.env.DISCORD_BOT_TOKEN || '' };
 }
 function enabled() { return !!cfg().clientId; }
+function botEnabled() { return !!cfg().botToken; }
 
 function redirectUri() {
   const e = settings.endpoint();
@@ -62,4 +63,28 @@ async function fetchUser(accessToken) {
   return { id: String(me.json.id), name, avatar };
 }
 
-module.exports = { enabled, authorizeUrl, redirectUri, makeState, takeState, makeLinkToken, takeLinkToken, fetchUser };
+/* Аватар пользователя по его Discord-ID через bot-токен (бэкофилл для старых привязок,
+   где аватар не сохранился). Возвращает URL или null. Бот должен «видеть» пользователя
+   (общий сервер) — иначе Discord вернёт 404/403, и мы просто отдаём null. */
+function avatarUrlFrom(id, hash) {
+  if (!hash) return null;
+  const ext = String(hash).startsWith('a_') ? 'gif' : 'png';
+  return 'https://cdn.discordapp.com/avatars/' + id + '/' + hash + '.' + ext + '?size=128';
+}
+async function fetchAvatarById(userId) {
+  const token = cfg().botToken;
+  if (!token || !/^\d{5,32}$/.test(String(userId || ''))) return null;
+  let r;
+  try {
+    r = await new Promise((resolve, reject) => {
+      const req = https.request({ host: 'discord.com', path: '/api/v10/users/' + userId, method: 'GET',
+        headers: { Authorization: 'Bot ' + token, 'User-Agent': 'CONTROLGUI-Remote (avatar backfill)' } },
+        (res) => { let d = ''; res.on('data', (c) => d += c); res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(d || '{}') }); } catch (e) { resolve({ status: res.statusCode, json: {} }); } }); });
+      req.on('error', reject); req.setTimeout(10000, () => req.destroy(new Error('timeout'))); req.end();
+    });
+  } catch (e) { return null; }
+  if (r.status !== 200 || !r.json.id) return null;
+  return avatarUrlFrom(String(r.json.id), r.json.avatar);
+}
+
+module.exports = { enabled, botEnabled, authorizeUrl, redirectUri, makeState, takeState, makeLinkToken, takeLinkToken, fetchUser, fetchAvatarById };

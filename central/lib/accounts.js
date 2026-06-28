@@ -229,6 +229,16 @@ function setPassword(username, newPw) {
   return { ok: true, username: u.username };
 }
 
+/* Бэкофилл аватара Discord для уже привязанного аккаунта (старые привязки без аватара). */
+function setDiscordAvatar(username, avatar) {
+  const list = all();
+  const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
+  if (!u || !u.discord) return { error: 'Нет привязки' };
+  u.discord.avatar = avatar || null;
+  saveAll(list);
+  return { ok: true, user: publicUser(u) };
+}
+
 function pending() { return all().filter((a) => !a.approved).map(publicUser); }
 function listUsers() { return all().map(publicUser); }
 // одобренные ники (для выбора при выдаче доступа) — без админов
@@ -294,7 +304,7 @@ if (_sweepTimer.unref) _sweepTimer.unref();
 
 module.exports = {
   COOKIE, ensureAdmin, register, verify, approve, remove, rename, setDiscord, changePassword, setDevice, adminInfo, count,
-  byDiscordId, makeResetToken, takeResetToken, setPassword,
+  byDiscordId, makeResetToken, takeResetToken, setPassword, setDiscordAvatar,
   pending, listUsers, approvedNames, isAdmin, exists,
   createSession, destroySession, cookieFor, clearCookie, parseCookies, userFromReq, validName,
   MAX_FAILS, lockMs, noteFail, clearFails,

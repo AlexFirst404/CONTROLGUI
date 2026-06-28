@@ -67,8 +67,6 @@ async function handle(req, res, urlPath, user, json) {
 
   const s = servers.get(gid);
   if (!s || !servers.canView(user, s)) { json(res, 404, { error: 'Сервер не найден' }); return true; }
-  // владелец «выключил» удалёнку — для всех, кроме админа, сервер недоступен (выглядит офлайн)
-  if (s.ownerHidden && servers.roleFor(user, s) !== 'admin') { json(res, 502, { error: 'Панель сейчас офлайн' }); return true; }
   if (!agents.isOnline(s.panelToken)) { json(res, 502, { error: 'Панель сейчас офлайн' }); return true; }
   const why = denied(req.method, base);
   if (why) { json(res, 403, { error: 'Недоступно удалённо: ' + why }); return true; }

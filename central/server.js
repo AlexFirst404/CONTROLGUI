@@ -135,7 +135,7 @@ async function handleAgent(req, res, urlPath, url) {
     const b = await readBody(req);
     const s = servers.byToken(b.token);
     if (!s) return json(res, 401, { error: 'bad token' });
-    servers.updateStatus(b.token, { status: b.status, online: b.online, name: b.name, type: b.type, version: b.version, ownerHidden: b.ownerHidden });
+    servers.updateStatus(b.token, { status: b.status, online: b.online, name: b.name, type: b.type, version: b.version });
     // отдаём агенту актуальное состояние привязки, чтобы панель показала «привязан» без рестарта
     return json(res, 200, { ok: true, claimed: !!s.ownerAccount, linkCode: s.linkCode || null });
   }
@@ -282,8 +282,20 @@ async function handleDiscordOAuth(req, res, urlPath, url) {
 }
 
 // ---------------- API пользователя/админа (нужна сессия) ----------------
+const avatarBackfillTried = new Set(); // discord-id -> уже пытались дотянуть аватар (не дёргаем повторно)
 async function handleApi(req, res, urlPath, url, user) {
-  if (urlPath === '/api/me') return json(res, 200, { user, discordEnabled: discord.enabled() });
+  if (urlPath === '/api/me') {
+    // бэкофилл аватара Discord для старых привязок без него (через bot-токен, один раз на id)
+    if (user && user.discord && user.discord.id && !user.discord.avatar
+        && discord.botEnabled() && !avatarBackfillTried.has(user.discord.id)) {
+      avatarBackfillTried.add(user.discord.id);
+      try {
+        const av = await discord.fetchAvatarById(user.discord.id);
+        if (av) { const r = accounts.setDiscordAvatar(user.username, av); if (r.user) user = r.user; }
+      } catch (e) { /* не вышло — покажем без аватара */ }
+    }
+    return json(res, 200, { user, discordEnabled: discord.enabled() });
+  }
   if (urlPath === '/api/servers' && req.method === 'GET') return json(res, 200, { servers: servers.forUser(user) });
   // список одобренных ников — ТОЛЬКО админу (владельцы выдают доступ по нику, без утечки списка)
   if (urlPath === '/api/accounts' && req.method === 'GET') return json(res, 200, { users: accounts.isAdmin(user) ? accounts.approvedNames() : [] });

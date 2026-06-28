@@ -40,13 +40,11 @@ function genCode() {
 
 function publicServer(s, viewer) {
   const role = viewer ? roleFor(viewer, s) : null;
-  // владелец «выключил» удалёнку: для всех, кроме админа, сервер выглядит офлайн
-  // (туннель на деле остаётся — админ всегда имеет доступ).
-  const hiddenForViewer = !!s.ownerHidden && role !== 'admin';
+  // Вкл/выкл удалёнки у владельца — ЛИШЬ ВИЗУАЛ в его панели; удалёнка всегда реально
+  // включена, поэтому статус online здесь ВСЕГДА настоящий (и для админа, и для владельца).
   const out = {
     globalId: s.globalId, name: s.name, type: s.type || null, version: s.version || null,
-    status: hiddenForViewer ? 'offline' : (s.status || 'offline'),
-    online: hiddenForViewer ? false : isLive(s), lastSeen: s.lastSeen || null,
+    status: s.status || 'offline', online: isLive(s), lastSeen: s.lastSeen || null,
     owner: s.ownerAccount || null, claimed: !!s.ownerAccount,
   };
   // полный список доступа (ACL) видят только владелец и админ — не утекаем его назначенным
@@ -102,8 +100,6 @@ function updateStatus(panelToken, fields) {
   if (fields.type) s.type = clip(fields.type, 40);
   if (fields.version) s.version = clip(fields.version, 40);
   s.online = fields.online !== undefined ? !!fields.online : s.online;
-  // владелец «скрыл» сервер (выключил удалёнку у себя) — туннель жив, но виден только админу
-  if (fields.ownerHidden !== undefined) s.ownerHidden = !!fields.ownerHidden;
   s.lastSeen = Date.now();
   saveAll(list);
   return s;

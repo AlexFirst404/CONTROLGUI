@@ -4345,8 +4345,20 @@
     if (!state.currentId) return;
     const q = $('#logs-query').value.trim();
     if (q.length < 2) { showToast('Введите минимум 2 символа для поиска по всем логам'); return; }
+    // выключаем live — иначе автообновление активного лога каждые 3 с затирает
+    // результаты поиска по всем логам (это и выглядело как «ничего не найдено»)
+    stopLogLive();
+    if ($('#logs-live')) $('#logs-live').classList.remove('on');
     await guard(async () => {
-      const data = await API.logsSearch(state.currentId, q);
+      let data;
+      try {
+        data = await API.logsSearch(state.currentId, q);
+      } catch (e) {
+        $('#logs-meta').textContent = '';
+        $('#logs-view').textContent = 'Поиск по всем логам недоступен: ' + e.message +
+          (e.status === 404 ? ' (обновите панель этого сервера до свежей версии).' : '');
+        return;
+      }
       const matches = (data && data.matches) || [];
       const view = $('#logs-view');
       view.innerHTML = '';
