@@ -1085,7 +1085,7 @@
       nameEl.textContent = server.name;
       const subEl = document.createElement('div');
       subEl.className = 'srv-card-sub';
-      subEl.textContent = (CORE_NAMES[server.type] || server.type) + ' ' + (server.version || '–');
+      subEl.textContent = (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server);
       if (server.remote) {
         const rb = document.createElement('span'); rb.className = 'srv-remote-badge'; rb.textContent = 'удалённый';
         nameEl.appendChild(document.createTextNode(' ')); nameEl.appendChild(rb);
@@ -1187,6 +1187,14 @@
     return 'https://mc-heads.net/avatar/' + encodeURIComponent(key) + '/' + (size || 36);
   }
 
+  // версия ядра для подписи: реальная версия, иначе аккуратный плейсхолдер
+  // (своё ядро / импорт до первого запуска, либо ядро ещё качается)
+  function verLabel(server) {
+    const v = server && server.version;
+    if (v && v !== '-') return v;
+    return server && server.status === 'downloading' ? 'загрузка ядра…' : 'версия определится';
+  }
+
   function statusText(server) {
     if (server.status === 'downloading' && server.download) {
       if (server.download.phase === 'installing') return 'Установка ядра...';
@@ -1266,6 +1274,7 @@
       if (!$('#import-path').value) { showToast('Выберите папку сервера (кнопка «Обзор»)'); return; }
       body.import = true;
       body.importPath = $('#import-path').value;
+      body.importMode = state.importMode === 'inplace' ? 'inplace' : 'copy'; // копировать / на месте
       // выбранный .jar для запуска (если в папке нашлись jar-файлы)
       if (!$('#import-jar-label').classList.contains('hidden') && $('#import-jar').value) {
         body.importJarFile = $('#import-jar').value;
@@ -1384,7 +1393,7 @@
     const st = $('#server-status');
     st.className = 'status-badge st-' + server.status;
     st.textContent = statusText(server);
-    $('#server-addr').textContent = (CORE_NAMES[server.type] || server.type) + ' ' + (server.version || '–') + ' · localhost:' + server.port;
+    $('#server-addr').textContent = (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server) + ' · localhost:' + server.port;
 
     const dlWrap = $('#download-wrap');
     const dl = server.download;
@@ -1429,7 +1438,7 @@
     const rows = [
       ['Адрес (этот ПК)', 'localhost:' + server.port],
       ['Адрес (локальная сеть)', state.lanIps.length ? state.lanIps.map((ip) => ip + ':' + server.port).join('  ') : '—'],
-      ['Ядро', (CORE_NAMES[server.type] || server.type) + ' ' + server.version],
+      ['Ядро', (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server)],
       ['Память', fmtMem(server.memoryMb)],
       ['Владелец', server.creatorUsername || server.owner || '—'],
       ['Создан', new Date(server.createdAt).toLocaleString('ru-RU')],
@@ -4188,8 +4197,18 @@
   function updateImportMode() {
     const on = isImportOn();
     $('#import-label').classList.toggle('hidden', !on);
+    $('#import-mode-label').classList.toggle('hidden', !on);
     if (!on) $('#import-jar-label').classList.add('hidden'); // выбор jar скрываем, пока папка не выбрана
     onCoreChange(); // пересчитать видимость версии/EULA с учётом импорта
+  }
+  // режим импорта: 'copy' (скопировать в панель) | 'inplace' (управлять папкой на месте)
+  function setImportMode(mode) {
+    state.importMode = mode === 'inplace' ? 'inplace' : 'copy';
+    $$('#import-mode-btns .seg').forEach((b) => b.classList.toggle('sel', b.dataset.mode === state.importMode));
+    const hint = $('#import-mode-hint');
+    if (hint) hint.textContent = state.importMode === 'inplace'
+      ? 'Папка останется на месте, панель будет управлять ей напрямую (без копии). При удалении сервера из панели файлы НЕ удаляются.'
+      : 'Папка скопируется в данные панели — оригинал останется нетронутым.';
   }
 
   // список .jar из выбранной папки импорта: даём выбрать, какой запускать
@@ -4222,7 +4241,13 @@
       browseParent = d.parent;
       browseCurPath = isDrives ? '' : (d.path || '');
       browseCurJars = d.jars || [];
-      $('#browse-cur').textContent = (isDrives || !d.path ? 'Этот компьютер (диски)' : d.path) + (d.isServer ? '   ✓ похоже на сервер' : '');
+      const inp = $('#browse-cur');
+      // не затираем путь, пока пользователь его правит вручную
+      if (document.activeElement !== inp) inp.value = (isDrives || !d.path) ? '' : d.path;
+      inp.placeholder = (isDrives || !d.path) ? 'Этот компьютер (диски) — вставьте путь и Enter' : 'Путь к папке — можно вставить и нажать Enter';
+      const bh = $('#browse-hint');
+      bh.textContent = d.isServer ? '✓ похоже на сервер' : '';
+      bh.style.color = d.isServer ? 'var(--accent-bright)' : '';
       $('#browse-pick').disabled = isDrives || !d.path;
       $('#browse-up').disabled = d.parent == null;
       const list = $('#browse-list');
@@ -4263,6 +4288,10 @@
     const importOn = isImportOn();
     const importHide = importOn && !isProxy && !custom;
     $('#import-row').classList.toggle('hidden', isProxy || custom);
+    // импорт недоступен для прокси/своего ядра — прячем его поля целиком
+    $('#import-label').classList.toggle('hidden', !importOn || isProxy || custom);
+    $('#import-mode-label').classList.toggle('hidden', !importOn || isProxy || custom);
+    if (isProxy || custom) $('#import-jar-label').classList.add('hidden');
     // у «Ядро» и «Макс. игроков» нет своего тоггла — задаём явно (иначе не вернутся при выключении импорта)
     $('#core-label').classList.toggle('hidden', importHide);
     $('#maxplayers-label').classList.toggle('hidden', importHide);
@@ -4512,17 +4541,22 @@
     const server = state.servers.find((s) => s.id === id) || state.current;
     if (!server) return;
     const ok = await confirmDialog(
-      'Удалить сервер «' + server.name + '»?\nБудут стёрты ВСЕ файлы, включая мир. Это действие необратимо.',
-      { title: 'Удаление сервера' }
+      server.inPlace
+        ? 'Убрать сервер «' + server.name + '» из панели?\nЭто импорт «на месте» — файлы в вашей папке НЕ удаляются, панель лишь перестанет им управлять.'
+        : 'Удалить сервер «' + server.name + '»?\nБудут стёрты ВСЕ файлы, включая мир. Это действие необратимо.',
+      { title: server.inPlace ? 'Убрать сервер' : 'Удаление сервера' }
     );
     if (!ok) return;
-    // повторное подтверждение: ввести точное название сервера
-    const typed = await promptDialog('Окончательное подтверждение. Введите название сервера, чтобы удалить его навсегда:', '', server.name);
-    if (typed == null) return;
-    if (typed.trim() !== server.name) { showToast('Название не совпало — удаление отменено.'); return; }
+    // повторное подтверждение (ввести название) — только для реального удаления файлов;
+    // для импорта «на месте» файлы не трогаются, второй гейт не нужен
+    if (!server.inPlace) {
+      const typed = await promptDialog('Окончательное подтверждение. Введите название сервера, чтобы удалить его навсегда:', '', server.name);
+      if (typed == null) return;
+      if (typed.trim() !== server.name) { showToast('Название не совпало — удаление отменено.'); return; }
+    }
     await guard(async () => {
       await API.remove(id);
-      showToast('Сервер «' + server.name + '» удалён.', 'ok');
+      showToast(server.inPlace ? 'Сервер «' + server.name + '» убран из панели (файлы на месте).' : 'Сервер «' + server.name + '» удалён.', 'ok');
       if (state.currentId === id) {
         state.currentId = null;
         showScreen('list');
@@ -4738,6 +4772,13 @@
     $('#browse-close').addEventListener('click', () => $('#browse-root').classList.add('hidden'));
     $('#browse-root').addEventListener('click', (ev) => { if (ev.target === $('#browse-root')) $('#browse-root').classList.add('hidden'); });
     $('#browse-up').addEventListener('click', () => loadBrowse(browseParent || ''));
+    // путь можно вписать/вставить вручную и перейти по Enter
+    $('#browse-cur').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); loadBrowse($('#browse-cur').value.trim()); }
+    });
+    // выбор режима импорта (копировать / на месте)
+    $$('#import-mode-btns .seg').forEach((b) => b.addEventListener('click', () => setImportMode(b.dataset.mode)));
+    setImportMode('copy'); // по умолчанию — копировать в панель
     $('#browse-pick').addEventListener('click', async () => {
       if (!browseCurPath) return;
       const picked = browseCurPath;

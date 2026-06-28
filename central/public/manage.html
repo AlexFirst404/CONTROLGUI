@@ -161,11 +161,14 @@
         <button class="mc-btn sm" id="browse-close"><i class="pi" data-ic="close"></i></button>
       </div>
       <div class="modal-body">
-        <div class="browse-cur" id="browse-cur"></div>
+        <input class="fld" id="browse-cur" placeholder="Путь к папке — можно вставить и нажать Enter" autocomplete="off" spellcheck="false">
+        <div class="btn-row btn-row-left" style="margin:8px 0 8px">
+          <button class="mc-btn sm sq" id="browse-up" title="Вверх (на уровень выше)"><i class="pi" data-ic="chevron-up"></i></button>
+        </div>
+        <div class="hint" id="browse-hint" style="margin:0 0 8px"></div>
         <div class="browse-list" id="browse-list"></div>
         <div class="btn-row" style="margin-top:14px">
           <button class="mc-btn primary" id="browse-pick"><i class="pi" data-ic="check"></i> Выбрать эту папку</button>
-          <button class="mc-btn" id="browse-up"><i class="pi" data-ic="chevron-left"></i> Вверх</button>
         </div>
       </div>
     </div>
@@ -215,8 +218,15 @@
             <input class="fld" id="import-path" readonly placeholder="Нажмите «Обзор» и выберите папку сервера">
             <button type="button" class="mc-btn sm" id="import-browse" style="white-space:nowrap;margin:0"><i class="pi" data-ic="folder"></i> Обзор…</button>
           </div>
-          <span class="hint" style="margin:4px 0 0">Папка с сервером (server.jar, world и т.д.) скопируется в панель. Затем выберите ядро ниже — версия определится при первом запуске.</span>
+          <span class="hint" style="margin:4px 0 0">Папка с сервером (server.jar, world и т.д.). Ядро и версия определятся автоматически.</span>
         </label>
+        <div class="mc-label hidden" id="import-mode-label" style="grid-column:1/-1">Как импортировать
+          <div class="seg-btns" id="import-mode-btns" style="margin-top:4px">
+            <button type="button" class="mc-btn sm seg sel" data-mode="copy"><i class="pi" data-ic="copy"></i> Скопировать в программу</button>
+            <button type="button" class="mc-btn sm seg" data-mode="inplace"><i class="pi" data-ic="folder"></i> Использовать папку на месте</button>
+          </div>
+          <span class="hint" style="margin:6px 0 0" id="import-mode-hint"></span>
+        </div>
         <label class="mc-label hidden" id="import-jar-label" style="grid-column:1/-1">Файл .jar для запуска
           <select class="fld" id="import-jar"></select>
           <span class="hint" style="margin:4px 0 0">Если в папке несколько .jar — выберите, какой запускать сервер (обычно server.jar; установщики-installer не подходят).</span>
