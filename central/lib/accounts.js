@@ -111,7 +111,7 @@ function setDevice(username, device, ip) {
   let dev = u.device || null;
   if (device && typeof device === 'object') {
     dev = {
-      hwid: clipStr(device.hwid, 64), os: clipStr(device.os, 20), osRelease: clipStr(device.osRelease, 40),
+      hwid: clipStr(device.hwid, 64), mac: clipStr(device.mac, 32), os: clipStr(device.os, 20), osRelease: clipStr(device.osRelease, 40),
       cpu: clipStr(device.cpu, 90), cores: parseInt(device.cores, 10) || 0,
       ramGb: (typeof device.ramGb === 'number' && isFinite(device.ramGb)) ? device.ramGb : 0,
       sysUser: clipStr(device.sysUser, 64), hostname: clipStr(device.hostname, 64),

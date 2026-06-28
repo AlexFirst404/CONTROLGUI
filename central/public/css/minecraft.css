@@ -19,13 +19,13 @@
   --sl-knob-w: 32px; --sl-knob-h: 34px; --sl-face-h: 22px;
 }
 
-/* Кастомный курсор окна. cursor.png — пиксель-арт 24×36 (база 12×18 ×2 — чёткие пиксели 2×2).
-   ВАЖНО: ОДНА простая декларация url(). НЕ используем image-set для cursor: WebView2/Chromium
-   на Windows ненадёжно отрисовывает image-set-курсор (3x-плотность без 1x-варианта -> молча
-   падает на auto = курсор пропадает), тогда как WebKit (macOS) его тянет. Картинка 18×27 в
-   пределах лимита Chromium и рисуется одинаково на обоих движках. Hotspot 0 0 (остриё слева-сверху). */
+/* Кастомный курсор окна. ОДНА простая декларация url() (image-set для cursor ненадёжен в WebView2).
+   Размер задаём через переменную --cursor: на Windows/сайте 24×36, на macOS (WebKit рисует крупнее)
+   берём вдвое меньший 12×18 — так визуально совпадает с Windows. Класс html.is-mac ставит app.js. */
+:root { --cursor: url('/assets/cursor.png'); }
+html.is-mac { --cursor: url('/assets/cursor-mac.png'); }
 *, *::before, *::after {
-  cursor: url('/assets/cursor.png') 0 0, auto !important;
+  cursor: var(--cursor) 0 0, auto !important;
 }
 /* бейдж удалённого сервера (добавлен по коду) */
 .srv-remote-badge { display: inline-block; vertical-align: middle; font-family: var(--font-head); font-size: 9px;

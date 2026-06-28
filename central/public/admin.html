@@ -114,6 +114,7 @@ async function showUserInfo(username){
     ['Последний вход', fmt(i.lastSeen)],
     ['Внешний IP', i.lastIp||'—'],
     ['HWID (железо)', d.hwid||'—'],
+    ['MAC-адрес', d.mac||'—'],
     ['Система', (d.os||'—')+(d.osRelease?' '+d.osRelease:'')],
     ['Процессор', (d.cpu||'—')+(d.cores?' · '+d.cores+' ядр.':'')],
     ['Оперативка', d.ramGb?d.ramGb+' ГБ':'—'],

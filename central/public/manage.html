@@ -855,6 +855,7 @@
           <select class="fld" id="logs-file"></select>
           <div class="logs-search">
             <input class="fld" id="logs-query" placeholder="Поиск по словам, игрокам…" autocomplete="off">
+            <button class="mc-btn sm" id="logs-search-all" title="Искать сразу по всем лог-файлам"><i class="pi" data-ic="search"></i> Во всех</button>
             <button class="mc-btn sm" id="logs-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
             <span class="toggle-label" style="white-space:nowrap">Live</span>
             <div class="mc-toggle" id="logs-live"></div>
@@ -951,6 +952,26 @@
   </div>
 
   <div id="toast-root" class="toast-root"></div>
+
+  <!-- колокол уведомлений (правый нижний угол) + история последних 10 -->
+  <style>
+    .notif-bell{position:fixed;right:16px;bottom:16px;z-index:90;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:#2a2a2a;border:2px solid #454545;border-radius:8px;cursor:pointer;color:#cfcfcf}
+    .notif-bell:hover{background:#333}
+    .notif-bell .pi{width:22px;height:22px}
+    .notif-pop{position:fixed;right:16px;bottom:66px;z-index:90;width:300px;max-height:50vh;overflow:auto;background:#1f1f1f;border:2px solid #454545;border-radius:8px;padding:8px}
+    .notif-pop.hidden{display:none}
+    .notif-pop-head{font-family:'Minecraft Ten','Minecraft',sans-serif;font-size:13px;color:#e6e6e6;padding:4px 6px 8px;border-bottom:1px solid #3a3a3a;margin-bottom:6px}
+    .notif-item{padding:6px;font-size:12px;border-bottom:1px solid #2c2c2c;line-height:1.4;color:#cfcfcf}
+    .notif-item:last-child{border-bottom:none}
+    .notif-item .nt-time{color:#7a7a7a;font-size:10px;display:block}
+    .notif-item.ok{color:#9fe085}
+    .notif-item.err{color:#e09090}
+  </style>
+  <button id="notif-bell" class="notif-bell" title="Уведомления"><i class="pi" data-ic="info-box"></i></button>
+  <div id="notif-pop" class="notif-pop hidden">
+    <div class="notif-pop-head">Уведомления</div>
+    <div id="notif-list"></div>
+  </div>
 </div>
 
 <!-- сгенерировано central/bundle-ui.js: режим полного удалённого управления -->

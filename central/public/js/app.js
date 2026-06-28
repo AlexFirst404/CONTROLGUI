@@ -234,12 +234,34 @@
 
   // ---------- утилиты ----------
 
+  const notifHistory = []; // последние уведомления (для колокольчика, до 10)
+  let notifPopupOpen = false;
   function showToast(message, type) {
     const el = document.createElement('div');
     el.className = 'toast ' + (type === 'ok' ? 'toast-ok' : 'toast-error');
     el.textContent = message;
     $('#toast-root').appendChild(el);
     setTimeout(() => el.remove(), 6000);
+    notifHistory.unshift({ message: String(message), type: type === 'ok' ? 'ok' : 'err', at: Date.now() });
+    if (notifHistory.length > 10) notifHistory.length = 10;
+    if (notifPopupOpen) renderNotifHistory();
+  }
+  function renderNotifHistory() {
+    const list = $('#notif-list'); if (!list) return;
+    if (!notifHistory.length) { list.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Пока нет уведомлений.</div>'; return; }
+    list.innerHTML = '';
+    for (const n of notifHistory) {
+      const d = document.createElement('div'); d.className = 'notif-item ' + (n.type === 'ok' ? 'ok' : 'err');
+      const t = document.createElement('span'); t.className = 'nt-time'; t.textContent = new Date(n.at).toLocaleTimeString('ru-RU');
+      const m = document.createElement('span'); m.textContent = n.message;
+      d.appendChild(t); d.appendChild(m); list.appendChild(d);
+    }
+  }
+  function toggleNotifPopup(open) {
+    notifPopupOpen = open != null ? open : !notifPopupOpen;
+    const pop = $('#notif-pop'); if (!pop) return;
+    if (notifPopupOpen) { renderNotifHistory(); pop.classList.remove('hidden'); }
+    else pop.classList.add('hidden');
   }
 
   function confirmDialog(text, opts) {
@@ -866,8 +888,8 @@
       if (!nn) { err.textContent = 'Введите ник.'; return; }
       if (cgCentralUser && nn === cgCentralUser.username) { err.className = 'err ok'; err.textContent = 'Это текущий ник.'; return; }
       if (!await confirmDialog('Сменить ник на «' + nn + '»? Он обновится во всех ваших серверах.', { title: 'Смена ника', yesText: 'Сменить', danger: false })) return;
-      try { const r = await API.centralRename(nn); cgCentralUser = r.user || { username: nn }; updateCentralLabel(); err.className = 'err ok'; err.textContent = 'Ник изменён.'; showToast('Ник изменён.', 'ok'); }
-      catch (e) { err.className = 'err'; err.textContent = e.message; }
+      try { const r = await API.centralRename(nn); cgCentralUser = r.user || { username: nn }; updateCentralLabel(); err.textContent = ''; showToast('Ник изменён на «' + cgCentralUser.username + '».', 'ok'); }
+      catch (e) { err.className = 'err'; err.textContent = e.message; showToast(e.message); }
     });
     $('#pf-discord-link').addEventListener('click', async () => {
       const err = $('#pf-discord-err'); err.className = 'err'; err.textContent = '';
@@ -4193,6 +4215,28 @@
     });
   }
 
+  // поиск сразу по всем лог-файлам сервера (latest.log + архивные .log.gz)
+  async function searchAllLogs() {
+    if (!state.currentId) return;
+    const q = $('#logs-query').value.trim();
+    if (q.length < 2) { showToast('Введите минимум 2 символа для поиска по всем логам'); return; }
+    await guard(async () => {
+      const data = await API.logsSearch(state.currentId, q);
+      const view = $('#logs-view');
+      view.innerHTML = '';
+      $('#logs-meta').textContent = 'По всем логам: найдено ' + data.matches.length + (data.truncated ? '+ (первые 500)' : '') + ' для «' + q + '»';
+      if (!data.matches.length) { view.textContent = 'Ничего не найдено по всем логам.'; return; }
+      const frag = document.createDocumentFragment();
+      for (const m of data.matches) {
+        const el = document.createElement('span'); el.className = 'log-line';
+        const f = document.createElement('b'); f.style.color = 'var(--accent-bright,#80da5b)'; f.textContent = m.file + ':' + m.line + '  ';
+        el.appendChild(f); el.appendChild(document.createTextNode(m.text)); el.appendChild(document.createTextNode('\n'));
+        frag.appendChild(el);
+      }
+      view.appendChild(frag);
+    });
+  }
+
   function renderLogView() {
     const view = $('#logs-view');
     const q = $('#logs-query').value.trim().toLowerCase();
@@ -4509,6 +4553,8 @@
     // логи
     $('#logs-file').addEventListener('change', () => loadLogContent());
     $('#logs-query').addEventListener('input', renderLogView);
+    if ($('#logs-search-all')) $('#logs-search-all').addEventListener('click', searchAllLogs);
+    $('#logs-query').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); searchAllLogs(); } });
     $('#logs-refresh').addEventListener('click', () => loadLogs());
     mkToggle($('#logs-live'), false);
     $('#logs-live').addEventListener('click', () => {
@@ -4649,6 +4695,12 @@
     $('#appset-root').addEventListener('click', (event) => {
       if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
     });
+    // колокол уведомлений: история последних 10
+    if ($('#notif-bell')) $('#notif-bell').addEventListener('click', (e) => { e.stopPropagation(); toggleNotifPopup(); });
+    document.addEventListener('click', (e) => {
+      const pop = $('#notif-pop'); const bell = $('#notif-bell');
+      if (notifPopupOpen && pop && !pop.contains(e.target) && bell && !bell.contains(e.target)) toggleNotifPopup(false);
+    });
     // модалка описания плагина/мода: закрытие по крестику / клику вне / Esc
     if ($('#cm-close')) $('#cm-close').addEventListener('click', () => $('#content-modal').classList.add('hidden'));
     if ($('#content-modal')) $('#content-modal').addEventListener('click', (e) => { if (e.target.id === 'content-modal') $('#content-modal').classList.add('hidden'); });
@@ -4699,6 +4751,8 @@
     }
   }
 
+  // macOS: курсор WebKit рисует крупнее — переключаем на меньший вариант (см. --cursor в CSS)
+  try { if (/Mac/i.test((navigator.platform || '') + ' ' + (navigator.userAgent || ''))) document.documentElement.classList.add('is-mac'); } catch (e) { /* */ }
   applyAppSettings(appSettings);
   applyIcons(document);
   initCycleButtons(document);

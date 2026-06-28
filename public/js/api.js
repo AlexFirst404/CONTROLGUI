@@ -110,6 +110,7 @@ window.API = (function () {
     backupDownloadUrl: (id, name) => B('/api/servers/' + id + '/backup?name=' + encodeURIComponent(name)),
 
     logs: (id) => call('GET', '/api/servers/' + id + '/logs'),
+    logsSearch: (id, q) => call('GET', '/api/servers/' + id + '/logs/search?q=' + encodeURIComponent(q)),
     log: (id, name) => call('GET', '/api/servers/' + id + '/log?name=' + encodeURIComponent(name)),
 
     iconUpload: async (id, blob) => {
