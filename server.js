@@ -45,6 +45,8 @@ async function handleCentralRoutes(req, res, urlPath, cc) {
   if (urlPath === '/api/central/rename' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.rename(String(b.newName || '')); return sendJson(res, r.error ? 400 : 200, r); }
   if (urlPath === '/api/central/password' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.changePassword(String(b.current || ''), String(b.next || '')); return sendJson(res, r.error ? 400 : 200, r); }
   if (urlPath === '/api/central/discord/link' && req.method === 'POST') { const r = await cc.discordLinkInit(); return sendJson(res, r.error ? 400 : 200, r); }
+  if (urlPath === '/api/central/discord/login-init' && req.method === 'POST') { const r = await cc.discordLoginInit(); return sendJson(res, r.error ? 400 : 200, r); }
+  if (urlPath === '/api/central/discord/login-poll' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.discordLoginPoll(String(b.loginToken || '')); return sendJson(res, r.error ? 400 : 200, r); }
   if (urlPath === '/api/central/discord/unlink' && req.method === 'POST') { const r = await cc.discordUnlink(); return sendJson(res, r.error ? 400 : 200, r); }
   return sendJson(res, 404, { error: 'Не найдено' });
 }

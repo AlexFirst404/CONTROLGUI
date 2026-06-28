@@ -5,6 +5,7 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const accounts = require('./lib/accounts');
 const servers = require('./lib/servers');
 const agents = require('./lib/agents');
@@ -68,7 +69,16 @@ const linkIpLimit = makeLimiter(60 * 1000, 15);   // /api/link по IP (анти
 const linkGlobalLimit = makeLimiter(60 * 1000, 120); // глобальный потолок попыток привязки
 const renameLimit = makeLimiter(60 * 1000, 5);    // /api/account/rename по аккаунту
 const resetLimit = makeLimiter(60 * 1000, 10);    // сброс пароля через Discord по IP
+const loginLimit = makeLimiter(60 * 1000, 15);    // вход через Discord по IP
 const MAX_ACCOUNTS = 5000;                         // потолок всех аккаунтов (анти-флуд при авто-одобрении)
+
+// ожидающие входы через Discord из приложения: loginToken -> { username, cookie, at }
+const pendingDiscordLogins = new Map();
+const _pendLoginSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of pendingDiscordLogins) if (now - v.at > 10 * 60 * 1000) pendingDiscordLogins.delete(k);
+}, 5 * 60 * 1000);
+if (_pendLoginSweep.unref) _pendLoginSweep.unref();
 
 // анти-брутфорс кода привязки: после серии неверных кодов — блок IP на 10 минут
 // (авто-одобрение позволяет плодить аккаунты, поэтому ключуемся ещё и на IP, не только на нике)
@@ -219,6 +229,7 @@ function discordCallbackPage(res) {
     + 'fetch("/api/account/discord/finish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({state:st,access_token:at})})'
     + '.then(function(r){return r.json();}).then(function(d){'
     + 'if(d&&d.ok&&d.reset){resetForm(d.username||"",d.resetToken);return;}'
+    + 'if(d&&d.ok&&d.login){if(d.site){show("Вход выполнен","Готово! Открываю…");setTimeout(function(){location.href="/";},700);}else{show("Вход подтверждён","Аккаунт <b>"+(d.username||"")+"</b>. Закройте окно и вернитесь в приложение.");}return;}'
     + 'if(d&&d.ok){show("Discord привязан","Аккаунт <b>"+(d.name||"")+"</b> привязан. Закройте это окно и вернитесь в приложение.");return;}'
     + 'show("Не получилось",(d&&d.error)||"Ошибка.");})'
     + '.catch(function(){show("Ошибка сети","Не удалось связаться с сервером.");});})();</script></body></html>');
@@ -247,6 +258,30 @@ async function handleDiscordOAuth(req, res, urlPath, url) {
     res.writeHead(302, { Location: discord.authorizeUrl(state) });
     return res.end();
   }
+  // вход через Discord без пароля — С САЙТА (redirect): найдём аккаунт по Discord-ID и залогиним
+  if (urlPath === '/api/account/discord/login-start' && req.method === 'GET') {
+    if (!loginLimit(clientIp(req))) return htmlPage(res, 429, 'Слишком часто', 'Подождите минуту и попробуйте снова.');
+    if (!discord.enabled()) return htmlPage(res, 503, 'Discord не настроен', 'Администратор ещё не подключил Discord-приложение. Попробуйте позже.');
+    const state = discord.makeState(null, 'login');
+    res.writeHead(302, { Location: discord.authorizeUrl(state) });
+    return res.end();
+  }
+  // вход через Discord без пароля — ИЗ ПРИЛОЖЕНИЯ: даём url + loginToken для опроса
+  if (urlPath === '/api/account/discord/login-init' && req.method === 'POST') {
+    if (!loginLimit(clientIp(req))) return json(res, 429, { error: 'Слишком часто. Подождите минуту.' });
+    if (!discord.enabled()) return json(res, 503, { error: 'Discord ещё не настроен администратором' });
+    const loginToken = crypto.randomBytes(24).toString('hex');
+    const state = discord.makeState(null, 'login', { loginToken });
+    return json(res, 200, { ok: true, url: discord.authorizeUrl(state), loginToken });
+  }
+  // опрос статуса входа из приложения: когда Discord подтверждён — отдаём cookie сессии
+  if (urlPath === '/api/account/discord/login-poll' && req.method === 'POST') {
+    const b = await readBody(req, 16 * 1024);
+    const p = pendingDiscordLogins.get(String(b.loginToken || ''));
+    if (!p) return json(res, 200, { pending: true });
+    pendingDiscordLogins.delete(String(b.loginToken));
+    return json(res, 200, { ok: true, username: p.username, cookie: p.cookie });
+  }
   // callback от Discord (implicit): токен в #fragment — отдаём страницу с JS, которая шлёт его на /finish
   if (urlPath === '/api/account/discord/callback' && req.method === 'GET') {
     return discordCallbackPage(res);
@@ -263,6 +298,19 @@ async function handleDiscordOAuth(req, res, urlPath, url) {
       const u = accounts.byDiscordId(prof.id);
       if (!u) return json(res, 404, { error: 'К этому Discord не привязан ни один аккаунт CONTROLGUI.' });
       return json(res, 200, { ok: true, reset: true, username: u.username, resetToken: accounts.makeResetToken(u.username) });
+    }
+    if (v.kind === 'login') {
+      const u = accounts.byDiscordId(prof.id);
+      if (!u) return json(res, 404, { error: 'К этому Discord не привязан ни один аккаунт CONTROLGUI.' });
+      const cookie = accounts.cookieFor(accounts.createSession(u.username));
+      if (v.loginToken) {
+        // вход из приложения — складываем cookie сессии для опроса
+        pendingDiscordLogins.set(v.loginToken, { username: u.username, cookie, at: Date.now() });
+        return json(res, 200, { ok: true, login: true, site: false, username: u.username });
+      }
+      // вход с сайта — сразу ставим cookie на ответ, браузер будет залогинен
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': cookie });
+      return res.end(JSON.stringify({ ok: true, login: true, site: true, username: u.username }));
     }
     const r = accounts.setDiscord(v.username, prof);
     if (r.error) return json(res, 409, { error: r.error });

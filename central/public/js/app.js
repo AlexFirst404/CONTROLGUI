@@ -857,6 +857,37 @@
         err.textContent = 'Откройте окно браузера, подтвердите Discord и задайте новый пароль, затем войдите.';
       } catch (e2) { err.textContent = 'Не удалось открыть сброс пароля.'; }
     });
+    const dl = $('#gate-discord-login');
+    if (dl) dl.addEventListener('click', () => gateDiscordLogin());
+  }
+  let gateDiscordPoll = null;
+  async function gateDiscordLogin() {
+    const err = $('#gate-li-err'); err.className = 'err'; err.textContent = '';
+    const btn = $('#gate-discord-login');
+    let init;
+    try { init = await API.centralDiscordLoginInit(); } catch (e) { err.textContent = e.message; return; }
+    if (!init || !init.url || !init.loginToken) { err.textContent = (init && init.error) || 'Discord недоступен.'; return; }
+    window.open(init.url, '_blank', 'noopener');
+    err.className = 'err ok';
+    err.textContent = 'Подтвердите вход в открывшемся окне Discord…';
+    if (btn) btn.disabled = true;
+    // опрашиваем центр, пока вход не подтвердится (до ~2 минут)
+    let left = 48;
+    if (gateDiscordPoll) clearInterval(gateDiscordPoll);
+    gateDiscordPoll = setInterval(async () => {
+      left--;
+      let r = null;
+      try { r = await API.centralDiscordLoginPoll(init.loginToken); } catch (e) { /* ждём */ }
+      if (r && r.ok) {
+        clearInterval(gateDiscordPoll); gateDiscordPoll = null;
+        if (btn) btn.disabled = false;
+        await syncCentralUser(); hideAccountGate(); showToast('Вход через Discord выполнен.', 'ok'); guard(loadServers);
+      } else if (left <= 0) {
+        clearInterval(gateDiscordPoll); gateDiscordPoll = null;
+        if (btn) btn.disabled = false;
+        err.className = 'err'; err.textContent = 'Время ожидания истекло. Попробуйте ещё раз.';
+      }
+    }, 2500);
   }
   function showAccountGate() {
     return new Promise((resolve) => {
