@@ -57,6 +57,8 @@ window.API = (function () {
     saveProperties: (id, body) => call('PUT', '/api/servers/' + id + '/properties', body),
     remoteGet: (id) => call('GET', '/api/servers/' + id + '/remote'),
     remoteSet: (id, enabled) => call('POST', '/api/servers/' + id + '/remote', { enabled: enabled }),
+    proxyLinkGet: (id) => call('GET', '/api/servers/' + id + '/proxy-link'),
+    proxyLinkSet: (id, proxyId, action) => call('POST', '/api/servers/' + id + '/proxy-link', { proxyId: proxyId, action: action }),
     remoteRegenerate: (id) => call('POST', '/api/servers/' + id + '/remote/regenerate'),
     consoleStream: (id) => new EventSource(B('/api/servers/' + id + '/console')),
     stats: (id) => call('GET', '/api/servers/' + id + '/stats'),
@@ -82,6 +84,7 @@ window.API = (function () {
     javaInstallState: () => call('GET', '/api/java/install'),
 
     browse: (path) => call('GET', '/api/browse?path=' + encodeURIComponent(path || '')),
+    pickFolder: () => call('GET', '/api/pick-folder'),
     importDetect: (path) => call('GET', '/api/import-detect?path=' + encodeURIComponent(path || '')),
 
     me: () => call('GET', '/api/auth/me'),

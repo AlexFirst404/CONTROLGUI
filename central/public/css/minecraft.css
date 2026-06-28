@@ -237,7 +237,9 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 /* браузер папок (импорт существующего сервера) */
 .browse-cur { font-family: Consolas, monospace; font-size: 13px; color: var(--accent-bright); background: #161616;
   border: 1px solid var(--bd); padding: 8px 10px; margin-bottom: 10px; word-break: break-all; }
-.browse-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--bd); background: var(--card-inset); }
+.browse-list { max-height: 340px; overflow-y: auto; border: 1px solid var(--bd); background: var(--card-inset); }
+/* модалка выбора папки — шире обычной для удобной навигации */
+.modal.browse-modal { max-width: 720px; }
 .browse-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #2a2a2a; font-size: 14px; }
 .browse-item:hover { background: #2f2f2f; }
 
@@ -293,6 +295,9 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .form-panel { padding: 20px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; align-items: end; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+/* слайдеры памяти/CPU — на всю ширину: иначе при импорте «Порт» встаёт в одну строку
+   с высоким слайдером и из-за align-items:end появляется большой пустой отступ над ним */
+.form-grid .slider-block { grid-column: 1 / -1; }
 .btn-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
 .btn-row-left { justify-content: flex-start; margin: 0 0 14px; }
 

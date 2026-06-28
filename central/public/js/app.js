@@ -1574,6 +1574,18 @@
       .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
   }
 
+  // оптимистичные оверрайды OP: имя(lc) -> { val:bool, at }. Держим до подтверждения
+  // в ops.json или истечения 12 c — чтобы кнопка не «откатывалась» из-за гонки записи
+  // ops.json сервером (особенно заметно на загруженных/прокси-серверах).
+  function opIsSet(opsSet, nameLc) {
+    const o = state.opOverrides && state.opOverrides[nameLc];
+    if (o) {
+      if (opsSet.has(nameLc) === o.val || Date.now() - o.at > 12000) { delete state.opOverrides[nameLc]; }
+      else return o.val;
+    }
+    return opsSet.has(nameLc);
+  }
+
   function renderPlayers(server) {
     const panel = $('#players-list');
     const players = mergedPlayers(server.playersInfo);
@@ -1607,7 +1619,7 @@
       const main = document.createElement('div');
       main.className = 'player-main';
       const banned = bannedSet.has(p.name.toLowerCase());
-      const isOp = opsSet.has(p.name.toLowerCase());
+      const isOp = opIsSet(opsSet, p.name.toLowerCase());
       const nameEl = document.createElement('div');
       nameEl.className = 'player-name';
       const dot = document.createElement('span');
@@ -1688,15 +1700,12 @@
             const r = await guard(() => API.moderate(state.currentId, act, p.name));
             if (!r) return; // ошибка уже показана тостом
             showToast(isOp ? 'OP снят с «' + p.name + '».' : '«' + p.name + '» теперь оператор.', 'ok');
-            // на работающем сервере ops.json пишется сервером асинхронно — обновляем список
-            // операторов оптимистично и перерисовываем сразу, чтобы кнопка не «застывала»
-            if (state.current) {
-              const ops = (state.current.ops || []).filter((n) => n.toLowerCase() !== p.name.toLowerCase());
-              if (act === 'op') ops.push(p.name);
-              state.current.ops = ops;
-              if (state.currentTab === 'players') renderPlayers(state.current);
-            }
-            setTimeout(refreshServer, 1500); // потом сверяемся с реальным ops.json
+            // ставим «липкий» оверрайд: кнопка сразу отражает действие и держится,
+            // пока сервер не запишет ops.json (а не откатывается из-за гонки чтения)
+            if (!state.opOverrides) state.opOverrides = {};
+            state.opOverrides[p.name.toLowerCase()] = { val: act === 'op', at: Date.now() };
+            if (state.current && state.currentTab === 'players') renderPlayers(state.current);
+            setTimeout(refreshServer, 1500); // подтянуть реальный ops.json (оверрайд снимется при совпадении)
           }
         });
         actions.appendChild(opBtn);
@@ -2296,9 +2305,66 @@
       loadRpCard();
       renderCoreCard();
       renderRemoteCard();
+      renderProxyCard();
     } catch (e) {
       showToast(e.message);
     }
+  }
+
+  // карточка «Подключение к прокси» в настройках backend-сервера
+  async function renderProxyCard() {
+    const card = $('#proxy-card');
+    if (!card) return;
+    const srv = state.current || {};
+    // прокси/удалённый/без прав — карточку прячем
+    if (window.CG_REMOTE || PROXY_TYPES.includes(srv.type) || !can('settings.edit')) { card.classList.add('hidden'); return; }
+    const forId = state.currentId;
+    let info;
+    try { info = await API.proxyLinkGet(forId); } catch (e) { card.classList.add('hidden'); return; }
+    if (forId !== state.currentId) return;
+    if (!info.canBackend) { card.classList.add('hidden'); return; } // ядро нельзя за прокси
+    card.classList.remove('hidden');
+    $('#proxy-err').textContent = '';
+    const sel = $('#proxy-select');
+    sel.innerHTML = '';
+    if (!info.proxies.length) {
+      $('#proxy-info').textContent = 'Прокси-серверов пока нет. Создайте Velocity или BungeeCord, затем подключите к нему этот сервер.';
+      sel.classList.add('hidden'); $('#proxy-attach').classList.add('hidden'); $('#proxy-detach').classList.add('hidden');
+      $('#proxy-attached').classList.add('hidden');
+      return;
+    }
+    sel.classList.remove('hidden');
+    for (const p of info.proxies) {
+      const o = document.createElement('option'); o.value = p.id;
+      o.textContent = p.name + ' (' + (CORE_NAMES[p.type] || p.type) + ')';
+      sel.appendChild(o);
+    }
+    const attached = info.attachedTo;
+    $('#proxy-attached').classList.toggle('hidden', !attached);
+    if (attached) { $('#proxy-attached-name').textContent = info.attachedName || '—'; sel.value = attached; }
+    $('#proxy-info').textContent = attached
+      ? 'Этот сервер подключён к прокси. Можно сменить прокси (выбрать другой и «Подключить») или отключить.'
+      : 'Подключите этот сервер к прокси, чтобы игроки заходили через него.';
+    $('#proxy-attach').classList.remove('hidden');
+    $('#proxy-attach').innerHTML = ''; $('#proxy-attach').appendChild(picon('check'));
+    $('#proxy-attach').appendChild(document.createTextNode(attached ? ' Сменить/подключить' : ' Подключить'));
+    $('#proxy-detach').classList.toggle('hidden', !attached);
+  }
+  async function proxyLink(action) {
+    if (!state.currentId) return;
+    const err = $('#proxy-err'); err.className = 'err'; err.textContent = '';
+    const proxyId = action === 'attach' ? $('#proxy-select').value : null;
+    if (action === 'attach' && !proxyId) { err.textContent = 'Выберите прокси.'; return; }
+    const name = action === 'attach' ? ($('#proxy-select').selectedOptions[0] || {}).textContent : '';
+    const q = action === 'attach'
+      ? 'Подключить сервер «' + (state.current && state.current.name) + '» к прокси «' + name + '»?\nСервер перейдёт в proxy-режим (online-mode выключится).'
+      : 'Отключить сервер от прокси? Вернётся обычный режим (online-mode включится).';
+    if (!await confirmDialog(q, { title: 'Прокси', yesText: action === 'attach' ? 'Подключить' : 'Отключить', danger: action === 'detach' })) return;
+    try {
+      const r = await API.proxyLinkSet(state.currentId, proxyId, action);
+      showToast(r.attachedTo ? 'Сервер подключён к прокси. Перезапустите сервер и прокси.' : 'Сервер отключён от прокси. Перезапустите сервер.', 'ok');
+      renderProxyCard();
+    } catch (e) { err.className = 'err'; err.textContent = e.message; showToast(e.message); }
   }
 
   // ---------- удалённое управление (туннель к CONTROLGUI Remote) ----------
@@ -4674,6 +4740,9 @@
 
     // удалённое управление — клик по тогглу вкл/выкл через API (флаг ставится по факту)
     $('#remote-toggle-row').addEventListener('click', (e) => { e.preventDefault(); toggleRemote(); });
+    // подключение/отключение прокси (Velocity/BungeeCord) из настроек backend-сервера
+    $('#proxy-attach').addEventListener('click', () => proxyLink('attach'));
+    $('#proxy-detach').addEventListener('click', () => proxyLink('detach'));
     $('#core-file').addEventListener('change', (event) => {
       const f = event.target.files[0];
       event.target.value = '';
@@ -4775,6 +4844,16 @@
     // путь можно вписать/вставить вручную и перейти по Enter
     $('#browse-cur').addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') { ev.preventDefault(); loadBrowse($('#browse-cur').value.trim()); }
+    });
+    // открыть НАТИВНЫЙ системный проводник (Windows/macOS/Linux) и перейти к выбранной папке
+    const nb = $('#browse-native');
+    if (nb) nb.addEventListener('click', async () => {
+      nb.disabled = true;
+      try {
+        const r = await API.pickFolder();
+        if (r && r.path) loadBrowse(r.path);
+      } catch (e) { showToast(e.message); }
+      finally { nb.disabled = false; }
     });
     // выбор режима импорта (копировать / на месте)
     $$('#import-mode-btns .seg').forEach((b) => b.addEventListener('click', () => setImportMode(b.dataset.mode)));

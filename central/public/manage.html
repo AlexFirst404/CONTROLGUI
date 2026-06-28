@@ -155,19 +155,20 @@
 
   <!-- МОДАЛКА: ВЫБОР ПАПКИ (импорт сервера) -->
   <div id="browse-root" class="modal-wrap hidden">
-    <div class="modal">
+    <div class="modal browse-modal">
       <div class="modal-head">
         <span>Выбор папки сервера</span>
         <button class="mc-btn sm" id="browse-close"><i class="pi" data-ic="close"></i></button>
       </div>
       <div class="modal-body">
         <input class="fld" id="browse-cur" placeholder="Путь к папке — можно вставить и нажать Enter" autocomplete="off" spellcheck="false">
-        <div class="btn-row btn-row-left" style="margin:8px 0 8px">
+        <div style="display:flex;gap:8px;align-items:center;margin:6px 0 6px">
           <button class="mc-btn sm sq" id="browse-up" title="Вверх (на уровень выше)"><i class="pi" data-ic="chevron-up"></i></button>
+          <button class="mc-btn sm" id="browse-native" title="Открыть системный проводник и выбрать папку"><i class="pi" data-ic="folder"></i> Проводник</button>
+          <span class="hint" id="browse-hint" style="margin:0"></span>
         </div>
-        <div class="hint" id="browse-hint" style="margin:0 0 8px"></div>
         <div class="browse-list" id="browse-list"></div>
-        <div class="btn-row" style="margin-top:14px">
+        <div class="btn-row" style="margin-top:12px">
           <button class="mc-btn primary" id="browse-pick"><i class="pi" data-ic="check"></i> Выбрать эту папку</button>
         </div>
       </div>
@@ -609,6 +610,21 @@
           <div class="hint" id="remote-claimed-block" style="margin:0 0 8px;display:none">✓ Сервер привязан к аккаунту владельца.</div>
           <div class="label-dim" style="font-size:12px">ID сервера: <span id="remote-gid">—</span> · туннель: <span id="remote-online">—</span></div>
         </div>
+      </div>
+
+      <div class="mc-card form-panel hidden" id="proxy-card">
+        <div class="section-title"><i class="pi" data-ic="cellular-signal-3"></i> Подключение к прокси (Velocity / BungeeCord)</div>
+        <div class="hint" id="proxy-info" style="margin:0 0 10px"></div>
+        <div id="proxy-attached" class="hidden" style="margin:0 0 10px">
+          <span class="hint" style="margin:0">Подключён к прокси: <b id="proxy-attached-name">—</b></span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap">
+          <select class="fld" id="proxy-select" style="flex:1;min-width:180px"></select>
+          <button type="button" class="mc-btn sm primary" id="proxy-attach"><i class="pi" data-ic="check"></i> Подключить</button>
+          <button type="button" class="mc-btn sm danger hidden" id="proxy-detach"><i class="pi" data-ic="close"></i> Отключить</button>
+        </div>
+        <div class="hint" style="margin:8px 0 0">Подключение переведёт этот сервер в proxy-режим (online-mode выключится, добавится <code>spigot.yml: bungeecord</code>) и пропишет его в конфиг прокси. Применяется после перезапуска сервера и прокси.</div>
+        <div class="err" id="proxy-err"></div>
       </div>
 
       <div class="mc-card form-panel" id="core-card">
