@@ -82,6 +82,7 @@ window.API = (function () {
     javaInstallState: () => call('GET', '/api/java/install'),
 
     browse: (path) => call('GET', '/api/browse?path=' + encodeURIComponent(path || '')),
+    importDetect: (path) => call('GET', '/api/import-detect?path=' + encodeURIComponent(path || '')),
 
     me: () => call('GET', '/api/auth/me'),
     logout: () => call('POST', '/api/auth/logout'),
@@ -133,6 +134,8 @@ window.API = (function () {
       return call('GET', '/api/servers/' + id + '/plugins/search?' + qs);
     },
     pluginInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId }),
+    pluginDetails: (id, projectId) => call('GET', '/api/servers/' + id + '/plugins/project?id=' + encodeURIComponent(projectId)),
+    modDetails: (id, projectId) => call('GET', '/api/servers/' + id + '/mods/project?id=' + encodeURIComponent(projectId)),
     pluginDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/plugins?file=' + encodeURIComponent(file)),
     pluginToggle: (id, file) => call('POST', '/api/servers/' + id + '/plugins/toggle', { file: file }),
 

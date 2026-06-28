@@ -166,10 +166,10 @@
       t.textContent = 'Вы вошли как: ' + accountLabel();
       homeAcc.appendChild(t);
     }
-    // пункт «Пользователи» — админу или в открытом режиме (создать первого)
-    $('#menu-users').classList.toggle('hidden', !(isAdmin || state.openMode));
-    // «Выйти» — только когда есть вход
-    $('#menu-logout').classList.toggle('hidden', state.openMode);
+    // локальная авторизация убрана: локального экрана «Пользователи» и локального «Выйти» нет
+    // (вход — через аккаунт центра на гейте; выход — в «Профиле»)
+    $('#menu-users').classList.add('hidden');
+    $('#menu-logout').classList.add('hidden');
     // удалённый режим: панель-локальные пункты не относятся к удалённому серверу — прячем
     if (window.CG_REMOTE) {
       // удалённое управление одним сервером: убираем промежуточный экран «Серверы» и локальные пункты
@@ -1158,6 +1158,8 @@
       if (!$('#import-jar-label').classList.contains('hidden') && $('#import-jar').value) {
         body.importJarFile = $('#import-jar').value;
       }
+      // авто-определённая версия (иначе определится при первом запуске)
+      if (state.importDetected && state.importDetected.version) body.version = state.importDetected.version;
     }
     if (isCustom && !coreFile) { showToast('Выберите файл ядра (.jar)'); return; }
     if (!isCustom && !isImport && !body.version) { showToast('Выберите версию'); return; }
@@ -1220,15 +1222,33 @@
     loadSettings();
   }
 
+  // плашка по центру (удалённый режим): «панель офлайн» / «не найдено» вместо спама тостами
+  function showPlaque(title, msg) {
+    const p = $('#cg-plaque'); if (!p) return;
+    $('#cg-plaque-title').textContent = title;
+    $('#cg-plaque-msg').textContent = msg || '';
+    const back = $('#cg-plaque-back'); if (back) back.onclick = () => { location.href = '/'; };
+    p.classList.remove('hidden');
+  }
+  function hidePlaque() { const p = $('#cg-plaque'); if (p) p.classList.add('hidden'); }
+
   async function refreshServer() {
     if (state.screen !== 'server' || !state.currentId) return;
     try {
       state.current = await API.server(state.currentId);
+      if (window.CG_REMOTE) hidePlaque();
       renderServerHead();
       if (state.currentTab === 'console') loadStats();
       // перерисовываем вкладку игроков — иначе OP/бан/вайтлист показывают старое состояние после действия
       if (state.currentTab === 'players') renderPlayers(state.current);
     } catch (e) {
+      if (window.CG_REMOTE) {
+        // удалённое управление: плашка по центру вместо спама тостами снизу
+        if (e.status === 502 || /офлайн|offline|недоступн/i.test(e.message || '')) showPlaque('Панель офлайн', 'Удалённая панель сейчас недоступна. Управление вернётся, когда она снова выйдет на связь.');
+        else if (e.status === 404) showPlaque('Не найдено', 'Сервер недоступен или был удалён.');
+        else showPlaque('Ошибка связи', e.message);
+        return;
+      }
       // фантомный сервер (строго 404 «не найден») — убираем из списка, чтобы не висел.
       // 502 (панель удалёнки офлайн) НЕ роняет сервер — он вернётся, когда панель проснётся.
       if (e.status === 404) {
@@ -2445,6 +2465,7 @@
       api: {
         search: (id, opts) => API.pluginsSearch(id, opts),
         install: (id, pid) => API.pluginInstall(id, pid),
+        details: (id, pid) => API.pluginDetails(id, pid),
         list: (id) => API.pluginsList(id),
         del: (id, f) => API.pluginDelete(id, f),
         toggle: (id, f) => API.pluginToggle(id, f),
@@ -2460,6 +2481,7 @@
       api: {
         search: (id, opts) => API.modsSearch(id, opts),
         install: (id, pid) => API.modInstall(id, pid),
+        details: (id, pid) => API.modDetails(id, pid),
         list: (id) => API.modsList(id),
         del: (id, f) => API.modDelete(id, f),
         toggle: (id, f) => API.modToggle(id, f),
@@ -2568,7 +2590,7 @@
     for (let p = start; p < end; p++) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'mc-btn sm pg' + (p === cur ? ' sel' : '');
+      b.className = 'mc-btn sm pg' + (p === cur ? ' primary' : '');
       b.textContent = String(p + 1);
       b.addEventListener('click', () => contentGoToPage(kind, p));
       el.appendChild(b);
@@ -2612,6 +2634,9 @@
     for (const h of hits) {
       const card = document.createElement('div');
       card.className = 'pl-card';
+      card.style.cursor = 'pointer';
+      card.title = 'Открыть описание';
+      card.addEventListener('click', () => openContentModal(kind, h));
 
       const icon = document.createElement('img');
       icon.className = 'pl-icon';
@@ -2657,12 +2682,62 @@
         btn.className = 'mc-btn sm primary pl-install';
         btn.appendChild(picon('download'));
         btn.appendChild(document.createTextNode(' Установить'));
-        btn.addEventListener('click', () => installContent(kind, h, btn));
+        btn.addEventListener('click', (ev) => { ev.stopPropagation(); installContent(kind, h, btn); });
         card.appendChild(btn);
       }
 
       box.appendChild(card);
     }
+  }
+
+  function stripMarkdown(md) {
+    return String(md || '')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')        // картинки
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')       // ссылки -> текст
+      .replace(/^#{1,6}\s*/gm, '')                    // заголовки
+      .replace(/[*_`>|]/g, '')                        // акценты/код/цитаты/таблицы
+      .replace(/<[^>]+>/g, '')                        // html-теги
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+  // модалка каталога: полное описание + картинки (Modrinth)
+  async function openContentModal(kind, hit) {
+    const cfg = CONTENT[kind];
+    $('#cm-title').textContent = hit.title || '';
+    $('#cm-body').innerHTML = '<div class="muted">Загрузка…</div>';
+    $('#content-modal').classList.remove('hidden');
+    let d = null;
+    try { d = await cfg.api.details(state.currentId, hit.projectId); } catch (e) { /* */ }
+    if (!d) { $('#cm-body').innerHTML = '<div class="muted">Не удалось загрузить описание.</div>'; return; }
+    const wrap = document.createElement('div');
+    if (d.iconUrl) { const ic = document.createElement('img'); ic.src = d.iconUrl; ic.alt = ''; ic.style.cssText = 'width:56px;height:56px;border-radius:8px;float:left;margin:0 12px 8px 0'; wrap.appendChild(ic); }
+    const short = document.createElement('div'); short.className = 'hint'; short.style.margin = '0 0 10px'; short.textContent = d.description || ''; wrap.appendChild(short);
+    const dlc = document.createElement('div'); dlc.className = 'label-dim'; dlc.style.cssText = 'clear:both;font-size:12px;margin:0 0 12px'; dlc.textContent = fmtCount(d.downloads) + ' загрузок'; wrap.appendChild(dlc);
+    if (d.gallery && d.gallery.length) {
+      const gal = document.createElement('div'); gal.style.cssText = 'display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin:0 0 12px';
+      for (const g of d.gallery.slice(0, 12)) {
+        const im = document.createElement('img'); im.src = g.url; im.alt = g.title || ''; im.loading = 'lazy';
+        im.style.cssText = 'height:150px;border-radius:6px;border:1px solid #3a3a3a;cursor:zoom-in'; im.onclick = () => window.open(g.url, '_blank', 'noopener');
+        gal.appendChild(im);
+      }
+      wrap.appendChild(gal);
+    }
+    if (d.body) {
+      const body = document.createElement('div'); body.style.cssText = 'white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.5;max-height:42vh;overflow:auto;color:#cfcfcf';
+      body.textContent = stripMarkdown(d.body);
+      wrap.appendChild(body);
+    }
+    if (can('files.upload') && !isHitInstalled(kind, hit)) {
+      const ib = document.createElement('button'); ib.className = 'mc-btn primary'; ib.style.marginTop = '14px';
+      ib.appendChild(picon('download')); ib.appendChild(document.createTextNode(' Установить'));
+      ib.addEventListener('click', async () => {
+        ib.disabled = true; ib.textContent = 'Скачиваю…';
+        try { await cfg.api.install(state.currentId, hit.projectId); showToast(cap(cfg.word) + ' установлен. Перезапустите сервер.', 'ok'); $('#content-modal').classList.add('hidden'); loadInstalledContent(kind); }
+        catch (e) { showToast(e.message); ib.disabled = false; ib.textContent = 'Установить'; }
+      });
+      wrap.appendChild(ib);
+    }
+    $('#cm-body').innerHTML = ''; $('#cm-body').appendChild(wrap);
   }
 
   async function installContent(kind, hit, btn) {
@@ -4465,11 +4540,22 @@
     $('#browse-close').addEventListener('click', () => $('#browse-root').classList.add('hidden'));
     $('#browse-root').addEventListener('click', (ev) => { if (ev.target === $('#browse-root')) $('#browse-root').classList.add('hidden'); });
     $('#browse-up').addEventListener('click', () => loadBrowse(browseParent || ''));
-    $('#browse-pick').addEventListener('click', () => {
+    $('#browse-pick').addEventListener('click', async () => {
       if (!browseCurPath) return;
-      $('#import-path').value = browseCurPath;
+      const picked = browseCurPath;
+      $('#import-path').value = picked;
       populateImportJars(browseCurJars); // показать выбор .jar для запуска
       $('#browse-root').classList.add('hidden');
+      // автоопределение: имя, ядро, версия, launch-jar — пользователю ничего вводить не нужно
+      try {
+        const d = await API.importDetect(picked);
+        state.importDetected = d;
+        const nf = $('#create-form [name=name]'); if (nf && !nf.value.trim() && d.name) nf.value = d.name;
+        if (d.type) { const cs = $('#core-select'); if (cs && cs.value !== d.type) { cs.value = d.type; if (cs._mcSync) cs._mcSync(); onCoreChange(); } }
+        if (d.jar) { const ij = $('#import-jar'); if (ij && Array.from(ij.options).some((o) => o.value === d.jar)) { ij.value = d.jar; if (ij._mcSync) ij._mcSync(); } }
+        const sum = $('#import-detected');
+        if (sum) { sum.textContent = 'Определено: ' + (CORE_NAMES[d.type] || d.type) + (d.version ? ' ' + d.version : '') + ' · запуск: ' + (d.jar || 'server.jar'); sum.classList.remove('hidden'); }
+      } catch (e) { /* определение не критично — поля можно заполнить вручную */ }
     });
     $('#eula-row').addEventListener('click', (event) => {
       if (event.target.tagName !== 'A') $('#eula-check').classList.toggle('on');
@@ -4562,6 +4648,10 @@
     $('#appset-root').addEventListener('click', (event) => {
       if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
     });
+    // модалка описания плагина/мода: закрытие по крестику / клику вне / Esc
+    if ($('#cm-close')) $('#cm-close').addEventListener('click', () => $('#content-modal').classList.add('hidden'));
+    if ($('#content-modal')) $('#content-modal').addEventListener('click', (e) => { if (e.target.id === 'content-modal') $('#content-modal').classList.add('hidden'); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const cm = $('#content-modal'); if (cm) cm.classList.add('hidden'); const pw = $('#pw-modal'); if (pw) pw.classList.add('hidden'); } });
     $$('#launchmode-btns .seg').forEach((b) => b.addEventListener('click', async () => {
       const mode = b.dataset.mode;
       const cur = $('#launchmode-btns .seg.sel');

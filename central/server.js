@@ -346,7 +346,7 @@ function serveStatic(req, res, urlPath) {
   const file = path.normalize(path.join(PUB, p));
   if (!file.startsWith(PUB)) { res.writeHead(403); return res.end('Forbidden'); }
   fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('404'); }
+    if (err) { return htmlPage(res, 404, 'Страница не найдена', 'Такой страницы нет. <a href="/" style="color:#80da5b">Назад на главную</a>.'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(data);
   });

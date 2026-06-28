@@ -81,6 +81,15 @@
     </div>
   </div>
 
+  <!-- ПЛАШКА: панель офлайн / не найдено (вместо спама тостами в удалённом режиме) -->
+  <div id="cg-plaque" class="gate-overlay hidden">
+    <div class="gate-box mc-card" style="text-align:center">
+      <div class="gate-brand" id="cg-plaque-title" style="font-size:24px">Панель офлайн</div>
+      <div class="gate-sub" id="cg-plaque-msg" style="margin:12px 0 20px;font-size:14px"></div>
+      <button class="mc-btn primary" id="cg-plaque-back" style="width:100%"><i class="pi" data-ic="server"></i> Назад к серверам</button>
+    </div>
+  </div>
+
   <!-- О ПАНЕЛИ -->
   <div id="about-root" class="modal-wrap hidden">
     <div class="modal">
@@ -211,6 +220,7 @@
           <select class="fld" id="import-jar"></select>
           <span class="hint" style="margin:4px 0 0">Если в папке несколько .jar — выберите, какой запускать сервер (обычно server.jar; установщики-installer не подходят).</span>
         </label>
+        <div class="hint hidden" id="import-detected" style="grid-column:1/-1;color:var(--accent-bright,#80da5b)"></div>
         <label class="mc-label">Имя сервера
           <input class="fld" name="name" maxlength="40" placeholder="Мой сервер" required>
         </label>
@@ -386,7 +396,7 @@
 
     <div class="btn-row btn-row-left" style="max-width:520px;margin:18px auto 0">
       <button class="mc-btn" id="pf-back"><i class="pi" data-ic="server"></i> К серверам</button>
-      <button class="mc-btn" id="pf-pw-open" style="background:#c8731f;border-color:#e7913a;color:#fff"><i class="pi" data-ic="key"></i> Сбросить пароль</button>
+      <button class="mc-btn" id="pf-pw-open" style="background:#c8731f;border-color:#e7913a;color:#fff"><i class="pi" data-ic="lock"></i> Сбросить пароль</button>
       <button class="mc-btn danger" id="pf-logout"><i class="pi" data-ic="close"></i> Выйти из аккаунта</button>
     </div>
   </section>
@@ -401,6 +411,14 @@
         <div class="err" id="pwm-err"></div>
         <button class="mc-btn primary" id="pwm-save" style="margin-top:14px;width:100%"><i class="pi" data-ic="check"></i> Сменить пароль</button>
       </div>
+    </div>
+  </div>
+
+  <!-- МОДАЛКА: описание плагина/мода из каталога (Modrinth) -->
+  <div id="content-modal" class="modal-wrap hidden">
+    <div class="modal" style="max-width:700px;width:94%">
+      <div class="modal-head"><span id="cm-title">Описание</span><button class="mc-btn sm" id="cm-close"><i class="pi" data-ic="close"></i></button></div>
+      <div class="modal-body" id="cm-body"></div>
     </div>
   </div>
 
