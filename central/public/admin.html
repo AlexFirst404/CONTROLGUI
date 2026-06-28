@@ -124,6 +124,15 @@ async function showUserInfo(username){
   let html='';
   if(i.discord&&i.discord.avatar) html+='<div style="text-align:center;margin:0 0 12px"><img alt="" src="'+esc(i.discord.avatar)+'" style="width:60px;height:60px;border-radius:50%;border:2px solid #454545"></div>';
   html+='<table>'+rows.map((r)=>'<tr><td class="muted" style="padding:4px 14px 4px 0;white-space:nowrap;vertical-align:top">'+esc(r[0])+'</td><td style="word-break:break-all">'+esc(r[1])+'</td></tr>').join('')+'</table>';
+  if(i.history && i.history.length){
+    html+='<div style="margin:16px 0 6px;color:#80da5b">История устройств / IP ('+i.history.length+')</div>';
+    html+='<table>'+i.history.map(function(h){
+      var dev=(h.os||'—')+(h.hostname?' · '+h.hostname:'')+(h.sysUser?' · '+h.sysUser:'');
+      var when=(h.lastAt?new Date(h.lastAt).toLocaleString('ru-RU'):'—');
+      var extra='посл.: '+when+(h.count>1?' · входов: '+h.count:'')+(h.hwid?' · HWID '+esc(String(h.hwid).slice(0,12))+'…':'');
+      return '<tr><td class="muted" style="padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">'+esc(h.ip||'—')+'</td><td>'+esc(dev)+'<br><span class="label-dim" style="font-size:11px">'+extra+'</span></td></tr>';
+    }).join('')+'</table>';
+  }
   box.innerHTML=html;
 }
 $('#info-close') && ($('#info-close').onclick=()=>show('#info-modal',false));

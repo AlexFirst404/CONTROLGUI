@@ -160,8 +160,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (urlPath === '/login') {
-    return serveStatic(Object.assign(req, { url: '/login.html' }), res);
+  if (urlPath === '/login' || urlPath === '/login.html') {
+    // локальный вход убран: личность = аккаунт центра. Любой заход на /login — на главную.
+    res.writeHead(302, { Location: '/' });
+    return res.end();
   }
   if (req.url.startsWith('/api/')) {
     req.cgUser = user; // для проверки прав в api.js

@@ -107,16 +107,33 @@ function setDevice(username, device, ip) {
   const list = all();
   const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
   if (!u) return;
+  const cleanIp = ip ? clipStr(String(ip).replace(/^::ffff:/, ''), 64) : (u.lastIp || null);
+  let dev = u.device || null;
   if (device && typeof device === 'object') {
-    u.device = {
+    dev = {
       hwid: clipStr(device.hwid, 64), os: clipStr(device.os, 20), osRelease: clipStr(device.osRelease, 40),
       cpu: clipStr(device.cpu, 90), cores: parseInt(device.cores, 10) || 0,
       ramGb: (typeof device.ramGb === 'number' && isFinite(device.ramGb)) ? device.ramGb : 0,
       sysUser: clipStr(device.sysUser, 64), hostname: clipStr(device.hostname, 64),
     };
+    u.device = dev;
   }
-  if (ip) u.lastIp = clipStr(ip, 64);
-  u.lastSeen = new Date().toISOString();
+  if (cleanIp) u.lastIp = cleanIp;
+  const now = new Date().toISOString();
+  u.lastSeen = now;
+  // история устройств/IP: одна запись на уникальную пару (hwid + IP); повтор — обновляем время и счётчик
+  const hist = Array.isArray(u.history) ? u.history : [];
+  const hwid = (dev && dev.hwid) || null;
+  const key = (hwid || '?') + '|' + (cleanIp || '?');
+  const ex = hist.find((h) => ((h.hwid || '?') + '|' + (h.ip || '?')) === key);
+  if (ex) { ex.lastAt = now; ex.count = (ex.count || 1) + 1; if (dev) { ex.os = dev.os; ex.hostname = dev.hostname; ex.sysUser = dev.sysUser; ex.cpu = dev.cpu; ex.ramGb = dev.ramGb; } }
+  else {
+    hist.unshift({ hwid, ip: cleanIp || null, os: dev ? dev.os : null, hostname: dev ? dev.hostname : null,
+      sysUser: dev ? dev.sysUser : null, cpu: dev ? dev.cpu : null, ramGb: dev ? dev.ramGb : null,
+      firstAt: now, lastAt: now, count: 1 });
+    if (hist.length > 20) hist.length = 20;
+  }
+  u.history = hist;
   saveAll(list);
 }
 /* Полная инфо для админа (Discord + железо + IP + дата). */
@@ -126,6 +143,7 @@ function adminInfo(username) {
   return {
     username: u.username, role: u.role, approved: !!u.approved, createdAt: u.createdAt,
     lastSeen: u.lastSeen || null, lastIp: u.lastIp || null, device: u.device || null,
+    history: Array.isArray(u.history) ? u.history : [],
     discord: u.discord ? { id: u.discord.id, name: u.discord.name, avatar: u.discord.avatar || null } : null,
   };
 }

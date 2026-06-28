@@ -28,7 +28,8 @@ function clientIp(req) {
   // Node слушает :443 напрямую, без доверенного реверс-прокси -> X-Forwarded-For
   // полностью подделывается клиентом, поэтому НЕ доверяем ему (иначе обход анти-брутфорса
   // ротацией заголовка и таргетированный лок-DoS чужого IP). Ключуемся на реальном пире.
-  return req.socket.remoteAddress || 'unknown';
+  // нормализуем IPv4-mapped IPv6 (::ffff:1.2.3.4 -> 1.2.3.4) — и для отображения, и для ключей лимитов
+  return String(req.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '');
 }
 function readBody(req, limit) {
   return new Promise((resolve) => {

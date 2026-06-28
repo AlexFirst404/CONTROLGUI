@@ -4069,16 +4069,17 @@
   async function loadBrowse(p) {
     try {
       const d = await API.browse(p);
+      const isDrives = d.path === '::drives';
       browseParent = d.parent;
-      browseCurPath = d.path || '';
+      browseCurPath = isDrives ? '' : (d.path || '');
       browseCurJars = d.jars || [];
-      $('#browse-cur').textContent = (d.path ? d.path : 'Этот компьютер (диски)') + (d.isServer ? '   ✓ похоже на сервер' : '');
-      $('#browse-pick').disabled = !d.path;
+      $('#browse-cur').textContent = (isDrives || !d.path ? 'Этот компьютер (диски)' : d.path) + (d.isServer ? '   ✓ похоже на сервер' : '');
+      $('#browse-pick').disabled = isDrives || !d.path;
       $('#browse-up').disabled = d.parent == null;
       const list = $('#browse-list');
       list.innerHTML = '';
       for (const name of (d.dirs || [])) {
-        const full = d.path ? (d.path.replace(/[\\/]+$/, '') + '/' + name) : name;
+        const full = (isDrives || !d.path) ? name : (d.path.replace(/[\\/]+$/, '') + '/' + name);
         const row = document.createElement('div');
         row.className = 'browse-item';
         row.textContent = '📁 ' + name;
