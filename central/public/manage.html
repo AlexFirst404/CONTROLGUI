@@ -41,9 +41,6 @@
     <div class="menu-item" data-menu="settings"><i class="pi" data-ic="sliders"></i> Настройки панели</div>
     <div class="menu-item hidden" id="menu-users" data-menu="users"><i class="pi" data-ic="users"></i> Пользователи</div>
     <div class="menu-item" data-menu="about"><i class="pi" data-ic="info-box"></i> О панели</div>
-    <div class="menu-sep"></div>
-    <a class="menu-item" href="https://github.com/AlexFirst404/CONTROLGUI" target="_blank" rel="noopener">
-      <i class="pi" data-ic="code"></i> GitHub</a>
     <div class="menu-item danger hidden" id="menu-logout" data-menu="logout"><i class="pi" data-ic="close"></i> Выйти</div>
   </nav>
 
@@ -73,6 +70,7 @@
         <label class="mc-label" style="margin-top:12px">Пароль<input class="fld" id="gate-li-pass" type="password" autocomplete="current-password"></label>
         <div class="err" id="gate-li-err"></div>
         <button class="mc-btn primary" id="gate-login-btn" style="margin-top:14px;width:100%"><i class="pi" data-ic="open"></i> Войти</button>
+        <div class="hint" style="margin:12px 0 0;text-align:center">Забыли пароль? <a href="#" id="gate-discord-reset">Сбросить через Discord</a></div>
       </div>
       <div id="gate-reg-form" class="hidden">
         <label class="mc-label">Придумайте логин<input class="fld" id="gate-rg-user" autocomplete="off"></label>
@@ -364,19 +362,23 @@
 
   <!-- ЭКРАН: ПРОФИЛЬ АККАУНТА (ник + Discord) -->
   <section id="screen-profile" class="screen hidden">
+    <!-- стрелка «назад» слева сверху, в одну колонку с табличками -->
+    <div style="max-width:520px;margin:0 auto 10px">
+      <button class="mc-btn sm sq" id="pf-back" title="К серверам"><i class="pi" data-ic="chevron-left"></i></button>
+    </div>
     <h1 class="mc-title">Профиль аккаунта</h1>
     <p class="hint" style="text-align:center;margin:-6px 0 18px">Аккаунт CONTROLGUI привязан к общему серверу. Здесь можно сменить ник и привязать Discord.</p>
 
     <div class="mc-card form-panel" style="max-width:520px;margin:0 auto">
       <div class="section-title" style="display:flex;align-items:center;gap:12px">
-        <img id="pf-avatar" alt="" style="width:46px;height:46px;border-radius:50%;border:2px solid #454545;display:none">
+        <img id="pf-avatar" class="pf-avatar" alt="">
         <span>Аккаунт: <b id="pf-username">…</b></span>
       </div>
       <div class="hint" id="pf-server" style="margin:0 0 14px"></div>
-      <label class="mc-label">Новый ник
+      <label class="mc-label">Ник
         <div style="display:flex;gap:10px;align-items:stretch;margin-top:4px">
-          <input class="fld" id="pf-rename-input" maxlength="32" autocomplete="off" style="flex:1">
-          <button class="mc-btn sm primary" id="pf-rename-btn" style="margin:0;white-space:nowrap"><i class="pi" data-ic="check"></i> Сохранить ник</button>
+          <input class="fld" id="pf-rename-input" maxlength="32" autocomplete="off" readonly style="flex:1">
+          <button class="mc-btn sm sq" id="pf-rename-btn" title="Изменить ник"><i class="pi" data-ic="edit"></i></button>
         </div>
       </label>
       <div class="err" id="pf-rename-err"></div>
@@ -397,9 +399,9 @@
       <div class="err" id="pf-discord-err"></div>
     </div>
 
-    <div class="btn-row btn-row-left" style="max-width:520px;margin:18px auto 0">
-      <button class="mc-btn" id="pf-back"><i class="pi" data-ic="server"></i> К серверам</button>
-      <button class="mc-btn" id="pf-pw-open" style="background:#c8731f;border-color:#e7913a;color:#fff"><i class="pi" data-ic="lock"></i> Сбросить пароль</button>
+    <!-- сброс пароля на всю ширину верхней таблички, выход — под ней -->
+    <div class="pf-actions" style="max-width:520px;margin:18px auto 0">
+      <button class="mc-btn accent" id="pf-pw-open"><i class="pi" data-ic="lock"></i> Сбросить пароль</button>
       <button class="mc-btn danger" id="pf-logout"><i class="pi" data-ic="close"></i> Выйти из аккаунта</button>
     </div>
   </section>
@@ -413,6 +415,7 @@
         <label class="mc-label" style="margin-top:10px">Новый пароль (мин. 6)<input class="fld" id="pwm-new" type="password" autocomplete="new-password"></label>
         <div class="err" id="pwm-err"></div>
         <button class="mc-btn primary" id="pwm-save" style="margin-top:14px;width:100%"><i class="pi" data-ic="check"></i> Сменить пароль</button>
+        <div class="hint" style="margin:12px 0 0;text-align:center">Не помните текущий? <a href="#" id="pwm-discord-reset">Сбросить через Discord</a></div>
       </div>
     </div>
   </div>
@@ -713,7 +716,7 @@
     <div class="tab-pane hidden" id="tab-plugins">
       <div class="mc-card form-panel mod-card">
         <div class="mod-head" id="pl-collapse">
-          <span class="section-title" style="margin:0">Каталог плагинов · Modrinth</span>
+          <span class="section-title" style="margin:0">Каталог плагинов</span>
           <span class="mod-collapse-hint" id="pl-collapse-hint"></span>
           <i class="pi mod-chevron" data-ic="chevron-down"></i>
         </div>
@@ -724,6 +727,12 @@
             <button class="mc-btn sm primary" id="pl-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
           </div>
           <div class="pl-filters">
+            <label class="pl-fl">Источник
+              <select class="fld" id="pl-provider">
+                <option value="modrinth">Modrinth</option>
+                <option value="curseforge">CurseForge</option>
+              </select>
+            </label>
             <label class="pl-fl">Категория
               <select class="fld" id="pl-category">
                 <option value="">Все категории</option>
@@ -779,7 +788,7 @@
     <div class="tab-pane hidden" id="tab-mods">
       <div class="mc-card form-panel mod-card">
         <div class="mod-head" id="md-collapse">
-          <span class="section-title" style="margin:0">Каталог модов · Modrinth</span>
+          <span class="section-title" style="margin:0">Каталог модов</span>
           <span class="mod-collapse-hint" id="md-collapse-hint"></span>
           <i class="pi mod-chevron" data-ic="chevron-down"></i>
         </div>
@@ -790,6 +799,12 @@
             <button class="mc-btn sm primary" id="md-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
           </div>
           <div class="pl-filters">
+            <label class="pl-fl">Источник
+              <select class="fld" id="md-provider">
+                <option value="modrinth">Modrinth</option>
+                <option value="curseforge">CurseForge</option>
+              </select>
+            </label>
             <label class="pl-fl">Категория
               <select class="fld" id="md-category">
                 <option value="">Все категории</option>
@@ -953,22 +968,9 @@
 
   <div id="toast-root" class="toast-root"></div>
 
-  <!-- колокол уведомлений (правый нижний угол) + история последних 10 -->
-  <style>
-    .notif-bell{position:fixed;right:16px;bottom:16px;z-index:90;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:#2a2a2a;border:2px solid #454545;border-radius:8px;cursor:pointer;color:#cfcfcf}
-    .notif-bell:hover{background:#333}
-    .notif-bell .pi{width:22px;height:22px}
-    .notif-pop{position:fixed;right:16px;bottom:66px;z-index:90;width:300px;max-height:50vh;overflow:auto;background:#1f1f1f;border:2px solid #454545;border-radius:8px;padding:8px}
-    .notif-pop.hidden{display:none}
-    .notif-pop-head{font-family:'Minecraft Ten','Minecraft',sans-serif;font-size:13px;color:#e6e6e6;padding:4px 6px 8px;border-bottom:1px solid #3a3a3a;margin-bottom:6px}
-    .notif-item{padding:6px;font-size:12px;border-bottom:1px solid #2c2c2c;line-height:1.4;color:#cfcfcf}
-    .notif-item:last-child{border-bottom:none}
-    .notif-item .nt-time{color:#7a7a7a;font-size:10px;display:block}
-    .notif-item.ok{color:#9fe085}
-    .notif-item.err{color:#e09090}
-  </style>
-  <button id="notif-bell" class="notif-bell" title="Уведомления"><i class="pi" data-ic="info-box"></i></button>
-  <div id="notif-pop" class="notif-pop hidden">
+  <!-- колокол уведомлений (правый нижний угол) + история последних 10; стили в ките (.notif-*) -->
+  <button id="notif-bell" class="mc-btn sm notif-bell" title="Уведомления"><i class="pi" data-ic="bell"></i></button>
+  <div id="notif-pop" class="mc-card notif-pop hidden">
     <div class="notif-pop-head">Уведомления</div>
     <div id="notif-list"></div>
   </div>

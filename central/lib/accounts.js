@@ -197,6 +197,38 @@ function setDiscord(username, discord) {
   saveAll(list);
   return { ok: true, user: publicUser(u) };
 }
+/* Найти аккаунт по привязанному Discord-ID (для сброса пароля через Discord). */
+function byDiscordId(id) {
+  const did = String(id || '');
+  if (!did) return null;
+  return all().find((a) => a.discord && String(a.discord.id) === did) || null;
+}
+
+// ---- сброс пароля через Discord (одноразовый токен после подтверждения личности) ----
+const resetTokens = new Map(); // token -> { username, expires }
+function makeResetToken(username) {
+  const t = crypto.randomBytes(24).toString('hex');
+  resetTokens.set(t, { username, expires: Date.now() + 10 * 60 * 1000 });
+  return t;
+}
+function takeResetToken(t) {
+  const v = resetTokens.get(String(t || ''));
+  if (!v) return null;
+  resetTokens.delete(String(t));
+  return Date.now() > v.expires ? null : v;
+}
+/* Назначить новый пароль без знания текущего (после подтверждения через Discord). */
+function setPassword(username, newPw) {
+  if (String(newPw || '').length < 6) return { error: 'Пароль: минимум 6 символов' };
+  const list = all();
+  const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
+  if (!u) return { error: 'Аккаунт не найден' };
+  const salt = crypto.randomBytes(16).toString('hex');
+  u.salt = salt; u.hash = hashPw(newPw, salt);
+  saveAll(list);
+  return { ok: true, username: u.username };
+}
+
 function pending() { return all().filter((a) => !a.approved).map(publicUser); }
 function listUsers() { return all().map(publicUser); }
 // одобренные ники (для выбора при выдаче доступа) — без админов
@@ -255,12 +287,14 @@ function sweep() {
     const idle = now - (a.lastSeen || 0);
     if (a.lockedUntil <= now && idle > LOCK_MS) attempts.delete(ip); // не активна и не залочена
   }
+  for (const [t, v] of resetTokens) if (now > v.expires) resetTokens.delete(t);
 }
 const _sweepTimer = setInterval(sweep, 10 * 60 * 1000);
 if (_sweepTimer.unref) _sweepTimer.unref();
 
 module.exports = {
   COOKIE, ensureAdmin, register, verify, approve, remove, rename, setDiscord, changePassword, setDevice, adminInfo, count,
+  byDiscordId, makeResetToken, takeResetToken, setPassword,
   pending, listUsers, approvedNames, isAdmin, exists,
   createSession, destroySession, cookieFor, clearCookie, parseCookies, userFromReq, validName,
   MAX_FAILS, lockMs, noteFail, clearFails,

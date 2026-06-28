@@ -71,3 +71,6 @@ th { color: #9a9a9a; font-family: var(--font-head); font-weight: normal; font-si
   max-width: 90vw; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; }
 .toast.ok { border-color: var(--accent); color: #d6f5c8; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* нативные чекбоксы (напр. выдача прав в админке) — в цвет темы кита */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width: 15px; height: 15px; vertical-align: -2px; }

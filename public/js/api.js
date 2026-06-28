@@ -131,12 +131,13 @@ window.API = (function () {
       const qs = 'q=' + encodeURIComponent(opts.q || '') +
         '&category=' + encodeURIComponent(opts.category || '') +
         '&sort=' + encodeURIComponent(opts.sort || 'relevance') +
-        '&offset=' + (opts.offset || 0);
+        '&offset=' + (opts.offset || 0) +
+        '&provider=' + encodeURIComponent(opts.provider || 'modrinth');
       return call('GET', '/api/servers/' + id + '/plugins/search?' + qs);
     },
-    pluginInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId }),
-    pluginDetails: (id, projectId) => call('GET', '/api/servers/' + id + '/plugins/project?id=' + encodeURIComponent(projectId)),
-    modDetails: (id, projectId) => call('GET', '/api/servers/' + id + '/mods/project?id=' + encodeURIComponent(projectId)),
+    pluginInstall: (id, projectId, provider) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId, provider: provider || 'modrinth' }),
+    pluginDetails: (id, projectId, provider) => call('GET', '/api/servers/' + id + '/plugins/project?id=' + encodeURIComponent(projectId) + '&provider=' + encodeURIComponent(provider || 'modrinth')),
+    modDetails: (id, projectId, provider) => call('GET', '/api/servers/' + id + '/mods/project?id=' + encodeURIComponent(projectId) + '&provider=' + encodeURIComponent(provider || 'modrinth')),
     pluginDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/plugins?file=' + encodeURIComponent(file)),
     pluginToggle: (id, file) => call('POST', '/api/servers/' + id + '/plugins/toggle', { file: file }),
 
@@ -146,10 +147,11 @@ window.API = (function () {
       const qs = 'q=' + encodeURIComponent(opts.q || '') +
         '&category=' + encodeURIComponent(opts.category || '') +
         '&sort=' + encodeURIComponent(opts.sort || 'relevance') +
-        '&offset=' + (opts.offset || 0);
+        '&offset=' + (opts.offset || 0) +
+        '&provider=' + encodeURIComponent(opts.provider || 'modrinth');
       return call('GET', '/api/servers/' + id + '/mods/search?' + qs);
     },
-    modInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/mods/install', { projectId: projectId }),
+    modInstall: (id, projectId, provider) => call('POST', '/api/servers/' + id + '/mods/install', { projectId: projectId, provider: provider || 'modrinth' }),
     modDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/mods?file=' + encodeURIComponent(file)),
     modToggle: (id, file) => call('POST', '/api/servers/' + id + '/mods/toggle', { file: file }),
 

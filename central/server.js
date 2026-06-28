@@ -67,6 +67,7 @@ const linkLimit = makeLimiter(60 * 1000, 10);     // /api/link по аккаун
 const linkIpLimit = makeLimiter(60 * 1000, 15);   // /api/link по IP (анти-брутфорс кода)
 const linkGlobalLimit = makeLimiter(60 * 1000, 120); // глобальный потолок попыток привязки
 const renameLimit = makeLimiter(60 * 1000, 5);    // /api/account/rename по аккаунту
+const resetLimit = makeLimiter(60 * 1000, 10);    // сброс пароля через Discord по IP
 const MAX_ACCOUNTS = 5000;                         // потолок всех аккаунтов (анти-флуд при авто-одобрении)
 
 // анти-брутфорс кода привязки: после серии неверных кодов — блок IP на 10 минут
@@ -134,7 +135,7 @@ async function handleAgent(req, res, urlPath, url) {
     const b = await readBody(req);
     const s = servers.byToken(b.token);
     if (!s) return json(res, 401, { error: 'bad token' });
-    servers.updateStatus(b.token, { status: b.status, online: b.online, name: b.name, type: b.type, version: b.version });
+    servers.updateStatus(b.token, { status: b.status, online: b.online, name: b.name, type: b.type, version: b.version, ownerHidden: b.ownerHidden });
     // отдаём агенту актуальное состояние привязки, чтобы панель показала «привязан» без рестарта
     return json(res, 200, { ok: true, claimed: !!s.ownerAccount, linkCode: s.linkCode || null });
   }
@@ -191,19 +192,35 @@ function htmlPage(res, code, title, msg) {
     + '<style>' + PAGE_CSS + '</style></head><body><div class="c"><h1>' + title + '</h1><p>'
     + msg + '</p></div></body></html>');
 }
-/* Страница callback implicit-grant: достаёт access_token из #fragment и шлёт на /finish. */
+/* Страница callback implicit-grant: достаёт access_token из #fragment и шлёт на /finish.
+   /finish сам решает, привязка это или сброс пароля (по kind в state). Для сброса
+   показываем форму нового пароля и шлём её на /reset-complete. */
 function discordCallbackPage(res) {
+  const css = PAGE_CSS + '.f{margin-top:14px}.f input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #454545;'
+    + 'background:#101010;color:#e6e6e6;font-size:15px;border-radius:6px}.f button{margin-top:10px;width:100%;padding:10px;'
+    + 'background:#52a535;border:0;color:#fff;font-size:15px;border-radius:6px;cursor:pointer}.e{color:#ff8a7a;font-size:13px;margin-top:8px}';
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end('<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Discord</title><style>' + PAGE_CSS
-    + '</style></head><body><div class="c" id="box"><h1>Привязка Discord…</h1><p>Секунду…</p></div><script>'
-    + '(function(){function show(t,m){document.getElementById("box").innerHTML="<h1>"+t+"</h1><p>"+m+"</p>";}'
+  res.end('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Discord</title><style>' + css
+    + '</style></head><body><div class="c" id="box"><h1>Discord…</h1><p>Секунду…</p></div><script>'
+    + '(function(){var box=document.getElementById("box");'
+    + 'function show(t,m){box.innerHTML="<h1>"+t+"</h1><p>"+m+"</p>";}'
     + 'var p=new URLSearchParams((location.hash||"").replace(/^#/,""));'
     + 'var at=p.get("access_token"),st=p.get("state"),err=p.get("error");'
     + 'try{history.replaceState(null,"",location.pathname);}catch(e){}'
     + 'if(err){show("Не получилось","Discord вернул ошибку: "+err);return;}'
-    + 'if(!at){show("Не получилось","Не получили токен от Discord. Повторите привязку из приложения.");return;}'
+    + 'if(!at){show("Не получилось","Не получили токен от Discord. Повторите из приложения/сайта.");return;}'
+    + 'function resetForm(username,token){box.innerHTML="<h1>Новый пароль</h1><p>Аккаунт <b>"+username+"</b>. Задайте новый пароль.</p>"'
+    + '+"<div class=f><input id=np type=password placeholder=\\"Новый пароль (мин. 6)\\" autocomplete=new-password><button id=sb>Сменить пароль</button><div class=e id=er></div></div>";'
+    + 'document.getElementById("sb").onclick=function(){var pw=document.getElementById("np").value;var er=document.getElementById("er");'
+    + 'if((pw||"").length<6){er.textContent="Минимум 6 символов.";return;}er.textContent="";'
+    + 'fetch("/api/account/discord/reset-complete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({resetToken:token,password:pw})})'
+    + '.then(function(r){return r.json();}).then(function(d){if(d&&d.ok){show("Пароль изменён","Готово! Войдите с новым паролем. <a style=\\"color:#80da5b\\" href=/>На сайт</a>.");}else{er.textContent=(d&&d.error)||"Ошибка.";}})'
+    + '.catch(function(){er.textContent="Ошибка сети.";});};}'
     + 'fetch("/api/account/discord/finish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({state:st,access_token:at})})'
-    + '.then(function(r){return r.json();}).then(function(d){if(d&&d.ok){show("Discord привязан","Аккаунт <b>"+(d.name||"")+"</b> привязан. Закройте это окно и вернитесь в приложение.");}else{show("Не получилось",(d&&d.error)||"Ошибка привязки");}})'
+    + '.then(function(r){return r.json();}).then(function(d){'
+    + 'if(d&&d.ok&&d.reset){resetForm(d.username||"",d.resetToken);return;}'
+    + 'if(d&&d.ok){show("Discord привязан","Аккаунт <b>"+(d.name||"")+"</b> привязан. Закройте это окно и вернитесь в приложение.");return;}'
+    + 'show("Не получилось",(d&&d.error)||"Ошибка.");})'
     + '.catch(function(){show("Ошибка сети","Не удалось связаться с сервером.");});})();</script></body></html>');
 }
 
@@ -221,20 +238,45 @@ async function handleDiscordOAuth(req, res, urlPath, url) {
     res.writeHead(302, { Location: discord.authorizeUrl(state) });
     return res.end();
   }
+  // старт сброса пароля через Discord (публично, без входа): личность подтвердит Discord,
+  // аккаунт найдём по привязанному Discord-ID.
+  if (urlPath === '/api/account/discord/reset-start' && req.method === 'GET') {
+    if (!resetLimit(clientIp(req))) return htmlPage(res, 429, 'Слишком часто', 'Подождите минуту и попробуйте снова.');
+    if (!discord.enabled()) return htmlPage(res, 503, 'Discord не настроен', 'Администратор ещё не подключил Discord-приложение. Попробуйте позже.');
+    const state = discord.makeState(null, 'reset');
+    res.writeHead(302, { Location: discord.authorizeUrl(state) });
+    return res.end();
+  }
   // callback от Discord (implicit): токен в #fragment — отдаём страницу с JS, которая шлёт его на /finish
   if (urlPath === '/api/account/discord/callback' && req.method === 'GET') {
     return discordCallbackPage(res);
   }
-  // приём токена со страницы callback: валидируем у Discord и привязываем (публично — state защищает)
+  // приём токена со страницы callback: валидируем у Discord. Для kind=reset находим аккаунт
+  // по Discord-ID и выдаём одноразовый токен сброса; иначе — привязываем (публично, state защищает).
   if (urlPath === '/api/account/discord/finish' && req.method === 'POST') {
     const b = await readBody(req, 16 * 1024);
     const v = discord.takeState(String(b.state || ''));
-    if (!v) return json(res, 400, { error: 'Ссылка устарела. Повторите привязку из приложения.' });
+    if (!v) return json(res, 400, { error: 'Ссылка устарела. Повторите из приложения/сайта.' });
     const prof = await discord.fetchUser(String(b.access_token || ''));
     if (prof.error) return json(res, 502, { error: prof.error });
+    if (v.kind === 'reset') {
+      const u = accounts.byDiscordId(prof.id);
+      if (!u) return json(res, 404, { error: 'К этому Discord не привязан ни один аккаунт CONTROLGUI.' });
+      return json(res, 200, { ok: true, reset: true, username: u.username, resetToken: accounts.makeResetToken(u.username) });
+    }
     const r = accounts.setDiscord(v.username, prof);
     if (r.error) return json(res, 409, { error: r.error });
     return json(res, 200, { ok: true, name: prof.name });
+  }
+  // завершение сброса: одноразовый токен + новый пароль
+  if (urlPath === '/api/account/discord/reset-complete' && req.method === 'POST') {
+    if (!resetLimit(clientIp(req))) return json(res, 429, { error: 'Слишком часто. Подождите минуту.' });
+    const b = await readBody(req, 16 * 1024);
+    const v = accounts.takeResetToken(String(b.resetToken || ''));
+    if (!v) return json(res, 400, { error: 'Ссылка сброса устарела. Начните заново.' });
+    const r = accounts.setPassword(v.username, String(b.password || ''));
+    if (r.error) return json(res, 400, r);
+    return json(res, 200, { ok: true, username: r.username });
   }
   return false;
 }

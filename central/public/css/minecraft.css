@@ -108,6 +108,11 @@ body {
 .hint { color: #a9a9a9; font-size: 13px; line-height: 1.5; margin: 12px 0; }
 a { color: var(--accent-bright); }
 
+/* строка ошибки/подсказки под полем: всегда с отступом и интервалом; пустая — схлопывается */
+.err { color: #ff8a7a; font-size: 12px; line-height: 1.45; margin: 8px 0 0; padding-left: 2px; }
+.err:empty { margin: 0; }
+.err.ok { color: var(--accent-bright); }
+
 .mc-title { font-family: var(--font-head); font-size: 22px; font-weight: normal; color: #e6e6e6;
   letter-spacing: 1px; text-align: center; margin: 6px 0 20px; text-shadow: 2px 2px 0 rgba(0,0,0,.5); }
 
@@ -144,6 +149,10 @@ a { color: var(--accent-bright); }
 .mc-btn.lg { font-size: 22px; padding: 14px 26px; border-width: 4px; box-shadow: 0 8px 0 0 var(--btn-sh); margin-bottom: 8px; }
 .mc-btn.sm:active:not(:disabled), .mc-btn.sm.sel { transform: translateY(4px); box-shadow: 0 0 0 0 var(--btn-sh); }
 .mc-btn.lg:active:not(:disabled), .mc-btn.lg.sel { transform: translateY(8px); box-shadow: 0 0 0 0 var(--btn-sh); }
+/* квадратная кнопка-иконка (для действий «только значок») */
+.mc-btn.sq { min-width: 0; width: 42px; padding: 0; }
+.mc-btn.sm.sq { width: 38px; }
+.mc-btn.block { width: 100%; min-width: 0; }
 
 /* -------------------------------------------------------- поля кита ------- */
 .fld { font-family: var(--font-ui); font-size: 15px; color: #fff;
@@ -549,6 +558,30 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 .toast-error { border-left-color: #c43f35; color: #ffb0a4; }
 .toast-ok { border-left-color: var(--accent); color: var(--accent-bright); }
 @keyframes toast-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* --------------------------------- колокол уведомлений (на стилях кита) ---- */
+/* кнопка — квадратная .mc-btn sm, закреплена в правом нижнем углу */
+.notif-bell.mc-btn { position: fixed; right: 16px; bottom: 16px; z-index: 90;
+  width: 42px; height: 42px; min-width: 0; padding: 0; margin: 0;
+  display: flex; align-items: center; justify-content: center; }
+.notif-bell.mc-btn .pi { width: 20px; height: 20px; }
+/* поповер — .mc-card, закреплён над кнопкой */
+.notif-pop.mc-card { position: fixed; right: 16px; bottom: 66px; z-index: 90;
+  width: 300px; max-height: 50vh; overflow: auto; padding: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+.notif-pop-head { font-family: var(--font-head); font-size: 13px; color: #e6e6e6;
+  padding: 4px 6px 8px; border-bottom: 1px solid var(--sep); margin-bottom: 6px; }
+.notif-item { padding: 6px; font-size: 12px; border-bottom: 1px solid #2c2c2c; line-height: 1.4; color: #cfcfcf; }
+.notif-item:last-child { border-bottom: none; }
+.notif-item .nt-time { color: #7a7a7a; font-size: 10px; display: block; }
+.notif-item.ok { color: var(--accent-bright); }
+.notif-item.err { color: #e09090; }
+
+/* ------------------------------------------------------- профиль --------- */
+.pf-avatar { width: 40px; height: 40px; border: 2px solid var(--bd); image-rendering: auto; flex: none; }
+.pf-avatar:not([src]) { display: none; }
+/* кнопки действий профиля: на всю ширину верхней таблички, стопкой */
+.pf-actions { display: flex; flex-direction: column; gap: 10px; }
+.pf-actions .mc-btn { width: 100%; min-width: 0; margin-bottom: 0; }
 
 /* ------------------------------------------------------- скроллбары ------- */
 ::-webkit-scrollbar { width: 12px; height: 12px; }

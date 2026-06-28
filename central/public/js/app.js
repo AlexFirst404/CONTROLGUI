@@ -685,13 +685,34 @@
   // id серверов, которые ответили 404 «не найден» — больше не показываем (фантомы)
   const deadServerIds = new Set();
   async function loadServers() {
-    const data = await API.servers();
-    state.servers = (data.servers || []).filter((s) => !deadServerIds.has(s.id));
-    renderList();
-    // удалённый режим управляет ОДНИМ сервером — открываем его сразу, без экрана выбора
-    if (window.CG_REMOTE && state.screen !== 'server' && state.servers.length) {
-      openServer(state.servers[0].id);
+    let data;
+    try {
+      data = await API.servers();
+    } catch (e) {
+      // удалённое управление: панель офлайн/недоступна — показываем плашку, а НЕ «псевдоглавный»
+      // экран со списком и кнопками «создать сервер» (его в удалёнке быть не должно)
+      if (window.CG_REMOTE) {
+        if (e.status === 502 || /офлайн|offline|недоступн/i.test(e.message || ''))
+          showPlaque('Панель офлайн', 'Удалённая панель сейчас недоступна. Управление вернётся, когда она снова выйдет на связь.');
+        else if (e.status === 404) showPlaque('Не найдено', 'Сервер недоступен или был удалён.');
+        else showPlaque('Ошибка связи', e.message);
+        return;
+      }
+      throw e;
     }
+    state.servers = (data.servers || []).filter((s) => !deadServerIds.has(s.id));
+    if (window.CG_REMOTE) {
+      // удалённый режим управляет ОДНИМ сервером — открываем его сразу, без экрана выбора;
+      // нет серверов → сервер удалён/офлайн: плашка вместо экрана создания
+      if (state.servers.length) {
+        hidePlaque();
+        if (state.screen !== 'server') openServer(state.servers[0].id);
+      } else {
+        showPlaque('Сервер офлайн', 'Этот сервер сейчас недоступен. Управление откроется, когда панель снова выйдет на связь.');
+      }
+      return;
+    }
+    renderList();
   }
 
   function statusDotClass(status) {
@@ -786,11 +807,24 @@
     updateCentralLabel();
     return res;
   }
+  let centralSessionPrompting = false;
   async function validateCentralSession() {
     const res = await syncCentralUser();
     if (!res) return;
-    if (res.expired) showToast('Сессия аккаунта истекла — войдите заново через «Профиль».');
-    else if (res.offline) showToast('Нет связи с сервером CONTROLGUI — удалённые серверы офлайн.');
+    // сессия истекла ИЛИ пользователь не в аккаунте — блокирующий гейт «войдите/создайте»
+    if (res.expired || res.loggedIn === false) {
+      if (centralSessionPrompting) return;
+      const g = $('#account-gate');
+      if (g && !g.classList.contains('hidden')) return; // гейт уже открыт
+      centralSessionPrompting = true;
+      cgCentralUser = null; updateCentralLabel();
+      if (state.screen === 'profile') { showScreen('list'); }
+      showToast('Сессия аккаунта истекла — войдите заново.');
+      try { await showAccountGate(); await syncCentralUser(); guard(loadServers); }
+      finally { centralSessionPrompting = false; }
+    } else if (res.offline) {
+      showToast('Нет связи с сервером CONTROLGUI — удалённые серверы офлайн.');
+    }
   }
 
   // --- гейт ---
@@ -809,6 +843,19 @@
     $('#gate-reg-btn').addEventListener('click', gateDoReg);
     $('#gate-li-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') gateDoLogin(); });
     $('#gate-rg-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') gateDoReg(); });
+    const dr = $('#gate-discord-reset');
+    if (dr) dr.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const err = $('#gate-li-err'); err.className = 'err'; err.textContent = '';
+      try {
+        const st = await API.centralState();
+        const base = (st && st.central) || '';
+        if (!base) { err.textContent = 'Адрес сервера CONTROLGUI неизвестен.'; return; }
+        window.open(base + '/api/account/discord/reset-start', '_blank', 'noopener');
+        err.className = 'err ok';
+        err.textContent = 'Откройте окно браузера, подтвердите Discord и задайте новый пароль, затем войдите.';
+      } catch (e2) { err.textContent = 'Не удалось открыть сброс пароля.'; }
+    });
   }
   function showAccountGate() {
     return new Promise((resolve) => {
@@ -853,7 +900,8 @@
     const u = (res && res.user) || cgCentralUser || null;
     $('#pf-username').textContent = u ? u.username : '—';
     const inp = $('#pf-rename-input');
-    if (inp && document.activeElement !== inp) inp.value = u ? u.username : '';
+    // не затираем ввод, пока пользователь редактирует ник (поле не readonly)
+    if (inp && inp.hasAttribute('readonly')) inp.value = u ? u.username : '';
     const ep = res && res.endpoint;
     $('#pf-server').textContent = ep ? ('Сервер: ' + ep.host + (ep.port && ep.port !== 443 ? ':' + ep.port : '')) : '';
     const enabled = !!(res && res.discordEnabled);
@@ -863,7 +911,24 @@
     $('#pf-discord-off').classList.toggle('hidden', linked || enabled);
     if (linked) $('#pf-discord-name').textContent = u.discord.name || u.discord.id;
     const av = $('#pf-avatar');
-    if (av) { const url = u && u.discord && u.discord.avatar; if (url) { av.src = url; av.style.display = ''; } else { av.style.display = 'none'; av.removeAttribute('src'); } }
+    // аватар Discord, если привязан (CSS прячет img без src)
+    if (av) { const url = u && u.discord && u.discord.avatar; if (url) av.src = url; else av.removeAttribute('src'); }
+    setRenameEditing(false); // при открытии/обновлении профиля — режим просмотра
+  }
+  // переключение поля ника: просмотр (readonly + карандаш) ↔ редактирование (ввод + галочка)
+  function setRenameEditing(on) {
+    const inp = $('#pf-rename-input'); const btn = $('#pf-rename-btn');
+    if (!inp || !btn) return;
+    const ic = btn.querySelector('.pi');
+    if (on) {
+      inp.removeAttribute('readonly'); inp.focus(); inp.select();
+      if (ic) ic.dataset.ic = 'check'; applyIcons(btn);
+      btn.title = 'Сохранить ник';
+    } else {
+      inp.setAttribute('readonly', '');
+      if (ic) ic.dataset.ic = 'edit'; applyIcons(btn);
+      btn.title = 'Изменить ник';
+    }
   }
   function setupProfile() {
     if (profileBound || !$('#screen-profile')) return;
@@ -872,6 +937,19 @@
     $('#pf-pw-open').addEventListener('click', () => {
       $('#pwm-cur').value = ''; $('#pwm-new').value = ''; $('#pwm-err').textContent = '';
       $('#pw-modal').classList.remove('hidden'); setTimeout(() => $('#pwm-cur').focus(), 40);
+    });
+    const pwReset = $('#pwm-discord-reset');
+    if (pwReset) pwReset.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const err = $('#pwm-err'); err.className = 'err'; err.textContent = '';
+      try {
+        const st = await API.centralState();
+        const base = (st && st.central) || '';
+        if (!base) { err.textContent = 'Адрес сервера CONTROLGUI неизвестен.'; return; }
+        window.open(base + '/api/account/discord/reset-start', '_blank', 'noopener');
+        err.className = 'err ok';
+        err.textContent = 'Подтвердите Discord в открывшемся окне и задайте новый пароль.';
+      } catch (e2) { err.textContent = 'Не удалось открыть сброс пароля.'; }
     });
     $('#pw-close').addEventListener('click', () => $('#pw-modal').classList.add('hidden'));
     $('#pw-modal').addEventListener('click', (e) => { if (e.target.id === 'pw-modal') $('#pw-modal').classList.add('hidden'); });
@@ -882,15 +960,26 @@
       try { await API.centralChangePassword(cur, nw); $('#pw-modal').classList.add('hidden'); showToast('Пароль изменён.', 'ok'); }
       catch (e) { err.className = 'err'; err.textContent = e.message; }
     });
-    $('#pf-rename-btn').addEventListener('click', async () => {
+    async function doRename() {
       const err = $('#pf-rename-err'); err.className = 'err'; err.textContent = '';
       const nn = $('#pf-rename-input').value.trim();
       if (!nn) { err.textContent = 'Введите ник.'; return; }
-      if (cgCentralUser && nn === cgCentralUser.username) { err.className = 'err ok'; err.textContent = 'Это текущий ник.'; return; }
+      if (cgCentralUser && nn === cgCentralUser.username) { setRenameEditing(false); return; } // без изменений
       if (!await confirmDialog('Сменить ник на «' + nn + '»? Он обновится во всех ваших серверах.', { title: 'Смена ника', yesText: 'Сменить', danger: false })) return;
-      try { const r = await API.centralRename(nn); cgCentralUser = r.user || { username: nn }; updateCentralLabel(); err.textContent = ''; showToast('Ник изменён на «' + cgCentralUser.username + '».', 'ok'); }
-      catch (e) { err.className = 'err'; err.textContent = e.message; showToast(e.message); }
+      try {
+        const r = await API.centralRename(nn);
+        cgCentralUser = r.user || { username: nn }; updateCentralLabel();
+        $('#pf-username').textContent = cgCentralUser.username;
+        err.textContent = ''; setRenameEditing(false);
+        showToast('Ник изменён на «' + cgCentralUser.username + '».', 'ok');
+      } catch (e) { err.className = 'err'; err.textContent = e.message; showToast(e.message); }
+    }
+    // карандаш → редактирование, галочка → сохранить
+    $('#pf-rename-btn').addEventListener('click', () => {
+      if ($('#pf-rename-input').hasAttribute('readonly')) setRenameEditing(true);
+      else doRename();
     });
+    $('#pf-rename-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doRename(); } });
     $('#pf-discord-link').addEventListener('click', async () => {
       const err = $('#pf-discord-err'); err.className = 'err'; err.textContent = '';
       try {
@@ -1585,9 +1674,18 @@
             ? 'Снять OP с игрока «' + p.name + '»?'
             : 'Выдать OP игроку «' + p.name + '»?\nОператор получает доступ к админ-командам сервера.';
           if (await confirmDialog(q, { title: isOp ? 'Снять OP' : 'Выдать OP', yesText: isOp ? 'Снять' : 'Выдать', danger: false })) {
-            await guard(() => API.moderate(state.currentId, act, p.name));
+            const r = await guard(() => API.moderate(state.currentId, act, p.name));
+            if (!r) return; // ошибка уже показана тостом
             showToast(isOp ? 'OP снят с «' + p.name + '».' : '«' + p.name + '» теперь оператор.', 'ok');
-            setTimeout(refreshServer, 800);
+            // на работающем сервере ops.json пишется сервером асинхронно — обновляем список
+            // операторов оптимистично и перерисовываем сразу, чтобы кнопка не «застывала»
+            if (state.current) {
+              const ops = (state.current.ops || []).filter((n) => n.toLowerCase() !== p.name.toLowerCase());
+              if (act === 'op') ops.push(p.name);
+              state.current.ops = ops;
+              if (state.currentTab === 'players') renderPlayers(state.current);
+            }
+            setTimeout(refreshServer, 1500); // потом сверяемся с реальным ops.json
           }
         });
         actions.appendChild(opBtn);
@@ -2286,7 +2384,7 @@
     if (!state.currentId || remoteBusy) return; // guard от двойного клика / гонки токена
     const turnOn = !$('#remote-toggle').classList.contains('on');
     if (!turnOn) {
-      const ok = await confirmDialog('Выключить удалённое управление этим сервером? Туннель к центральному серверу закроется.',
+      const ok = await confirmDialog('Выключить удалённое управление этим сервером? Он перестанет отображаться на сайте.',
         { title: 'Удалённое управление', yesText: 'Выключить', danger: true });
       if (!ok) return;
     }
@@ -2484,10 +2582,11 @@
         installed: '#pl-installed', info: '#pl-info', body: '#pl-body', collapse: '#pl-collapse',
         collapseHint: '#pl-collapse-hint' },
       collapseKey: 'cg-collapse-plugins',
+      provEl: '#pl-provider',
       api: {
         search: (id, opts) => API.pluginsSearch(id, opts),
-        install: (id, pid) => API.pluginInstall(id, pid),
-        details: (id, pid) => API.pluginDetails(id, pid),
+        install: (id, pid, prov) => API.pluginInstall(id, pid, prov),
+        details: (id, pid, prov) => API.pluginDetails(id, pid, prov),
         list: (id) => API.pluginsList(id),
         del: (id, f) => API.pluginDelete(id, f),
         toggle: (id, f) => API.pluginToggle(id, f),
@@ -2500,10 +2599,11 @@
         installed: '#md-installed', info: '#md-info', body: '#md-body', collapse: '#md-collapse',
         collapseHint: '#md-collapse-hint' },
       collapseKey: 'cg-collapse-mods',
+      provEl: '#md-provider',
       api: {
         search: (id, opts) => API.modsSearch(id, opts),
-        install: (id, pid) => API.modInstall(id, pid),
-        details: (id, pid) => API.modDetails(id, pid),
+        install: (id, pid, prov) => API.modInstall(id, pid, prov),
+        details: (id, pid, prov) => API.modDetails(id, pid, prov),
         list: (id) => API.modsList(id),
         del: (id, f) => API.modDelete(id, f),
         toggle: (id, f) => API.modToggle(id, f),
@@ -2524,14 +2624,34 @@
     try { return localStorage.getItem(CONTENT[kind].collapseKey) === '1'; } catch (e) { return false; }
   }
 
+  // выбранный провайдер каталога (modrinth по умолчанию)
+  function contentProvider(kind) {
+    const el = $(CONTENT[kind].provEl);
+    return el && el.value === 'curseforge' ? 'curseforge' : 'modrinth';
+  }
+  // у CurseForge нет фильтра по категориям Modrinth — прячем его для этого провайдера
+  function applyProviderUi(kind) {
+    const cfg = CONTENT[kind];
+    const cat = $(cfg.els.cat);
+    if (cat) {
+      const cf = contentProvider(kind) === 'curseforge';
+      const lbl = cat.closest('label') || cat;
+      lbl.classList.toggle('hidden', cf);
+      if (cf) cat.value = '';
+    }
+  }
+
   function loadContent(kind) {
     const cfg = CONTENT[kind];
     const srv = state.current || {};
+    const prov = contentProvider(kind);
     const info = $(cfg.els.info);
     if (info) {
       info.textContent = 'Листайте каталог или ищите ' + cfg.wordGen + ' под ' + (CORE_NAMES[srv.type] || srv.type) +
-        ' ' + (srv.version || '–') + ' — файл скачивается с Modrinth прямо в папку ' + cfg.folder + '/. Применяется после перезапуска.';
+        ' ' + (srv.version || '–') + ' — файл скачивается с ' + (prov === 'curseforge' ? 'CurseForge' : 'Modrinth') +
+        ' прямо в папку ' + cfg.folder + '/. Применяется после перезапуска.';
     }
+    applyProviderUi(kind);
     setContentCollapsed(kind, isContentCollapsed(kind));
     contentNav[kind].offset = 0;
     // установленные грузим первыми (нужны их имена, чтобы помечать «Установлена» в каталоге)
@@ -2543,8 +2663,9 @@
     const cfg = CONTENT[kind];
     const nav = contentNav[kind];
     if (reset) nav.offset = 0;
+    const provider = contentProvider(kind);
     const box = $(cfg.els.results);
-    box.innerHTML = '<div class="pl-empty">Загрузка ' + cfg.wordGen + ' с Modrinth…</div>';
+    box.innerHTML = '<div class="pl-empty">Загрузка ' + cfg.wordGen + ' с ' + (provider === 'curseforge' ? 'CurseForge' : 'Modrinth') + '…</div>';
     $(cfg.els.pager).classList.add('hidden');
     const seq = ++nav.seq;
     try {
@@ -2553,8 +2674,12 @@
         category: $(cfg.els.cat).value,
         sort: $(cfg.els.sort).value,
         offset: nav.offset || 0,
+        provider,
       });
       if (seq !== nav.seq) return;
+      // каждый хит помечаем провайдером — он нужен для установки/описания
+      const prov = data.provider || provider;
+      for (const h of (data.hits || [])) h.provider = h.provider || prov;
       renderContentResults(kind, data.hits || []);
       updateContentPager(kind, data);
     } catch (e) {
@@ -2729,7 +2854,7 @@
     $('#cm-body').innerHTML = '<div class="muted">Загрузка…</div>';
     $('#content-modal').classList.remove('hidden');
     let d = null;
-    try { d = await cfg.api.details(state.currentId, hit.projectId); } catch (e) { /* */ }
+    try { d = await cfg.api.details(state.currentId, hit.projectId, hit.provider); } catch (e) { /* */ }
     if (!d) { $('#cm-body').innerHTML = '<div class="muted">Не удалось загрузить описание.</div>'; return; }
     const wrap = document.createElement('div');
     if (d.iconUrl) { const ic = document.createElement('img'); ic.src = d.iconUrl; ic.alt = ''; ic.style.cssText = 'width:56px;height:56px;border-radius:8px;float:left;margin:0 12px 8px 0'; wrap.appendChild(ic); }
@@ -2754,7 +2879,7 @@
       ib.appendChild(picon('download')); ib.appendChild(document.createTextNode(' Установить'));
       ib.addEventListener('click', async () => {
         ib.disabled = true; ib.textContent = 'Скачиваю…';
-        try { await cfg.api.install(state.currentId, hit.projectId); showToast(cap(cfg.word) + ' установлен. Перезапустите сервер.', 'ok'); $('#content-modal').classList.add('hidden'); loadInstalledContent(kind); }
+        try { await cfg.api.install(state.currentId, hit.projectId, hit.provider); showToast(cap(cfg.word) + ' установлен. Перезапустите сервер.', 'ok'); $('#content-modal').classList.add('hidden'); loadInstalledContent(kind); }
         catch (e) { showToast(e.message); ib.disabled = false; ib.textContent = 'Установить'; }
       });
       wrap.appendChild(ib);
@@ -2767,7 +2892,7 @@
     btn.disabled = true;
     btn.textContent = 'Скачиваю…';
     try {
-      const r = await cfg.api.install(state.currentId, hit.projectId);
+      const r = await cfg.api.install(state.currentId, hit.projectId, hit.provider);
       showToast(cap(cfg.word) + ' «' + hit.title + '» установлен (' + r.version + '). Перезапустите сервер.', 'ok');
       loadInstalledContent(kind);
     } catch (e) {
@@ -4222,12 +4347,13 @@
     if (q.length < 2) { showToast('Введите минимум 2 символа для поиска по всем логам'); return; }
     await guard(async () => {
       const data = await API.logsSearch(state.currentId, q);
+      const matches = (data && data.matches) || [];
       const view = $('#logs-view');
       view.innerHTML = '';
-      $('#logs-meta').textContent = 'По всем логам: найдено ' + data.matches.length + (data.truncated ? '+ (первые 500)' : '') + ' для «' + q + '»';
-      if (!data.matches.length) { view.textContent = 'Ничего не найдено по всем логам.'; return; }
+      $('#logs-meta').textContent = 'По всем логам: найдено ' + matches.length + (data && data.truncated ? '+ (первые 500)' : '') + ' для «' + q + '»';
+      if (!matches.length) { view.textContent = 'Ничего не найдено по всем логам.'; return; }
       const frag = document.createDocumentFragment();
-      for (const m of data.matches) {
+      for (const m of matches) {
         const el = document.createElement('span'); el.className = 'log-line';
         const f = document.createElement('b'); f.style.color = 'var(--accent-bright,#80da5b)'; f.textContent = m.file + ':' + m.line + '  ';
         el.appendChild(f); el.appendChild(document.createTextNode(m.text)); el.appendChild(document.createTextNode('\n'));
@@ -4388,9 +4514,12 @@
 
   // ---------- опрос ----------
 
+  let pollCount = 0;
   function pollOnce() {
     if (state.screen === 'list') guard(loadServers);
     else if (state.screen === 'server') refreshServer();
+    // раз в ~30 c проверяем, не истекла ли сессия аккаунта центра (иначе «выкинуло» без гейта)
+    if (!window.CG_REMOTE && (++pollCount % 12 === 0)) validateCentralSession();
   }
 
   function startPolling() {
@@ -4540,6 +4669,8 @@
       });
       $(e.cat).addEventListener('change', () => doContentSearch(kind, true));
       $(e.sort).addEventListener('change', () => doContentSearch(kind, true));
+      const prov = $(CONTENT[kind].provEl);
+      if (prov) prov.addEventListener('change', () => { applyProviderUi(kind); doContentSearch(kind, true); });
       $(e.prev).addEventListener('click', () => contentPage(kind, -1));
       $(e.next).addEventListener('click', () => contentPage(kind, 1));
       $(e.installed.replace('-installed', '-refresh')).addEventListener('click', () => loadInstalledContent(kind));

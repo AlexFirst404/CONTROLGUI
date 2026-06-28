@@ -32,7 +32,7 @@ function authorizeUrl(state) {
 const TTL = 10 * 60 * 1000;
 const states = new Map();
 const linkTokens = new Map();
-function makeState(username) { const s = crypto.randomBytes(16).toString('hex'); states.set(s, { username, expires: Date.now() + TTL }); return s; }
+function makeState(username, kind) { const s = crypto.randomBytes(16).toString('hex'); states.set(s, { username, kind: kind || 'link', expires: Date.now() + TTL }); return s; }
 function takeState(s) { const v = states.get(s); if (!v) return null; states.delete(s); return Date.now() > v.expires ? null : v; }
 function makeLinkToken(username) { const t = crypto.randomBytes(24).toString('hex'); linkTokens.set(t, { username, expires: Date.now() + TTL }); return t; }
 function takeLinkToken(t) { const v = linkTokens.get(t); if (!v) return null; linkTokens.delete(t); return Date.now() > v.expires ? null : v; }
