@@ -700,7 +700,8 @@
       }
       throw e;
     }
-    state.servers = (data.servers || []).filter((s) => !deadServerIds.has(s.id));
+    // deadServerIds — только для фантомных УДАЛЁННЫХ серверов; локальные (из store) всегда показываем
+    state.servers = (data.servers || []).filter((s) => !(s.remote && deadServerIds.has(s.id)));
     if (window.CG_REMOTE) {
       // удалённый режим управляет ОДНИМ сервером — открываем его сразу, без экрана выбора;
       // нет серверов → сервер удалён/офлайн: плашка вместо экрана создания
@@ -1362,8 +1363,9 @@
       }
       // фантомный сервер (строго 404 «не найден») — убираем из списка, чтобы не висел.
       // 502 (панель удалёнки офлайн) НЕ роняет сервер — он вернётся, когда панель проснётся.
+      // В чёрный список заносим ТОЛЬКО удалённый сервер — локальный 404-ить не должен.
       if (e.status === 404) {
-        deadServerIds.add(state.currentId);
+        if (state.current && state.current.remote) deadServerIds.add(state.currentId);
         state.servers = (state.servers || []).filter((s) => s.id !== state.currentId);
       }
       showScreen('list');
@@ -4256,13 +4258,15 @@
     } else if (!custom) {
       loadVersions();
     }
-    // импорт существующего сервера: скрываем версию/EULA/привязку, сам импорт — только для обычных ядер
+    // импорт существующего сервера: всё, что определится автоматически из его файлов
+    // (ядро, версия, сид, макс. игроков, режим игры, сложность) — скрываем; EULA/привязку тоже
     const importOn = isImportOn();
     $('#import-row').classList.toggle('hidden', isProxy || custom);
     if (importOn && !isProxy && !custom) {
-      $('#version-label').classList.add('hidden');
-      $('#eula-row').classList.add('hidden');
-      $('#backends-label').classList.add('hidden');
+      for (const id of ['core-label', 'version-label', 'maxplayers-label', 'cycle-gamemode',
+        'cycle-difficulty', 'seed-label', 'eula-row', 'backends-label']) {
+        const el = document.getElementById(id); if (el) el.classList.add('hidden');
+      }
     }
     updateJavaInstallUI(); // нужная мажорная java зависит от ядра/версии
   }
@@ -4752,6 +4756,8 @@
     });
 
     $('#btn-back').addEventListener('click', () => {
+      // на сайте (удалённое управление) — к списку серверов центра, а не назад к тому же серверу
+      if (window.CG_REMOTE) { location.href = '/'; return; }
       showScreen('list');
       guard(loadServers);
     });

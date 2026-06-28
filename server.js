@@ -7,6 +7,7 @@ const { serveStatic } = require('./lib/static');
 const { serverDir } = require('./lib/paths');
 const manager = require('./lib/manager');
 const users = require('./lib/users');
+const store = require('./lib/store');
 
 const PORT = parseInt(process.env.PORT, 10) || 8400;
 
@@ -168,9 +169,12 @@ const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/')) {
     req.cgUser = user; // для проверки прав в api.js
     const cc = require('./lib/centralclient');
-    // удалённый сервер (добавлен по коду) -> прозрачный прокси к центру (ДО чтения тела — нужен поток)
+    // удалённый сервер (добавлен по коду) -> прозрачный прокси к центру (ДО чтения тела — нужен поток).
+    // ВАЖНО: свой ЛОКАЛЬНЫЙ сервер всегда обслуживаем локально, даже если у него включена
+    // удалёнка (его remoteLocalId == локальному id). Иначе запрос ушёл бы на центр, и при
+    // удалении сервера из админки центр отдал бы 404 → панель убирала бы и локальный сервер.
     const m = urlPath.match(/^\/api\/servers\/([^/]+)(?:\/|$)/);
-    if (m) { const gid = cc.gidForLocal(m[1]); if (gid) return cc.proxy(req, res, gid); }
+    if (m && !store.get(m[1])) { const gid = cc.gidForLocal(m[1]); if (gid) return cc.proxy(req, res, gid); }
     // управление аккаунтом центра в десктопе
     if (urlPath === '/api/central' || urlPath.startsWith('/api/central/')) return handleCentralRoutes(req, res, urlPath, cc);
     return handleApi(req, res);

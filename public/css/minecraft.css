@@ -582,8 +582,8 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 /* кнопки действий профиля: на всю ширину верхней таблички, стопкой */
 .pf-actions { display: flex; flex-direction: column; gap: 10px; }
 .pf-actions .mc-btn { width: 100%; min-width: 0; margin-bottom: 0; }
-/* крупная заметная кнопка «назад» в профиле */
-.mc-btn.pf-back-btn { --btn-c: var(--accent); --btn-rim: var(--accent-bright); --btn-sh: #1e1e1f; --btn-ts: #1f4a12; color: #0c1a07; }
+/* крупная заметная кнопка «назад» в профиле (текст белый) */
+.mc-btn.pf-back-btn { --btn-c: var(--accent); --btn-rim: var(--accent-bright); --btn-sh: #1e1e1f; --btn-ts: #1f4a12; color: #fff; text-shadow: 2px 2px 0 #1f4a12; }
 .mc-btn.pf-back-btn .pi { width: 20px; height: 20px; }
 
 /* ------------------------------------------------------- скроллбары ------- */
