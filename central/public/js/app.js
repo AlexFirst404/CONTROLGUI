@@ -4259,12 +4259,16 @@
       loadVersions();
     }
     // импорт существующего сервера: всё, что определится автоматически из его файлов
-    // (ядро, версия, сид, макс. игроков, режим игры, сложность) — скрываем; EULA/привязку тоже
+    // (ядро, версия, сид, макс. игроков, режим игры, сложность) — скрываем; EULA/привязку тоже.
     const importOn = isImportOn();
+    const importHide = importOn && !isProxy && !custom;
     $('#import-row').classList.toggle('hidden', isProxy || custom);
-    if (importOn && !isProxy && !custom) {
-      for (const id of ['core-label', 'version-label', 'maxplayers-label', 'cycle-gamemode',
-        'cycle-difficulty', 'seed-label', 'eula-row', 'backends-label']) {
+    // у «Ядро» и «Макс. игроков» нет своего тоггла — задаём явно (иначе не вернутся при выключении импорта)
+    $('#core-label').classList.toggle('hidden', importHide);
+    $('#maxplayers-label').classList.toggle('hidden', importHide);
+    // остальные имеют собственную базовую видимость выше — при импорте просто доскрываем
+    if (importHide) {
+      for (const id of ['version-label', 'cycle-gamemode', 'cycle-difficulty', 'seed-label', 'eula-row', 'backends-label']) {
         const el = document.getElementById(id); if (el) el.classList.add('hidden');
       }
     }
