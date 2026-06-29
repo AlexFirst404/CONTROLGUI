@@ -2102,25 +2102,8 @@
         main.appendChild(hint);
       }
 
-      // правее инвентаря — 3D-модель игрока (скин, плащ и т.д.) в чёрной рамке
-      const model = document.createElement('div');
-      model.className = 'inv-model';
-      const skin = document.createElement('img');
-      skin.className = 'inv-skin';
-      skin.alt = '';
-      skin.loading = 'lazy';
-      const hex = String(data.uuid || '').replace(/-/g, '');
-      const realUuid = hex.length === 32 && hex[12] === '4';
-      // NMSR рисует 3D-тело со скином и плащом по реальному UUID; для оффлайн-UUID — mc-heads по нику
-      const nmsr = realUuid ? 'https://nmsr.nickac.dev/fullbody/' + encodeURIComponent(data.uuid) : null;
-      const fallback = 'https://mc-heads.net/body/' + encodeURIComponent(name) + '/256';
-      skin.src = nmsr || fallback;
-      skin.onerror = () => { skin.onerror = null; skin.src = fallback; };
-      model.appendChild(skin);
-
       flex.appendChild(side);
       flex.appendChild(main);
-      flex.appendChild(model);
       body.appendChild(flex);
 
       if (data.playTimeTicks != null) state.playTimes[name] = data.playTimeTicks;

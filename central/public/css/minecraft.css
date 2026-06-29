@@ -483,12 +483,6 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
   text-shadow: 2px 2px 0 #3f3f3f; font-family: var(--font-ui); z-index: 2; }
 .inv-empty-note { color: #a9a9a9; font-size: 13px; padding: 10px 0; }
 
-/* 3D-модель игрока (скин/плащ) справа от инвентаря — чёрный прямоугольник с серой обводкой */
-.inv-model { flex: none; width: 200px; align-self: stretch; box-sizing: border-box;
-  display: flex; align-items: center; justify-content: center; padding: 14px;
-  background: #0a0a0a; border: 2px solid #6c6d6f; }
-.inv-skin { max-width: 100%; max-height: 460px; image-rendering: pixelated; object-fit: contain; }
-
 /* всплывающая карточка предмета ПРИ НАВЕДЕНИИ — крупная, шрифт как в приложении,
    стиль подсказки Minecraft (фиолетовая градиентная рамка) */
 .item-tip { position: fixed; z-index: 1000; pointer-events: none;
@@ -509,7 +503,6 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 @media (max-width: 1100px) {
   .inv-flex { flex-direction: column; }
   .inv-side { flex: none; width: 100%; }
-  .inv-model { width: 100%; max-height: 380px; align-self: stretch; }
   .inv-grid { --slot: 48px; overflow-x: auto; }
   .inv-modal .modal-body { padding: 16px; }
 }
