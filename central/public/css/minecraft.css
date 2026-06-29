@@ -465,25 +465,28 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .inv-sec { color: #9fb0a4; font-size: 12.5px; text-transform: uppercase; letter-spacing: 1.5px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
 .inv-sec .pi { width: 14px; height: 14px; }
 .inv-sec:not(:first-child) { margin-top: 22px; }
-.inv-grid { display: grid; grid-template-columns: repeat(9, minmax(0, 72px)); gap: 6px; }
-.inv-grid.row5 { grid-template-columns: repeat(5, minmax(0, 72px)); }
-.inv-cell { position: relative; aspect-ratio: 1; background: #1e1e1f;
-  box-shadow: inset 0 0 0 2px #3f3f3f, inset 3px 3px 0 2px rgba(0,0,0,.45);
-  display: flex; align-items: center; justify-content: center; padding: 7px; min-width: 0; }
-.inv-cell.empty { opacity: .45; }
-.inv-cell .it-img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
-.inv-cell .it { font-size: 10.5px; line-height: 1.2; color: #d6e0d8; text-align: center;
-  word-break: break-word; overflow: hidden; max-height: 100%; }
-.inv-cell .cnt { position: absolute; right: 4px; bottom: 2px; font-size: 14px; color: #fff;
-  text-shadow: 2px 2px 0 #000; font-family: Consolas, monospace; z-index: 2; }
-.inv-cell { cursor: context-menu; }
+/* стиль инвентаря как в Minecraft (Template:Inventory): светло-серая панель с приподнятым
+   бевелем, слоты #8b8b8b с утопленным бевелем, ФИКСИРОВАННЫЙ размер слота */
+.inv-grid { display: grid; grid-template-columns: repeat(9, 46px); gap: 2px;
+  padding: 6px; width: max-content; background: #c6c6c6;
+  box-shadow: inset 2px 2px 0 #fefefe, inset -2px -2px 0 #555a5a; image-rendering: pixelated; }
+.inv-grid.row5 { grid-template-columns: repeat(5, 46px); }
+.inv-cell { position: relative; width: 46px; height: 46px; box-sizing: border-box;
+  background: #8b8b8b; box-shadow: inset 2px 2px 0 #373737, inset -2px -2px 0 #ffffff;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .inv-cell.empty { cursor: default; }
+.inv-cell:hover::after { content: ''; position: absolute; inset: 2px; background: rgba(255,255,255,.45); pointer-events: none; }
+.inv-cell .it-img { width: 34px; height: 34px; object-fit: contain; image-rendering: pixelated; }
+.inv-cell .it { font-size: 8.5px; line-height: 1.05; color: #232323; text-align: center;
+  word-break: break-word; overflow: hidden; max-height: 100%; padding: 1px; }
+.inv-cell .cnt { position: absolute; right: 2px; bottom: -1px; font-size: 15px; color: #fff;
+  text-shadow: 2px 2px 0 #3f3f3f; font-family: 'Pixelify Sans', Consolas, monospace; z-index: 2; }
 .inv-empty-note { color: #a9a9a9; font-size: 13px; padding: 10px 0; }
 
-/* всплывающая карточка предмета по ПКМ — стиль подсказки Minecraft */
+/* всплывающая карточка предмета ПРИ НАВЕДЕНИИ — стиль подсказки Minecraft */
 .item-tip { position: fixed; z-index: 1000; pointer-events: none;
-  max-width: 320px; padding: 7px 10px; background: #100018f0;
-  border: 2px solid #270060; box-shadow: 0 0 0 1px #120024, 0 6px 18px rgba(0,0,0,.55);
+  max-width: 360px; padding: 7px 10px; background: #100018f5;
+  border: 2px solid #270060; box-shadow: inset 0 0 0 1px #2a0a5c, 0 6px 18px rgba(0,0,0,.6);
   font-family: 'Pixelify Sans', Consolas, monospace; line-height: 1.45; }
 .item-tip .it-name { color: #fff; font-size: 14px; margin-bottom: 2px; word-break: break-word; }
 .item-tip .it-name.custom { color: #ffe98a; font-style: italic; }
@@ -491,13 +494,18 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .item-tip .it-ench.stored { color: #b9a7d6; }
 .item-tip .it-lore { color: #a35cff; font-size: 12.5px; font-style: italic; word-break: break-word; }
 .item-tip .it-attr { color: #9aa39c; font-size: 12px; }
-.item-tip .it-id { color: #4f4a5e; font-size: 11px; margin-top: 4px; word-break: break-all; }
+.item-tip .it-id { color: #6a6480; font-size: 11px; margin-top: 4px; word-break: break-all; }
+.item-tip .it-nbt { color: #5a6a8a; font-size: 10.5px; margin-top: 3px; word-break: break-all;
+  max-height: 120px; overflow: hidden; }
 .inv-uuid { margin-top: 14px; font-size: 11px; color: #6f7a72; word-break: break-all; }
 @media (max-width: 900px) {
   .inv-flex { flex-direction: column; }
   .inv-side { flex: none; width: 100%; }
-  .inv-grid { grid-template-columns: repeat(9, 1fr); }
-  .inv-grid.row5 { grid-template-columns: repeat(5, 1fr); max-width: 360px; }
+  /* слоты остаются фиксированными (чуть меньше) — НЕ растягиваем по ширине */
+  .inv-grid { grid-template-columns: repeat(9, 40px); overflow-x: auto; }
+  .inv-grid.row5 { grid-template-columns: repeat(5, 40px); }
+  .inv-cell { width: 40px; height: 40px; }
+  .inv-cell .it-img { width: 30px; height: 30px; }
   .inv-modal .modal-body { padding: 16px; }
 }
 

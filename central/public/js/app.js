@@ -1858,11 +1858,11 @@
         cnt.textContent = item.count;
         cell.appendChild(cnt);
       }
-      // ПКМ — показать карточку предмета (как всплывающая подсказка в Minecraft)
-      cell.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-        showItemTooltip(item, event.clientX, event.clientY);
-      });
+      // подсказка о предмете показывается ПРИ НАВЕДЕНИИ (как в Minecraft), следует за курсором
+      cell.removeAttribute('title');
+      cell.addEventListener('mouseenter', (event) => showItemTooltip(item, event.clientX, event.clientY));
+      cell.addEventListener('mousemove', (event) => moveItemTooltip(event.clientX, event.clientY));
+      cell.addEventListener('mouseleave', hideItemTooltip);
     } else if (label) {
       cell.title = label;
     }
@@ -1930,17 +1930,28 @@
     idEl.textContent = 'minecraft:' + item.id;
     tip.appendChild(idEl);
 
+    if (item.nbt) {
+      const nb = document.createElement('div');
+      nb.className = 'it-nbt';
+      nb.textContent = 'NBT: ' + item.nbt;
+      tip.appendChild(nb);
+    }
+
     document.body.appendChild(tip);
     itemTip = tip;
-    // позиционируем у курсора, не вылезая за экран
+    moveItemTooltip(x, y);
+  }
+  // позиционируем подсказку у курсора, не вылезая за экран
+  function moveItemTooltip(x, y) {
+    if (!itemTip) return;
     const pad = 12;
-    const rect = tip.getBoundingClientRect();
+    const rect = itemTip.getBoundingClientRect();
     let left = x + 14;
     let top = y + 14;
     if (left + rect.width + pad > window.innerWidth) left = Math.max(pad, x - rect.width - 14);
     if (top + rect.height + pad > window.innerHeight) top = Math.max(pad, window.innerHeight - rect.height - pad);
-    tip.style.left = left + 'px';
-    tip.style.top = top + 'px';
+    itemTip.style.left = left + 'px';
+    itemTip.style.top = top + 'px';
   }
 
   function metaRow(grid, iconName, key, value) {
