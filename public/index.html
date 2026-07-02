@@ -2,6 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
+<!-- режим внутри игры (мод): класс до первой отрисовки, чтобы не мигал чёрный фон -->
+<script>(function(){try{if(location.search.indexOf("ingame=1")!==-1)sessionStorage.setItem("cgIngame","1");if(sessionStorage.getItem("cgIngame")==="1")document.documentElement.classList.add("ingame");}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CONTROLGUI — Панель Minecraft-серверов</title>
 <link rel="icon" type="image/png" href="/assets/controlgui.png">

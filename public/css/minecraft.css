@@ -79,6 +79,11 @@ body {
   -webkit-mask-image: radial-gradient(132% 120% at 50% 45%, #000 30%, rgba(0,0,0,.4) 66%, transparent 100%);
           mask-image: radial-gradient(132% 120% at 50% 45%, #000 30%, rgba(0,0,0,.4) 66%, transparent 100%);
 }
+/* режим внутри игры (Minecraft-мод, ?ingame=1): фон прозрачный —
+   вместо чёрной сетки за интерфейсом виден слегка заблюренный мир */
+html.ingame, html.ingame body { background: transparent; }
+html.ingame .bg-pattern, html.ingame .shade { display: none; }
+
 .bg-pattern::before {
   content: ""; position: absolute; left: -44px; top: -44px; width: calc(100% + 44px); height: calc(100% + 44px);
   background-image:
