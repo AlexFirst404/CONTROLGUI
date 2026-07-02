@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.controlgui.mod.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "FramerateLimitTrackerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

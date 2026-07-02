@@ -64,6 +64,7 @@ window.API = (function () {
     stats: (id) => call('GET', '/api/servers/' + id + '/stats'),
     player: (id, name) => call('GET', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),
     playerEdit: (id, body) => call('POST', '/api/servers/' + id + '/playeredit', body),
+    openUrl: (url) => call('POST', '/api/openurl', { url: url }),
     whitelist: (id) => call('GET', '/api/servers/' + id + '/whitelist'),
     whitelistChange: (id, action, name) => call('POST', '/api/servers/' + id + '/whitelist', { action: action, name: name }),
     moderate: (id, action, name) => call('POST', '/api/servers/' + id + '/moderate', { action: action, name: name }),

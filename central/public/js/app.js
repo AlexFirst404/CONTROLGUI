@@ -872,7 +872,7 @@
         const st = await API.centralState();
         const base = (st && st.central) || '';
         if (!base) { err.textContent = 'Адрес сервера CONTROLGUI неизвестен.'; return; }
-        window.open(base + '/api/account/discord/reset-start', '_blank', 'noopener');
+        openExternal(base + '/api/account/discord/reset-start');
         err.className = 'err ok';
         err.textContent = 'Откройте окно браузера, подтвердите Discord и задайте новый пароль, затем войдите.';
       } catch (e2) { err.textContent = 'Не удалось открыть сброс пароля.'; }
@@ -880,6 +880,17 @@
     const dl = $('#gate-discord-login');
     if (dl) dl.addEventListener('click', () => gateDiscordLogin());
   }
+  /* Открывает ссылку в новом окне. Внутри игры (Minecraft-мод, встроенный
+     Chromium) window.open гасится — просим панель открыть системный браузер. */
+  function openExternal(url) {
+    const abs = new URL(url, location.href).href;
+    if (document.documentElement.classList.contains('ingame')) {
+      API.openUrl(abs).catch(() => showToast('Не удалось открыть браузер'));
+    } else {
+      window.open(abs, '_blank', 'noopener');
+    }
+  }
+
   let gateDiscordPoll = null;
   async function gateDiscordLogin() {
     const err = $('#gate-li-err'); err.className = 'err'; err.textContent = '';
@@ -887,7 +898,7 @@
     let init;
     try { init = await API.centralDiscordLoginInit(); } catch (e) { err.textContent = e.message; return; }
     if (!init || !init.url || !init.loginToken) { err.textContent = (init && init.error) || 'Discord недоступен.'; return; }
-    window.open(init.url, '_blank', 'noopener');
+    openExternal(init.url);
     err.className = 'err ok';
     err.textContent = 'Подтвердите вход в открывшемся окне Discord…';
     if (btn) btn.disabled = true;
@@ -998,7 +1009,7 @@
         const st = await API.centralState();
         const base = (st && st.central) || '';
         if (!base) { err.textContent = 'Адрес сервера CONTROLGUI неизвестен.'; return; }
-        window.open(base + '/api/account/discord/reset-start', '_blank', 'noopener');
+        openExternal(base + '/api/account/discord/reset-start');
         err.className = 'err ok';
         err.textContent = 'Подтвердите Discord в открывшемся окне и задайте новый пароль.';
       } catch (e2) { err.textContent = 'Не удалось открыть сброс пароля.'; }
@@ -1037,7 +1048,7 @@
       try {
         const r = await API.centralDiscordLink();
         if (r && r.url) {
-          window.open(r.url, '_blank', 'noopener');
+          openExternal(r.url);
           $('#pf-discord-refresh').classList.remove('hidden');
           err.className = 'err ok'; err.textContent = 'Подтвердите привязку в открывшемся окне, затем вернитесь сюда.';
           startDiscordPoll();
@@ -3242,7 +3253,7 @@
       const gal = document.createElement('div'); gal.style.cssText = 'display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin:0 0 12px';
       for (const g of d.gallery.slice(0, 12)) {
         const im = document.createElement('img'); im.src = g.url; im.alt = g.title || ''; im.loading = 'lazy';
-        im.style.cssText = 'height:150px;border-radius:6px;border:1px solid #3a3a3a;cursor:zoom-in'; im.onclick = () => window.open(g.url, '_blank', 'noopener');
+        im.style.cssText = 'height:150px;border-radius:6px;border:1px solid #3a3a3a;cursor:zoom-in'; im.onclick = () => openExternal(g.url);
         gal.appendChild(im);
       }
       wrap.appendChild(gal);
@@ -5081,7 +5092,7 @@
       if (!state.currentId) return;
       // в браузере '_blank' без параметров окна → новая вкладка; в десктоп-обёртке
       // WebView2 перехватывает window.open и открывает отдельное окно приложения
-      window.open('/console.html?server=' + encodeURIComponent(state.currentId), '_blank');
+      openExternal('/console.html?server=' + encodeURIComponent(state.currentId));
     });
 
     // плагины и моды (Modrinth) — поиск, фильтры, листание

@@ -41,7 +41,9 @@ neoForge {
 }
 
 dependencies {
-    implementation "de.keksuccino:mcef-neoforge:${mcef_version}"
+    // MCEF (Chromium) вкладывается в наш jar (META-INF/jarjar) — метаданные
+    // ModDevGradle генерирует сам, диапазон [версия,) по одиночной версии
+    jarJar(implementation("de.keksuccino:mcef-neoforge:${mcef_version}"))
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }

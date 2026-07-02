@@ -20,6 +20,8 @@ dependencies {
     // MCEF: neoforge-джарник собран против mojmap — им же компилируем common;
     // на Fabric те же классы даёт modImplementation в подпроекте fabric
     compileOnly "de.keksuccino:mcef-neoforge:${mcef_version}"
+    // mixin — только для компиляции common; в рантайме его дают сами лоадеры
+    compileOnly group: 'org.spongepowered', name: 'mixin', version: '0.8.5'
 }
 
 configurations {

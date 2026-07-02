@@ -179,6 +179,31 @@ const server = http.createServer(async (req, res) => {
     if (m && !store.get(m[1])) { const gid = cc.gidForLocal(m[1]); if (gid) return cc.proxy(req, res, gid); }
     // управление аккаунтом центра в десктопе
     if (urlPath === '/api/central' || urlPath.startsWith('/api/central/')) return handleCentralRoutes(req, res, urlPath, cc);
+    // открыть ссылку в системном браузере пользователя: нужно панели внутри
+    // игры (Minecraft-мод) — там window.open во встроенном Chromium гасится,
+    // а вход через Discord должен идти через обычный браузер. Маршрут только
+    // локальный: удалённые запросы уходят веткой internalUserFor выше.
+    if (urlPath === '/api/openurl' && req.method === 'POST') {
+      const b = await readJsonBody(req);
+      const u = String(b.url || '');
+      if (!/^https?:\/\/\S+$/.test(u)) return sendJson(res, 400, { error: 'Некорректная ссылка' });
+      const { spawn } = require('child_process');
+      try {
+        // rundll32/open/xdg-open с массивом аргументов — без shell, инъекции невозможны
+        const child = process.platform === 'win32'
+          ? spawn('rundll32', ['url.dll,FileProtocolHandler', u], { windowsHide: true, detached: true, stdio: 'ignore' })
+          : (process.platform === 'darwin'
+            ? spawn('open', [u], { detached: true, stdio: 'ignore' })
+            : spawn('xdg-open', [u], { detached: true, stdio: 'ignore' }));
+        // сбой запуска (ENOENT и т.п.) приходит АСИНХРОННЫМ событием 'error' —
+        // без обработчика оно уронило бы весь процесс панели
+        child.on('error', (e) => console.error('[openurl] не удалось открыть браузер: ' + e.message));
+        child.unref();
+      } catch (e) {
+        return sendJson(res, 500, { error: 'Не удалось открыть браузер: ' + e.message });
+      }
+      return sendJson(res, 200, { ok: true });
+    }
     return handleApi(req, res);
   }
   serveStatic(req, res);

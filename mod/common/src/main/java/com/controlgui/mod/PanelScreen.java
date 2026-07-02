@@ -2,6 +2,7 @@ package com.controlgui.mod;
 
 import com.cinemamod.mcef.MCEF;
 import com.cinemamod.mcef.MCEFBrowser;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
@@ -20,9 +21,15 @@ public class PanelScreen extends Screen {
 
     private static MCEFBrowser browser; // общий на всё время игры
     private static int loadedGeneration = -1; // с какой «жизнью» панели загружена страница
+    private boolean swallowFirstChar; // буква хоткея «просачивается» char-событием при открытии из чужого экрана
 
     public PanelScreen() {
+        this(false);
+    }
+
+    public PanelScreen(boolean fromOtherScreen) {
         super(Component.literal(Constants.MOD_NAME));
+        this.swallowFirstChar = fromOtherScreen;
     }
 
     @Override
@@ -75,6 +82,24 @@ public class PanelScreen extends Screen {
         if (browser == null || this.minecraft == null) return;
         double scale = this.minecraft.getWindow().getGuiScale();
         browser.resize((int) (this.width * scale), (int) (this.height * scale));
+        applyZoom();
+    }
+
+    /* Масштаб страницы следует за масштабом интерфейса игры: GUI scale 2 —
+       базовые 100%, 3 — ~150%, 4 — 200% (CEF: фактор = 1.2^уровень). */
+    static void applyZoom() {
+        Minecraft mc = Minecraft.getInstance();
+        if (browser == null || mc == null) return;
+        double scale = mc.getWindow().getGuiScale();
+        if (scale > 0) browser.setZoomLevel(Math.log(scale / 2.0) / Math.log(1.2));
+    }
+
+    /* Зовётся из load-хендлера CGBrowser: CEF хранит зум по хосту последней
+       ЗАКОММИЧЕННОЙ навигации, поэтому зум, выставленный до загрузки страницы
+       панели, пропадает — переприменяем после каждой загрузки. */
+    public static void onPageLoaded() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null) mc.execute(PanelScreen::applyZoom);
     }
 
     @Override
@@ -182,6 +207,7 @@ public class PanelScreen extends Screen {
 
     @Override
     public boolean charTyped(CharacterEvent event) {
+        if (swallowFirstChar) { swallowFirstChar = false; return true; }
         if (super.charTyped(event)) return true;
         if (browser == null || event.codepoint() == 0) return false;
         browser.sendKeyTyped((char) event.codepoint(), event.modifiers());
