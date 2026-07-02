@@ -29,9 +29,11 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "CLIENT"
 
+# Собственный движок Chromium встроен в мод — сторонний MCEF несовместим
+# (два экземпляра CEF/org.cef в одной JVM конфликтуют).
 [[dependencies.${mod_id}]]
 modId = "mcef"
-type = "required"
-versionRange = "[2.2.0,)"
-ordering = "AFTER"
+type = "incompatible"
+versionRange = "*"
+ordering = "NONE"
 side = "CLIENT"

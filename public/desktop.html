@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<!-- режим внутри игры (мод): класс до первой отрисовки, чтобы не мигал чёрный фон -->
+<script>(function(){try{if(location.search.indexOf("ingame=1")!==-1)sessionStorage.setItem("cgIngame","1");if(sessionStorage.getItem("cgIngame")==="1")document.documentElement.classList.add("ingame");}catch(e){}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONTROLGUI — рабочий стол</title>
+<link rel="icon" type="image/png" href="/assets/controlgui.png">
+<link rel="stylesheet" href="css/minecraft.css">
+<link rel="stylesheet" href="css/desktop.css">
+</head>
+<body>
+<!-- рабочий стол внутри Minecraft: окна поверх заблюренной игры,
+     панель задач снизу слева. Управляется js/desktop.js -->
+<div id="cg-desktop"></div>
+<div id="cg-drag-shield" class="hidden"></div>
+<nav id="cg-taskbar">
+  <button class="cg-task-btn" data-app="servers" title="Серверы"><i class="pi" style="--i:url('/icons/server.svg')"></i><span>Серверы</span></button>
+  <button class="cg-task-btn" data-app="settings" title="Настройки панели"><i class="pi" style="--i:url('/icons/sliders.svg')"></i><span>Настройки</span></button>
+  <button class="cg-task-btn" data-app="profile" title="Аккаунт"><i class="pi" style="--i:url('/icons/user.svg')"></i><span>Аккаунт</span></button>
+  <span class="cg-task-sep"></span>
+  <span id="cg-task-wins"></span>
+</nav>
+<script src="js/desktop.js"></script>
+</body>
+</html>

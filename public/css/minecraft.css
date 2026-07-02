@@ -84,6 +84,22 @@ body {
 html.ingame, html.ingame body { background: transparent; }
 html.ingame .bg-pattern, html.ingame .shade { display: none; }
 
+/* режим окна рабочего стола (?embed=1): страница показывает один раздел,
+   глобальная навигация спрятана — её роль выполняет панель задач */
+html.embed #btn-burger, html.embed #app-menu, html.embed #app-scrim,
+html.embed .home-hero .hero-title, html.embed .home-hero .hero-sub,
+html.embed #btn-back, html.embed #pf-back, html.embed #rc-goto-servers,
+html.embed #notif-bell, html.embed #notif-pop { display: none !important; }
+/* окно непрозрачное: рисуем обычный тёмный фон, а не блюр игры */
+html.embed body { background: #161616; }
+html.embed .bg-pattern, html.embed .shade { display: none; }
+/* гейт входа — только в выделенном окне «Вход» */
+html.embed:not(.embed-gate) #account-gate { display: none !important; }
+/* окно «Настройки»: модалка настроек как содержимое страницы */
+html.embed #appset-root.modal-wrap { position: static; background: none; padding: 18px; }
+html.embed #appset-close, html.embed #set-tray-row,
+html.embed #launchmode-label { display: none !important; }
+
 .bg-pattern::before {
   content: ""; position: absolute; left: -44px; top: -44px; width: calc(100% + 44px); height: calc(100% + 44px);
   background-image:

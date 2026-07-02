@@ -10,14 +10,13 @@ dependencies {
     }
     modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
 
-    // Fabric API: и в classpath, и ВЛОЖЕН в наш jar целиком (provides "fabric" —
-    // закрывает зависимость MCEF); при установленном отдельно loader возьмёт новейший
+    // Fabric API: и в classpath, и ВЛОЖЕН в наш jar целиком; при установленном
+    // отдельно loader возьмёт новейший
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
     include "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
 
-    // MCEF (Chromium): вложен в наш jar — пользователю ничего ставить не нужно
-    modImplementation "de.keksuccino:mcef-fabric:${mcef_version}"
-    include "de.keksuccino:mcef-fabric:${mcef_version}"
+    // Движок Chromium (org.cef) встроен в common — сторонний MCEF больше не нужен;
+    // натив java-cef мод скачивает сам при первом запуске.
 }
 
 loom {

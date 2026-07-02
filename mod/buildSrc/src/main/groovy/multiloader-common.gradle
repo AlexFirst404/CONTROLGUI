@@ -42,11 +42,6 @@ repositories {
         name = 'BlameJared'
         url = 'https://maven.blamejared.com'
     }
-    // MCEF (встроенный Chromium) — статический maven форка Keksuccino
-    maven {
-        name = 'Keksuccino'
-        url = 'https://keksuccino.github.io/maven/'
-    }
 }
 
 // Declare capabilities on the outgoing configurations.
@@ -102,7 +97,6 @@ processResources {
             'description'                  : project.description,
             'neoforge_version'             : neoforge_version,
             'neoforge_loader_version_range': neoforge_loader_version_range,
-            'mcef_version'                 : mcef_version,
             'credits'                      : credits,
             'java_version'                 : java_version
     ]

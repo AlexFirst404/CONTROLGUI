@@ -41,9 +41,8 @@ neoForge {
 }
 
 dependencies {
-    // MCEF (Chromium) вкладывается в наш jar (META-INF/jarjar) — метаданные
-    // ModDevGradle генерирует сам, диапазон [версия,) по одиночной версии
-    jarJar(implementation("de.keksuccino:mcef-neoforge:${mcef_version}"))
+    // Движок Chromium (org.cef) встроен в common — сторонний MCEF больше не
+    // вкладываем; натив java-cef мод скачивает сам при первом запуске.
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }

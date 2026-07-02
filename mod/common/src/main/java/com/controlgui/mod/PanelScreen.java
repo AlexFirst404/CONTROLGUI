@@ -1,7 +1,7 @@
 package com.controlgui.mod;
 
-import com.cinemamod.mcef.MCEF;
-import com.cinemamod.mcef.MCEFBrowser;
+import com.controlgui.mod.cef.CgCef;
+import com.controlgui.mod.cef.CgCefBrowser;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -14,12 +14,13 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
 import org.lwjgl.glfw.GLFW;
 
-/* Панель CONTROLGUI внутри игры: настоящий веб-интерфейс панели (MCEF,
-   прозрачная страница в режиме ?ingame=1) поверх слегка заблюренного мира.
-   Браузер живёт между открытиями экрана — вход и состояние сохраняются. */
+/* Панель CONTROLGUI внутри игры: настоящий веб-интерфейс панели (собственный
+   движок Chromium, прозрачная страница в режиме ?ingame=1) поверх слегка
+   заблюренного мира. Браузер живёт между открытиями экрана — вход и состояние
+   сохраняются. */
 public class PanelScreen extends Screen {
 
-    private static MCEFBrowser browser; // общий на всё время игры
+    private static CgCefBrowser browser; // общий на всё время игры
     private static int loadedGeneration = -1; // с какой «жизнью» панели загружена страница
     private boolean swallowFirstChar; // буква хоткея «просачивается» char-событием при открытии из чужого экрана
 
@@ -47,13 +48,13 @@ public class PanelScreen extends Screen {
        на клиентском потоке. */
     private void ensureBrowser() {
         if (this.minecraft == null || this.minecraft.screen != this) return;
-        if (!MCEF.isInitialized()) return; // Chromium ещё качается — доберём в tick()
+        if (!CgCef.isInitialized()) return; // Chromium ещё качается/грузится — доберём в tick()
         if (PanelManager.phase() != PanelManager.Phase.READY) return;
         if (browser == null) {
-            browser = MCEF.createBrowser(PanelManager.baseUrl() + "/?ingame=1", true);
+            browser = CgCef.createBrowser(PanelManager.baseUrl() + "/desktop.html?ingame=1", true);
             loadedGeneration = PanelManager.generation();
         } else if (loadedGeneration != PanelManager.generation()) {
-            browser.loadURL(PanelManager.baseUrl() + "/?ingame=1");
+            browser.loadURL(PanelManager.baseUrl() + "/desktop.html?ingame=1");
             loadedGeneration = PanelManager.generation();
         }
         resizeBrowser();
@@ -71,8 +72,12 @@ public class PanelScreen extends Screen {
     public void removed() {
         super.removed();
         // страница могла оставить курсор «рука»/«текст» — возвращаем стрелку,
-        // иначе он протекает во все остальные экраны игры (браузер не закрываем)
+        // иначе он протекает во все остальные экраны игры (браузер не закрываем).
+        // Заодно прерываем незавершённое перетаскивание (закрытие по Esc посреди
+        // drag), чтобы не утёк CefDragData и не залипли кнопки мыши.
         if (browser != null) {
+            try { browser.cancelDrag(); }
+            catch (Exception e) { /* не критично */ }
             try { browser.setCursor(org.cef.misc.CefCursorType.POINTER); }
             catch (Exception e) { /* не критично */ }
         }
@@ -133,11 +138,17 @@ public class PanelScreen extends Screen {
         }
         if (drawn && PanelManager.phase() != PanelManager.Phase.ERROR) return;
         // панель поднимается или упала — статус поверх всего
-        String note = PanelManager.phase() == PanelManager.Phase.ERROR
-                ? PanelManager.statusText()
-                : (!MCEF.isInitialized()
-                    ? "Chromium (MCEF) ещё загружается — попробуйте чуть позже"
-                    : (PanelManager.statusText().isEmpty() ? "Открываю панель…" : PanelManager.statusText()));
+        String note;
+        if (PanelManager.phase() == PanelManager.Phase.ERROR) {
+            note = PanelManager.statusText();
+        } else if (!CgCef.isInitialized()) {
+            // движок Chromium ещё качается/инициализируется — показываем его статус
+            note = CgCef.isFailed()
+                    ? CgCef.statusText()
+                    : (CgCef.statusText().isEmpty() ? "Запуск Chromium…" : CgCef.statusText());
+        } else {
+            note = PanelManager.statusText().isEmpty() ? "Открываю панель…" : PanelManager.statusText();
+        }
         int y = this.height / 2 - 4;
         graphics.fill(0, y - 8, this.width, y + 14, 0xA0000000);
         graphics.drawCenteredString(this.font, note, this.width / 2, y, ARGB.opaque(0xE0E0E0));

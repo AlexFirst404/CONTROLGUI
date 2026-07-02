@@ -17,9 +17,8 @@ neoForge {
 }
 
 dependencies {
-    // MCEF: neoforge-джарник собран против mojmap — им же компилируем common;
-    // на Fabric те же классы даёт modImplementation в подпроекте fabric
-    compileOnly "de.keksuccino:mcef-neoforge:${mcef_version}"
+    // Собственный движок Chromium: org.cef завезён прямо в common/src (BSD),
+    // ему хватает JDK — сторонних артефактов не нужно.
     // mixin — только для компиляции common; в рантайме его дают сами лоадеры
     compileOnly group: 'org.spongepowered', name: 'mixin', version: '0.8.5'
 }

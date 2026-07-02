@@ -4,6 +4,7 @@
   "package": "com.controlgui.mod.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "CefPumpMixin",
     "FramerateLimitTrackerMixin"
   ],
   "injectors": {

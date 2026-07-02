@@ -107,6 +107,20 @@
     'trigger', 'weather', 'whitelist', 'worldborder', 'xp',
   ];
 
+  /* Режим «окна» рабочего стола внутри игры (desktop.html): страница живёт
+     в iframe и показывает один раздел. go: home|server/<id>|settings|profile|gate */
+  const EMBED = (() => {
+    const q = new URLSearchParams(location.search);
+    if (q.get('embed') !== '1') return null;
+    const go = q.get('go') || 'home';
+    document.documentElement.classList.add('embed');
+    if (go === 'gate') document.documentElement.classList.add('embed-gate');
+    const m = go.match(/^server\/(.+)$/);
+    if (m) history.replaceState(null, '', '#server=' + m[1]);
+    else if (go === 'profile') history.replaceState(null, '', '#profile');
+    return go;
+  })();
+
   const state = {
     screen: 'list',
     servers: [],
@@ -480,6 +494,9 @@
     const fill = el.querySelector('.fill');
     const knob = el.querySelector('.knob');
     let value = clamp(opts.value);
+    // сырой прогресс во время перетаскивания: кноб следует ровно за курсором,
+    // а не прыгает по шагам (иначе он «отстаёт» от курсора до полушага)
+    let dragRatio = null;
 
     function clamp(v) {
       v = Math.round(v / opts.step) * opts.step;
@@ -488,7 +505,8 @@
     function render() {
       const w = el.clientWidth;
       const knobW = knob.offsetWidth || 32;
-      const x = ((value - opts.min) / (opts.max - opts.min || 1)) * (w - knobW);
+      const ratio = dragRatio != null ? dragRatio : ((value - opts.min) / (opts.max - opts.min || 1));
+      const x = ratio * (w - knobW);
       knob.style.left = x + 'px';
       fill.style.width = Math.max(0, x + knobW / 2 - 3) + 'px';
       if (opts.labelEl) opts.labelEl.textContent = opts.format ? opts.format(value) : String(value);
@@ -496,9 +514,12 @@
     }
     function fromPointer(event) {
       const rect = el.getBoundingClientRect();
-      const knobW = knob.offsetWidth || 32;
+      // ширина кноба в координатах viewport: offsetWidth не учитывает zoom
+      // страницы и давал смещение кноба от курсора при масштабе != 100%
+      const knobW = knob.getBoundingClientRect().width || 32;
       const r = (event.clientX - rect.left - knobW / 2) / Math.max(1, rect.width - knobW);
-      value = clamp(opts.min + Math.max(0, Math.min(1, r)) * (opts.max - opts.min));
+      dragRatio = Math.max(0, Math.min(1, r));
+      value = clamp(opts.min + dragRatio * (opts.max - opts.min));
       render();
     }
     el.addEventListener('pointerdown', (event) => {
@@ -506,6 +527,8 @@
       fromPointer(event);
       const move = (ev) => fromPointer(ev);
       const up = () => {
+        dragRatio = null;
+        render(); // кноб «доезжает» до квантованного значения
         el.removeEventListener('pointermove', move);
         el.removeEventListener('pointerup', up);
         el.removeEventListener('pointercancel', up);
@@ -566,9 +589,10 @@
       scaleSlider = mkSlider($('#set-scale'), {
         min: 80, max: 140, step: 5, value: appSettings.scale,
         format: (v) => v + '%', labelEl: $('#set-scale-val'),
+        // живое применение прямо во время перетаскивания (раньше — только по
+        // отпусканию, и pointercancel вовсе терял значение); гард от циклов
+        onChange: (v) => { if (v !== appSettings.scale) changeAppSettings({ scale: v }); },
       });
-      // применяем масштаб по отпусканию ползунка
-      $('#set-scale').addEventListener('pointerup', () => changeAppSettings({ scale: scaleSlider.value }));
     } else {
       scaleSlider.set(appSettings.scale);
     }
@@ -584,6 +608,7 @@
   /* Добавляем запись в историю браузера, чтобы кнопка «назад» переключала
      экраны/вкладки ВНУТРИ панели, а не выкидывала из аккаунта. */
   function pushHash(hash) {
+    if (EMBED) return; // окна рабочего стола не трогают общую историю
     if (state.navLock) return;
     const target = hash || location.pathname;
     const cur = (location.hash || '') ? location.hash : location.pathname;
@@ -841,6 +866,12 @@
       cgCentralUser = null; updateCentralLabel();
       if (state.screen === 'profile') { showScreen('list'); }
       showToast('Сессия аккаунта истекла — войдите заново.');
+      // в окне рабочего стола гейт показывает только выделенное окно входа
+      if (EMBED && EMBED !== 'gate' && window.parent !== window) {
+        window.parent.postMessage({ cg: 'need-login' }, location.origin);
+        centralSessionPrompting = false;
+        return;
+      }
       try { await showAccountGate(); await syncCentralUser(); guard(loadServers); }
       finally { centralSessionPrompting = false; }
     } else if (res.offline) {
@@ -930,6 +961,8 @@
   function hideAccountGate() {
     const g = $('#account-gate'); if (g) g.classList.add('hidden');
     if (gateResolve) { const r = gateResolve; gateResolve = null; r(); }
+    // окно входа на рабочем столе сообщает родителю об успехе
+    if (EMBED && window.parent !== window) window.parent.postMessage({ cg: 'logged-in' }, location.origin);
   }
   async function gateDoLogin() {
     const err = $('#gate-li-err'); err.textContent = '';
@@ -1078,6 +1111,10 @@
     if (!await confirmDialog('Выйти из аккаунта CONTROLGUI? Удалённые серверы станут недоступны.', { title: 'Выход', yesText: 'Выйти' })) return;
     try { await API.centralLogout(); } catch (e) { /* */ }
     cgCentralUser = null; updateCentralLabel();
+    if (EMBED && window.parent !== window) {
+      window.parent.postMessage({ cg: 'need-login' }, location.origin);
+      return;
+    }
     showScreen('list');
     await showAccountGate();
     await syncCentralUser(); guard(loadServers);
@@ -1089,7 +1126,9 @@
       let cs = null;
       try { cs = await API.centralState(); } catch (e) { /* старая сборка без центра */ }
       if (cs && cs.loggedIn) cgCentralUser = { username: cs.username };
-      else if (cs) await showAccountGate(); // нет аккаунта — блокирующий гейт
+      // на рабочем столе гейт показывает только окно входа (go=gate);
+      // прочие окна просто ждут — рабочий стол сам откроет вход
+      else if (cs && (!EMBED || EMBED === 'gate')) await showAccountGate();
     }
     loadMe();
     loadStatus();
@@ -1097,6 +1136,7 @@
     startPolling();
     if (!window.CG_REMOTE) { updateCentralLabel(); validateCentralSession(); }
     routeInitialHash();
+    if (EMBED === 'settings') openAppSettings(); // окно настроек панели
   }
   function routeInitialHash() {
     if (location.hash === '#create') {
@@ -1391,6 +1431,13 @@
   }
 
   function openServer(id) {
+    // на рабочем столе сервер открывается ОТДЕЛЬНЫМ окном; собственное окно
+    // сервера (go=server/<id>) навигирует как обычно
+    if (EMBED && !EMBED.startsWith('server/') && window.parent !== window) {
+      const srv = (state.servers || []).find((s) => s.id === id);
+      window.parent.postMessage({ cg: 'open', what: 'server', id: id, title: srv ? srv.name : null }, location.origin);
+      return;
+    }
     state.currentId = id;
     state.current = state.servers.find((s) => s.id === id) || null;
     state.filesPath = '';

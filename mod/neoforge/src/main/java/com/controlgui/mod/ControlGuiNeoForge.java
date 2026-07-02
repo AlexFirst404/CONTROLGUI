@@ -1,5 +1,6 @@
 package com.controlgui.mod;
 
+import com.controlgui.mod.cef.CgCef;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -14,6 +15,7 @@ import net.neoforged.neoforge.event.GameShuttingDownEvent;
 public class ControlGuiNeoForge {
 
     public ControlGuiNeoForge(IEventBus modBus) {
+        CgCef.bootstrap(); // подготовка/загрузка встроенного движка Chromium
         modBus.addListener(this::onRegisterKeys);
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
         NeoForge.EVENT_BUS.addListener(this::onScreenKey);
@@ -39,5 +41,6 @@ public class ControlGuiNeoForge {
 
     private void onShutdown(GameShuttingDownEvent event) {
         PanelManager.shutdown();
+        CgCef.shutdown();
     }
 }
