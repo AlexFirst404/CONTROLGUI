@@ -60,6 +60,8 @@ public final class PanelManager {
     private static volatile Process panelProc;      // null, если панель не наша
     private static volatile int generation = 0;     // растёт при (пере)запуске панели
     private static volatile boolean desktopUi = true; // умеет ли панель оконный режим
+    private static volatile Path uiRoot;            // public/ свежей панели из jar
+    private static volatile boolean uiOverride;     // подменять статику UI из uiRoot
     private static CompletableFuture<String> pending; // guarded by PanelManager.class
 
     private PanelManager() {}
@@ -71,9 +73,14 @@ public final class PanelManager {
        к этому моменту мертва и её нужно перезагрузить. */
     public static int generation() { return generation; }
     /* false — работаем с чужой устаревшей панелью (например, открыто настольное
-       приложение прошлой версии): грузим старый полноэкранный UI вместо
-       desktop.html, иначе будет «404: файл не найден». */
+       приложение прошлой версии), И подменить её UI не удалось: грузим старый
+       полноэкранный UI вместо desktop.html, иначе будет «404: файл не найден». */
     public static boolean hasDesktopUi() { return desktopUi; }
+
+    /* Каталог public/ свежей панели из мода, когда её статикой надо ПОДМЕНЯТЬ
+       ответы работающей (устаревшей) панели; null — подмена не нужна.
+       Читается перехватчиком ресурсов CEF (CGBrowser) на IO-потоке. */
+    public static Path uiOverrideDir() { return uiOverride ? uiRoot : null; }
 
     /* Гарантирует работающую панель; возвращает базовый URL. Повторные
        вызовы во время запуска возвращают тот же future. Завершённый future
@@ -84,17 +91,20 @@ public final class PanelManager {
         if (pending != null && !pending.isDone()) return pending;
         phase = Phase.WORKING;
         statusText = "Подключаюсь к панели…";
-        pending = CompletableFuture.supplyAsync(PanelManager::startBlocking, EXEC);
-        pending.whenComplete((url, err) -> {
-            if (err != null) {
-                phase = Phase.ERROR;
-                statusText = "Ошибка: " + rootMessage(err);
-                Constants.LOG.error("Не удалось запустить панель", err);
-            } else {
-                phase = Phase.READY;
-                statusText = "";
-            }
-        });
+        // pending — стадия ПОСЛЕ whenComplete: колбэки подписчиков (thenAccept в
+        // PanelScreen) сработают только когда phase уже выставлена, иначе гонка —
+        // ensureBrowser мог увидеть phase!=READY и перезагрузка молча терялась
+        pending = CompletableFuture.supplyAsync(PanelManager::startBlocking, EXEC)
+                .whenComplete((url, err) -> {
+                    if (err != null) {
+                        phase = Phase.ERROR;
+                        statusText = "Ошибка: " + rootMessage(err);
+                        Constants.LOG.error("Не удалось запустить панель", err);
+                    } else {
+                        phase = Phase.READY;
+                        statusText = "";
+                    }
+                });
         return pending;
     }
 
@@ -104,40 +114,58 @@ public final class PanelManager {
     }
 
     private static String startBlocking() {
-        // 1) уже работает? (настольное приложение или прошлый запуск)
+        Path dataDir = dataDir();
+        try { Files.createDirectories(dataDir); }
+        catch (IOException e) { throw new RuntimeException("Не создать папку данных: " + dataDir, e); }
+
+        // 1) уже работает? (настольное приложение или прошлый запуск).
+        // ВАЖНО: распаковку panel.zip делаем ПОСЛЕ probe и только когда нужна —
+        // одноверсионная панель приложения работает прямо из <data>/app/<ver>,
+        // и перезапись её файлов на живую дала бы 404/битую статику.
         String runningVer = probeVersion();
         if (runningVer != null) {
-            if (versionAtLeast(runningVer, DESKTOP_UI_SINCE)) {
+            if (versionAtLeast(runningVer, Constants.PANEL_VERSION)) {
+                uiOverride = false;
                 desktopUi = true;
-                return BASE_URL; // свежая панель — просто используем
+                return BASE_URL; // панель не старее вшитой — просто используем
             }
-            // панель устарела (нет desktop.html — был бы 404). Если она умеет
-            // /api/quit и на ней нет работающих серверов — тихо заменяем на свою.
-            Constants.LOG.info("На порту {} панель {} (нужна {}+)", Constants.PANEL_PORT, runningVer, DESKTOP_UI_SINCE);
+            // панель устарела. Если она умеет /api/quit и на ней нет работающих
+            // серверов — тихо заменяем на свою; иначе подменяем только UI.
+            Constants.LOG.info("На порту {} панель {} (в моде {})", Constants.PANEL_PORT, runningVer, Constants.PANEL_VERSION);
             if (versionAtLeast(runningVer, QUIT_API_SINCE) && quitStalePanel()) {
                 Constants.LOG.info("Устаревшая панель остановлена — запускаю свежую");
                 // порт освобождается мгновенно после выхода процесса; подстрахуемся
                 for (int i = 0; i < 10 && probe(); i++) sleep(300);
             } else {
-                // заменить нельзя (старая версия без /api/quit, чужие серверы
-                // работают и т.п.) — работаем с ней через старый полноэкранный UI
-                desktopUi = false;
+                // работающая панель старее — она живёт в app/<runningVer>, наша
+                // распаковка в app/<PANEL_VERSION> её не трогает
+                Path pd = null;
+                try { pd = extractPanel(dataDir); }
+                catch (IOException e) { Constants.LOG.warn("Не распаковать панель из мода: {}", rootMessage(e)); }
+                if (pd != null) {
+                    // статику (desktop.html, app.js, css…) отдаём из свежей панели
+                    // мода, а /api идёт в работающую панель — окна работают везде
+                    uiRoot = pd.resolve("public");
+                    uiOverride = true;
+                    desktopUi = true;
+                    Constants.LOG.info("UI панели подменяется на {} (API остаётся {})", Constants.PANEL_VERSION, runningVer);
+                    return BASE_URL;
+                }
+                // подменить нечем (распаковка не удалась) — старый полноэкранный UI
+                uiOverride = false;
+                desktopUi = versionAtLeast(runningVer, DESKTOP_UI_SINCE);
                 return BASE_URL;
             }
         }
+        uiOverride = false;
         desktopUi = true;
         generation++; // панель была мертва — открытая в браузере страница устарела
 
-        // 2) папка данных — общая с настольным приложением
-        Path dataDir = dataDir();
-        try { Files.createDirectories(dataDir); }
-        catch (IOException e) { throw new RuntimeException("Не создать папку данных: " + dataDir, e); }
-
-        // 3) node: PATH -> приложение -> скачать
+        // 2) node: PATH -> приложение -> скачать
         statusText = "Ищу Node.js…";
         String node = findNode(dataDir);
 
-        // 4) распаковать панель из jar
+        // 3) панель из jar
         statusText = "Разворачиваю панель…";
         Path panelDir;
         try { panelDir = extractPanel(dataDir); }

@@ -138,7 +138,15 @@ public final class CgCef {
         try {
             makeNativesExecutable();
 
-            String[] switches = { "--autoplay-policy=no-user-gesture-required" };
+            String[] switches = {
+                    "--autoplay-policy=no-user-gesture-required",
+                    // OSR-композитор в этой сборке жёстко ограничен 30 FPS
+                    // (CefBrowserSettings по умолчанию, из Java не настраивается) —
+                    // анимации и прокрутка дёргаются. Снимаем лимит целиком:
+                    // перерисовка всё равно только по инвалидации, вхолостую не жжёт
+                    "--disable-frame-rate-limit",
+                    "--disable-gpu-vsync",
+            };
             if (!CefApp.startup(switches)) {
                 throw new IllegalStateException("CefApp.startup вернул false");
             }

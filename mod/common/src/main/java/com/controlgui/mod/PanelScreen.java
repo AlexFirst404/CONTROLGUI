@@ -23,6 +23,25 @@ public class PanelScreen extends Screen {
     private static CgCefBrowser browser; // общий на всё время игры
     private static int loadedGeneration = -1; // с какой «жизнью» панели загружена страница
     private static String loadedUrl; // какой URL реально загружен (desktop или старый UI)
+
+    /* Браузер живёт и при закрытом экране, а лимит кадров CEF снят
+       (--disable-frame-rate-limit) — бесконечные CSS-анимации (лоадеры,
+       индикаторы) перерисовывались бы в невидимую текстуру на полной скорости.
+       Пауза всех анимаций в документе и same-origin iframe-окнах: без
+       инвалидации CEF вообще не рисует кадры. Снимается при открытии экрана. */
+    private static final String PAUSE_JS =
+            "(function(){function ap(d){try{if(!d)return;"
+            + "if(!d.getElementById('cg-bg-style')){var s=d.createElement('style');s.id='cg-bg-style';"
+            + "s.textContent='html.cg-bg *,html.cg-bg *::before,html.cg-bg *::after{animation-play-state:paused!important}';"
+            + "(d.head||d.documentElement).appendChild(s);}"
+            + "d.documentElement.classList.add('cg-bg');"
+            + "var f=d.querySelectorAll('iframe');for(var i=0;i<f.length;i++){try{ap(f[i].contentDocument);}catch(e){}}"
+            + "}catch(e){}}ap(document);})();";
+    private static final String RESUME_JS =
+            "(function(){function rm(d){try{if(!d)return;"
+            + "d.documentElement.classList.remove('cg-bg');"
+            + "var f=d.querySelectorAll('iframe');for(var i=0;i<f.length;i++){try{rm(f[i].contentDocument);}catch(e){}}"
+            + "}catch(e){}}rm(document);})();";
     private boolean swallowFirstChar; // буква хоткея «просачивается» char-событием при открытии из чужого экрана
 
     public PanelScreen() {
@@ -41,7 +60,12 @@ public class PanelScreen extends Screen {
             if (this.minecraft == null) return;
             this.minecraft.execute(this::ensureBrowser);
         });
-        if (browser != null) resizeBrowser();
+        if (browser != null) {
+            resizeBrowser();
+            // экран снова открыт — возобновляем анимации страницы
+            try { browser.executeJavaScript(RESUME_JS, "about:controlgui", 0); }
+            catch (Exception e) { /* не критично */ }
+        }
     }
 
     /* Создаёт браузер (или перезагружает страницу, если панель с тех пор
@@ -92,6 +116,10 @@ public class PanelScreen extends Screen {
             try { browser.cancelDrag(); }
             catch (Exception e) { /* не критично */ }
             try { browser.setCursor(org.cef.misc.CefCursorType.POINTER); }
+            catch (Exception e) { /* не критично */ }
+            // экран закрыт — ставим анимации на паузу, чтобы невидимая страница
+            // не перерисовывалась на снятом лимите кадров
+            try { browser.executeJavaScript(PAUSE_JS, "about:controlgui", 0); }
             catch (Exception e) { /* не критично */ }
         }
     }
