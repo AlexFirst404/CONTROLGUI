@@ -36,8 +36,8 @@
      3) текстовое имя. */
   const ICON_RENDER_HOST = 'https://mc.nerothe.com/img/';
   const ICON_TEX_HOST = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/';
-  const ICON_VERSION_FALLBACKS = ['1.21.11', '1.21.4'];
-  const iconBaseCache = new Map(); // версия сервера -> Promise<{render, tex}>
+  const ICON_VERSION_FALLBACKS = ['1.21.8', '1.21.6', '1.21.5', '1.21.4'];
+  const iconBaseCache = new Map(); // версия сервера -> Promise<{render, render2, tex}>
 
   function probeImage(url) {
     return new Promise((resolve) => {
@@ -54,11 +54,31 @@
       const candidates = [version].concat(ICON_VERSION_FALLBACKS)
         .filter((v, i, arr) => v && arr.indexOf(v) === i);
       let render = null;
+      let render2 = null;
       let tex = null;
+      /* на nerothe встречаются «пустые» папки версий (есть stone.png, но нет
+         новых блоков) — поэтому требуем ДВЕ канарейки: stone + resin_block
+         (полные папки >=1.21.4). Если ни одна папка не прошла двойную проверку
+         (старый сервер) — вторым проходом берём папку хотя бы со stone. */
       for (const v of candidates) {
-        if (await probeImage(ICON_RENDER_HOST + v + '/minecraft_stone.png')) {
+        if (await probeImage(ICON_RENDER_HOST + v + '/minecraft_stone.png') &&
+            await probeImage(ICON_RENDER_HOST + v + '/minecraft_resin_block.png')) {
           render = ICON_RENDER_HOST + v + '/';
           break;
+        }
+      }
+      if (!render) {
+        for (const v of candidates) {
+          if (await probeImage(ICON_RENDER_HOST + v + '/minecraft_stone.png')) {
+            render = ICON_RENDER_HOST + v + '/';
+            break;
+          }
+        }
+        // папка своей версии неполная — запасной полный рендер-каталог
+        for (const v of ICON_VERSION_FALLBACKS) {
+          const base = ICON_RENDER_HOST + v + '/';
+          if (base === render) continue;
+          if (await probeImage(base + 'minecraft_resin_block.png')) { render2 = base; break; }
         }
       }
       for (const v of candidates) {
@@ -68,7 +88,7 @@
         }
       }
       if (!tex) tex = ICON_TEX_HOST + '1.21.4/assets/minecraft/textures/';
-      return { render, tex };
+      return { render, render2, tex };
     })();
     iconBaseCache.set(version, promise);
     return promise;
@@ -1817,19 +1837,28 @@
 
   const ARMOR_SLOTS = [[103, 'Шлем'], [102, 'Нагрудник'], [101, 'Поножи'], [100, 'Ботинки'], [-106, 'Левая рука']];
 
-  function invCell(item, label, bases) {
+  function invCell(item, label, bases, slot) {
     const cell = document.createElement('div');
     cell.className = 'inv-cell' + (item ? '' : ' empty');
+    if (slot !== undefined && state.invEdit && state.invEdit.editable) {
+      cell.dataset.slot = slot;
+      cell.classList.add('editable');
+      if (state.invEdit.selected === slot) cell.classList.add('sel');
+      cell.addEventListener('click', () => onInvCellClick(slot));
+    }
     if (item) {
       cell.title = item.id.replace(/_/g, ' ') + (item.count > 1 ? ' ×' + item.count : '');
       const img = document.createElement('img');
       img.className = 'it-img';
       img.alt = '';
       img.loading = 'lazy';
-      // основной источник — игровой рендер нужной версии; затем плоские
+      // основной источник — игровой рендер нужной версии (затем полный
+      // рендер-каталог, если папка версии неполная); дальше плоские
       // текстуры (и грани составных блоков); в самом конце — текст
       const candidates = [];
       if (bases && bases.render) candidates.push(bases.render + 'minecraft_' + item.id + '.png');
+      if (bases && bases.render2) candidates.push(bases.render2 + 'minecraft_' + item.id + '.png');
+      const texStart = candidates.length; // с этого индекса идут пиксельные 16x16-текстуры
       const tex = (bases && bases.tex) || (ICON_TEX_HOST + '1.21.4/assets/minecraft/textures/');
       candidates.push(
         tex + 'item/' + item.id + '.png',
@@ -1839,10 +1868,14 @@
         tex + 'block/' + item.id + '_side.png'
       );
       let attempt = 0;
+      // рендеры 64x64 уменьшаем со сглаживанием, пиксель-арт 16x16 — без него
+      const applyMode = () => img.classList.toggle('pix', attempt >= texStart);
+      applyMode();
       img.src = candidates[attempt];
       img.onerror = () => {
         attempt++;
         if (attempt < candidates.length) {
+          applyMode();
           img.src = candidates[attempt];
         } else {
           const it = document.createElement('span');
@@ -1972,6 +2005,7 @@
     $('#inv-root').classList.add('hidden');
     if (state.invTimer) { clearInterval(state.invTimer); state.invTimer = null; }
     state.invSnapshot = null;
+    if (state.invEdit) { state.invEdit.selected = null; state.invEdit.statOpen = false; }
     hideItemTooltip();
   }
 
@@ -1979,7 +2013,7 @@
      (lastPlayed/время сессии в снимок не входят — они меняются всегда) */
   function playerSnapshot(d) {
     return JSON.stringify({
-      online: d.online, realtime: d.realtime, hp: d.health, food: d.food,
+      online: d.online, realtime: d.realtime, hp: d.health, hpMax: d.maxHealth, food: d.food,
       xp: d.xpLevel, pos: d.pos, dim: d.dimension, inv: d.inventory,
       time: d.playTimeTicks, fj: d.firstJoinAt, lj: d.lastJoinAt, ips: d.ips, uuid: d.uuid,
     });
@@ -1987,16 +2021,36 @@
 
   async function openInventory(name) {
     if (state.invTimer) { clearInterval(state.invTimer); state.invTimer = null; }
+    state.invEdit = { name: name, editable: can('console.command'), selected: null, busy: false, statOpen: false, data: null };
+    const seq = (state.invSeq = (state.invSeq || 0) + 1);
+    // каркас модалки с лоадером показываем сразу — данные могут идти секунды
+    $('#inv-title').textContent = 'Игрок: ' + name;
+    const body = $('#inv-body');
+    body.innerHTML = '';
+    const load = document.createElement('div');
+    load.className = 'inv-loading';
+    const sq = document.createElement('div');
+    sq.className = 'mc-loader';
+    const note = document.createElement('div');
+    note.className = 'load-note';
+    note.textContent = 'Загружаем данные игрока…';
+    load.appendChild(sq);
+    load.appendChild(note);
+    body.appendChild(load);
+    $('#inv-root').classList.remove('hidden');
     await guard(async () => {
       const data = await API.player(state.currentId, name);
       const bases = await resolveIconBases(state.current ? state.current.version : '');
+      // пока грузились, модалку закрыли или открыли другого игрока
+      if (seq !== state.invSeq || $('#inv-root').classList.contains('hidden')) return;
       buildPlayerModal(name, data, bases);
       state.invSnapshot = playerSnapshot(data);
-      $('#inv-root').classList.remove('hidden');
       // онлайн-игрок: тихо опрашиваем, но DOM трогаем только при изменениях
       if (data.online) {
         state.invTimer = setInterval(async () => {
           if ($('#inv-root').classList.contains('hidden')) { closeInventory(); return; }
+          const ed = state.invEdit;
+          if (ed && (ed.selected != null || ed.statOpen || ed.busy)) return; // идёт редактирование — не перерисовываем
           try {
             const fresh = await API.player(state.currentId, name);
             const snap = playerSnapshot(fresh);
@@ -2008,10 +2062,168 @@
         }, 3000);
       }
     });
+    // guard проглотил ошибку в тост — не оставляем модалку с вечным лоадером
+    if (seq === state.invSeq && $('#inv-body .inv-loading')) closeInventory();
+  }
+
+  /* перезапрашивает данные и перестраивает модалку (после успешной правки) */
+  async function refreshPlayerModal() {
+    const ed = state.invEdit;
+    if (!ed || !ed.name) return;
+    const data = await API.player(state.currentId, ed.name);
+    const bases = await resolveIconBases(state.current ? state.current.version : '');
+    if ($('#inv-root').classList.contains('hidden')) return;
+    state.invSnapshot = playerSnapshot(data);
+    buildPlayerModal(ed.name, data, bases);
+  }
+
+  function updateSelectionUi() {
+    const sel = state.invEdit ? state.invEdit.selected : null;
+    document.querySelectorAll('#inv-body .inv-cell').forEach((c) => {
+      c.classList.toggle('sel', c.dataset.slot != null && sel != null && Number(c.dataset.slot) === sel);
+    });
+    const bar = $('#inv-editbar');
+    if (bar) bar.classList.toggle('hidden', sel == null);
+  }
+
+  /* клик по слоту: выбрать предмет -> кликнуть слот-назначение (перемещение/обмен) */
+  async function onInvCellClick(slot) {
+    const ed = state.invEdit;
+    if (!ed || ed.busy || !ed.data) return;
+    const bySlot = new Map();
+    for (const it of (ed.data.inventory || [])) bySlot.set(it.slot, it);
+    if (ed.selected == null) {
+      if (!bySlot.has(slot)) return; // пустой слот выбирать нечего
+      ed.selected = slot;
+      updateSelectionUi();
+      return;
+    }
+    if (ed.selected === slot) { ed.selected = null; updateSelectionUi(); return; }
+    const from = ed.selected;
+    if (bySlot.has(slot) && ed.data.online) {
+      showToast('Слот занят: поменять предметы местами можно только когда игрок оффлайн');
+      return;
+    }
+    ed.busy = true;
+    try {
+      await API.playerEdit(state.currentId, { name: ed.name, op: 'move', from: from, to: slot });
+    } catch (e) {
+      showToast(e.message);
+      ed.busy = false;
+      updateSelectionUi();
+      return;
+    }
+    ed.selected = null;
+    // правка применена; если обновление данных сорвалось — честно скажем об этом
+    try { await refreshPlayerModal(); }
+    catch (e) { showToast('Изменение применено, но обновить окно не удалось — переоткройте его'); }
+    ed.busy = false;
+    updateSelectionUi();
+  }
+
+  async function deleteSelectedItem() {
+    const ed = state.invEdit;
+    if (!ed || ed.busy || ed.selected == null) return;
+    ed.busy = true;
+    try {
+      await API.playerEdit(state.currentId, { name: ed.name, op: 'delete', slot: ed.selected });
+    } catch (e) {
+      showToast(e.message);
+      ed.busy = false;
+      updateSelectionUi();
+      return;
+    }
+    ed.selected = null;
+    try { await refreshPlayerModal(); }
+    catch (e) { showToast('Изменение применено, но обновить окно не удалось — переоткройте его'); }
+    ed.busy = false;
+    updateSelectionUi();
+  }
+
+  /* строка карточки со значением и карандашом; клик — инлайн-ввод числа */
+  function editRow(grid, iconName, key, valueText, edit) {
+    const kEl = document.createElement('div');
+    kEl.className = 'k';
+    kEl.appendChild(picon(iconName));
+    kEl.appendChild(document.createTextNode(key));
+    const vEl = document.createElement('div');
+    vEl.className = 'v-edit';
+    const span = document.createElement('span');
+    span.textContent = valueText;
+    vEl.appendChild(span);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'inv-editbtn';
+    btn.appendChild(picon('edit'));
+    if (edit.disabledReason) { btn.disabled = true; btn.title = edit.disabledReason; }
+    else btn.title = edit.title || 'Изменить';
+    btn.addEventListener('click', () => openStatInput(vEl, span, btn, edit));
+    vEl.appendChild(btn);
+    grid.appendChild(kEl);
+    grid.appendChild(vEl);
+  }
+
+  function openStatInput(vEl, span, btn, edit) {
+    const ed = state.invEdit;
+    if (!ed || ed.busy || ed.statOpen) return;
+    ed.statOpen = true;
+    span.classList.add('hidden');
+    btn.classList.add('hidden');
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'inv-statinput';
+    input.min = edit.min; input.max = edit.max; input.step = edit.step || 1;
+    input.value = edit.value != null ? edit.value : '';
+    const ok = document.createElement('button');
+    ok.type = 'button'; ok.className = 'inv-editbtn ok'; ok.title = 'Сохранить';
+    ok.appendChild(picon('check'));
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'inv-editbtn'; cancel.title = 'Отмена';
+    cancel.appendChild(picon('close'));
+    const closeInput = () => {
+      input.remove(); ok.remove(); cancel.remove();
+      span.classList.remove('hidden'); btn.classList.remove('hidden');
+      ed.statOpen = false;
+    };
+    cancel.addEventListener('click', closeInput);
+    ok.addEventListener('click', async () => {
+      // пустое поле нельзя пропускать: Number('') === 0 — так можно
+      // нечаянно обнулить игроку опыт или сытость
+      const v = Number(input.value);
+      if (String(input.value).trim() === '' || !isFinite(v)) { showToast('Введите число'); return; }
+      ed.busy = true;
+      try {
+        await API.playerEdit(state.currentId, Object.assign({ name: ed.name, op: 'stats' }, edit.payload(v)));
+      } catch (e) {
+        showToast(e.message);
+        ed.busy = false;
+        return;
+      }
+      closeInput();
+      try { await refreshPlayerModal(); }
+      catch (e) { showToast('Изменение применено, но обновить окно не удалось — переоткройте его'); }
+      ed.busy = false;
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') ok.click();
+      if (e.key === 'Escape') cancel.click();
+    });
+    vEl.appendChild(input);
+    vEl.appendChild(ok);
+    vEl.appendChild(cancel);
+    input.focus();
+    input.select();
   }
 
   function buildPlayerModal(name, data, bases) {
     {
+      if (state.invEdit) {
+        state.invEdit.data = data;
+        // перестройка уничтожает открытый инлайн-ввод — сбрасываем флаг,
+        // иначе карандаши перестанут работать, а опрос замрёт
+        state.invEdit.statOpen = false;
+      }
+      const editable = !!(state.invEdit && state.invEdit.editable);
       $('#inv-title').textContent = 'Игрок: ' + name;
       const body = $('#inv-body');
       body.innerHTML = '';
@@ -2045,9 +2257,29 @@
       if (data.lastJoinAt) metaRow(meta, 'clock', 'Последний вход', new Date(data.lastJoinAt).toLocaleString('ru-RU'));
       if (data.ips && data.ips.length) metaRow(meta, 'server', 'IP-адреса', data.ips.join(', '));
       if (!data.realtime && data.lastPlayed) metaRow(meta, 'save', 'Сохранение', new Date(data.lastPlayed).toLocaleString('ru-RU'));
-      if (data.xpLevel != null) metaRow(meta, 'chart-bar', 'Опыт', 'уровень ' + data.xpLevel);
-      if (data.health != null) metaRow(meta, 'zap', 'Здоровье', data.health + ' / 20');
-      if (data.food != null) metaRow(meta, 'minus', 'Сытость', data.food + ' / 20');
+      const maxHp = data.maxHealth != null ? data.maxHealth : 20;
+      if (data.xpLevel != null) {
+        if (editable) editRow(meta, 'chart-bar', 'Опыт', 'уровень ' + data.xpLevel, {
+          value: data.xpLevel, min: 0, max: 24791, step: 1, title: 'Изменить уровень опыта',
+          payload: (v) => ({ xpLevel: Math.round(v) }),
+        });
+        else metaRow(meta, 'chart-bar', 'Опыт', 'уровень ' + data.xpLevel);
+      }
+      if (data.health != null) {
+        if (editable) editRow(meta, 'zap', 'Здоровье', data.health + ' / ' + maxHp, {
+          value: maxHp, min: 1, max: 1024, step: 0.5, title: 'Изменить макс. здоровье',
+          payload: (v) => ({ maxHealth: v }),
+        });
+        else metaRow(meta, 'zap', 'Здоровье', data.health + ' / ' + maxHp);
+      }
+      if (data.food != null) {
+        if (editable) editRow(meta, 'minus', 'Сытость', data.food + ' / 20', {
+          value: data.food, min: 0, max: 20, step: 1, title: 'Изменить сытость',
+          disabledReason: data.online ? 'Сытость можно менять только когда игрок оффлайн' : null,
+          payload: (v) => ({ food: Math.round(v) }),
+        });
+        else metaRow(meta, 'minus', 'Сытость', data.food + ' / 20');
+      }
       if (data.pos) metaRow(meta, 'search', 'Позиция', data.pos.join(', ') + (data.dimension ? ' · ' + data.dimension : ''));
       const uuidEl = document.createElement('div');
       uuidEl.className = 'inv-uuid';
@@ -2079,26 +2311,50 @@
         main.appendChild(mkSec('user', 'Броня и левая рука'));
         const armorGrid = document.createElement('div');
         armorGrid.className = 'inv-grid row5';
-        for (const [slot, label] of ARMOR_SLOTS) armorGrid.appendChild(invCell(bySlot.get(slot), label, bases));
+        for (const [slot, label] of ARMOR_SLOTS) armorGrid.appendChild(invCell(bySlot.get(slot), label, bases, slot));
         main.appendChild(armorGrid);
 
         main.appendChild(mkSec('folder', 'Инвентарь'));
         const mainGrid = document.createElement('div');
         mainGrid.className = 'inv-grid';
-        for (let slot = 9; slot <= 35; slot++) mainGrid.appendChild(invCell(bySlot.get(slot), null, bases));
+        for (let slot = 9; slot <= 35; slot++) mainGrid.appendChild(invCell(bySlot.get(slot), null, bases, slot));
         main.appendChild(mainGrid);
 
         main.appendChild(mkSec('command', 'Хотбар'));
         const hotGrid = document.createElement('div');
         hotGrid.className = 'inv-grid';
-        for (let slot = 0; slot <= 8; slot++) hotGrid.appendChild(invCell(bySlot.get(slot), null, bases));
+        for (let slot = 0; slot <= 8; slot++) hotGrid.appendChild(invCell(bySlot.get(slot), null, bases, slot));
         main.appendChild(hotGrid);
+
+        if (editable) {
+          // панель действий для выбранного предмета
+          const bar = document.createElement('div');
+          bar.id = 'inv-editbar';
+          bar.className = 'inv-editbar' + (state.invEdit.selected == null ? ' hidden' : '');
+          const txt = document.createElement('span');
+          txt.className = 'inv-edithint';
+          txt.textContent = 'Предмет выбран — кликните слот, куда его переложить';
+          const del = document.createElement('button');
+          del.className = 'mc-btn sm danger';
+          del.appendChild(picon('trash'));
+          del.appendChild(document.createTextNode('Удалить'));
+          del.addEventListener('click', deleteSelectedItem);
+          const cancelSel = document.createElement('button');
+          cancelSel.className = 'mc-btn sm';
+          cancelSel.textContent = 'Отмена';
+          cancelSel.addEventListener('click', () => { state.invEdit.selected = null; updateSelectionUi(); });
+          bar.appendChild(txt);
+          bar.appendChild(del);
+          bar.appendChild(cancelSel);
+          main.appendChild(bar);
+        }
 
         const hint = document.createElement('div');
         hint.className = 'inv-empty-note';
-        hint.textContent = data.realtime
+        hint.textContent = (data.realtime
           ? 'Данные в реальном времени — обновляются каждые 3 секунды.'
-          : 'Данные из сохранения мира — для игрока в сети обновляются при автосохранении.';
+          : 'Данные из сохранения мира — для игрока в сети обновляются при автосохранении.')
+          + (editable ? ' Клик по предмету — выбрать для перемещения или удаления.' : '');
         main.appendChild(hint);
       }
 

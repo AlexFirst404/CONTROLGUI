@@ -476,12 +476,50 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
   display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .inv-cell.empty { cursor: default; }
 .inv-cell:hover::after { content: ''; position: absolute; inset: 3px; background: rgba(255,255,255,.45); pointer-events: none; }
-.inv-cell .it-img { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
+/* рендеры 64x64 уменьшаем со сглаживанием (auto); плоские 16x16-текстуры
+   (класс .pix) — чётким пиксель-артом, 48px = ровно 3x без «рваных» пикселей */
+.inv-cell .it-img { width: 48px; height: 48px; object-fit: contain; image-rendering: auto; }
+.inv-cell .it-img.pix { image-rendering: pixelated; }
 .inv-cell .it { font-size: 10px; line-height: 1.05; color: #232323; text-align: center;
   word-break: break-word; overflow: hidden; max-height: 100%; padding: 1px; }
 .inv-cell .cnt { position: absolute; right: 3px; bottom: 0; font-size: 18px; color: #fff;
   text-shadow: 2px 2px 0 #3f3f3f; font-family: var(--font-ui); z-index: 2; }
 .inv-empty-note { color: #a9a9a9; font-size: 13px; padding: 10px 0; }
+
+/* режим редактирования: выбранный слот подсвечен, панель действий под сеткой */
+.inv-cell.sel { outline: 3px solid var(--accent-bright); outline-offset: -3px;
+  box-shadow: inset 3px 3px 0 #373737, inset -3px -3px 0 #ffffff, 0 0 10px var(--accent); z-index: 1; }
+.inv-editbar { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.inv-edithint { color: var(--accent-bright); font-size: 14px; }
+.v-edit { display: inline-flex; align-items: center; gap: 6px; }
+.inv-editbtn { display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; background: #3a3a3a; border: 2px solid #555;
+  color: #cfcfcf; cursor: pointer; }
+.inv-editbtn:hover:not(:disabled) { background: #4a4a4a; color: #fff; }
+.inv-editbtn:disabled { opacity: .4; cursor: not-allowed; }
+.inv-editbtn.ok { border-color: var(--accent); color: var(--accent-bright); }
+.inv-editbtn .pi { width: 13px; height: 13px; }
+.inv-statinput { width: 88px; padding: 2px 6px; font-size: 14px; }
+
+/* лоадер данных игрока: зелёная полоска бежит по периметру тёмного квадрата */
+.inv-loading { display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 18px; min-height: 300px; }
+.inv-loading .load-note { color: #a9a9a9; font-size: 14px; }
+.mc-loader { position: relative; width: 56px; height: 56px;
+  border: 3px solid #4a4a4a; background: var(--card-inset); }
+.mc-loader::before { content: ''; position: absolute;
+  background: var(--accent-bright); box-shadow: 0 0 8px var(--accent);
+  animation: loader-run 1.6s linear infinite; }
+@keyframes loader-run {
+  0%     { left: 4px;  top: 4px;  width: 18px; height: 4px; }
+  25%    { left: 28px; top: 4px;  width: 18px; height: 4px; }
+  25.01% { left: 42px; top: 4px;  width: 4px;  height: 18px; }
+  50%    { left: 42px; top: 28px; width: 4px;  height: 18px; }
+  50.01% { left: 28px; top: 42px; width: 18px; height: 4px; }
+  75%    { left: 4px;  top: 42px; width: 18px; height: 4px; }
+  75.01% { left: 4px;  top: 28px; width: 4px;  height: 18px; }
+  100%   { left: 4px;  top: 4px;  width: 4px;  height: 18px; }
+}
 
 /* всплывающая карточка предмета ПРИ НАВЕДЕНИИ — крупная, шрифт как в приложении,
    стиль подсказки Minecraft (фиолетовая градиентная рамка) */
@@ -504,6 +542,7 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
   .inv-flex { flex-direction: column; }
   .inv-side { flex: none; width: 100%; }
   .inv-grid { --slot: 48px; overflow-x: auto; }
+  .inv-cell .it-img { width: 40px; height: 40px; }
   .inv-modal .modal-body { padding: 16px; }
 }
 
