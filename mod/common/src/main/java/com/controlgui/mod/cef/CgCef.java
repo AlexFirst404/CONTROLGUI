@@ -48,6 +48,7 @@ public final class CgCef {
     private static volatile boolean initFailed;
     private static volatile boolean disposed;
     private static volatile String statusText = "";
+    private static volatile float nativesProgress = -1f; // 0..1 в текущей фазе; -1 — нет
 
     // сериализует нативный памп (render-поток) и dispose (хук завершения /
     // macOS-раннабл), чтобы два вызова CEF не пересеклись во время сноса
@@ -93,7 +94,10 @@ public final class CgCef {
 
     private static void runDownload() {
         try {
-            CgCefNatives.install(nativesRoot, platform, text -> statusText = text);
+            CgCefNatives.install(nativesRoot, platform, new CgCefNatives.Sink() {
+                @Override public void status(String text) { statusText = text; }
+                @Override public void progress(float ratio) { nativesProgress = ratio; }
+            });
             statusText = "";
             nativesReady = true;
             Constants.LOG.info("CONTROLGUI CEF: натив установлен ({})", platform.normalizedName());
@@ -101,6 +105,8 @@ public final class CgCef {
             nativesFailed = true;
             statusText = "Не удалось загрузить Chromium: " + e.getMessage();
             Constants.LOG.error("CONTROLGUI CEF: загрузка нативa не удалась", e);
+        } finally {
+            nativesProgress = -1f;
         }
     }
 
@@ -230,6 +236,17 @@ public final class CgCef {
     /* Провалилась установка/инициализация — панель покажет причину. */
     public static boolean isFailed() {
         return nativesFailed || initFailed;
+    }
+
+    /* Движок ещё готовится (качается/распаковывается натив) — для индикатора
+       в главном меню. */
+    public static boolean busy() {
+        return bootstrapped && !nativesReady && !nativesFailed;
+    }
+
+    /* Прогресс текущей фазы подготовки, 0..1; -1 — неизвестен. */
+    public static float progress() {
+        return nativesProgress;
     }
 
     public static String statusText() {

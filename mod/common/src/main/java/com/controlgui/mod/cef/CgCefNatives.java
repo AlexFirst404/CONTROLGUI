@@ -26,9 +26,11 @@ import java.util.zip.GZIPInputStream;
    MCEFDownloader — заточен под наш мод, без зеркал/настроек/меню. */
 final class CgCefNatives {
 
-    /* Куда пишем прогресс/статус, чтобы показать на экране панели. */
+    /* Куда пишем прогресс/статус, чтобы показать в меню и на экране панели. */
     interface Sink {
         void status(String text);
+        /* 0..1 внутри текущей фазы (загрузка, затем распаковка). */
+        default void progress(float ratio) {}
     }
 
     private static final int BUF = 64 * 1024;
@@ -113,20 +115,159 @@ final class CgCefNatives {
 
     /* ── загрузка ────────────────────────────────────────────────────────── */
 
+    /* Скольки соединениями качать (GitHub-CDN часто режет скорость одного
+       соединения — параллельные сегменты заметно быстрее). */
+    private static final int MAX_SEGMENTS = 6;
+    private static final long MIN_SEGMENT_BYTES = 8L * 1024 * 1024;
+
     private static void download(String urlString, Path output, Sink sink) throws IOException {
         Path part = output.resolveSibling(output.getFileName() + ".part");
         Files.deleteIfExists(part);
+        try {
+            Probe p = probeUrl(urlString);
+            if (p.total > MAX_ARCHIVE_BYTES) throw new IOException("архив Chromium слишком большой");
+            if (p.ranges && p.total > MIN_SEGMENT_BYTES * 2) {
+                downloadSegmented(p, part, sink);
+            } else {
+                downloadSingle(p.finalUrl, part, sink);
+            }
+            try {
+                Files.move(part, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicFailed) {
+                Files.move(part, output, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(part);
+        }
+    }
+
+    private record Probe(String finalUrl, long total, boolean ranges) {}
+
+    /* Пробный запрос одного байта: узнаём конечный URL (после редиректов),
+       полный размер и умеет ли сервер Range-докачку. */
+    private static Probe probeUrl(String urlString) throws IOException {
         HttpURLConnection conn = null;
         try {
-            conn = openFollowingRedirects(urlString);
+            conn = openFollowingRedirects(urlString, "bytes=0-0");
             int code = conn.getResponseCode();
-            if (code < 200 || code >= 300) throw new IOException("HTTP " + code + " при загрузке " + urlString);
+            String finalUrl = conn.getURL().toString();
+            if (code == 206) {
+                // Content-Range: bytes 0-0/123456789
+                String cr = conn.getHeaderField("Content-Range");
+                long total = -1;
+                if (cr != null) {
+                    int slash = cr.lastIndexOf('/');
+                    if (slash >= 0) {
+                        try { total = Long.parseLong(cr.substring(slash + 1).trim()); }
+                        catch (NumberFormatException ignored) {}
+                    }
+                }
+                return new Probe(finalUrl, total, total > 0);
+            }
+            if (code >= 200 && code < 300) {
+                return new Probe(finalUrl, conn.getContentLengthLong(), false);
+            }
+            throw new IOException("HTTP " + code + " при загрузке " + urlString);
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
 
+    /* Параллельная сегментная загрузка в один файл (позиционные записи через
+       общий FileChannel — он потокобезопасен). Каждый сегмент докачивается с
+       места обрыва, до 3 попыток. */
+    private static void downloadSegmented(Probe p, Path part, Sink sink) throws IOException {
+        long total = p.total();
+        int segments = (int) Math.max(1, Math.min(MAX_SEGMENTS, total / MIN_SEGMENT_BYTES));
+        java.util.concurrent.atomic.AtomicLong done = new java.util.concurrent.atomic.AtomicLong();
+        java.util.concurrent.atomic.AtomicInteger lastPct = new java.util.concurrent.atomic.AtomicInteger(-1);
+        java.util.concurrent.atomic.AtomicReference<IOException> failure = new java.util.concurrent.atomic.AtomicReference<>();
+
+        try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(part,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.WRITE,
+                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING)) {
+
+            Thread[] workers = new Thread[segments];
+            long chunk = total / segments;
+            for (int i = 0; i < segments; i++) {
+                final long start = i * chunk;
+                final long end = (i == segments - 1) ? total - 1 : start + chunk - 1;
+                workers[i] = new Thread(() -> {
+                    // курсор в массиве: streamRange двигает его ПО МЕРЕ записи, и
+                    // при обрыве ретрай продолжает точно с места обрыва (иначе
+                    // повторные байты задвоили бы счётчик done)
+                    long[] cursor = { start };
+                    for (int attempt = 1; attempt <= 3 && failure.get() == null; attempt++) {
+                        try {
+                            streamRange(p.finalUrl(), cursor, end, ch, done, lastPct, total, sink, failure);
+                            if (cursor[0] > end) return; // сегмент докачан
+                        } catch (IOException e) {
+                            if (attempt == 3) {
+                                failure.compareAndSet(null, new IOException(
+                                        "сегмент " + start + "-" + end + ": " + e.getMessage(), e));
+                            } else {
+                                try { Thread.sleep(700L * attempt); } catch (InterruptedException ie) { return; }
+                            }
+                        }
+                    }
+                }, "CONTROLGUI-CEF-dl-" + i);
+                workers[i].setDaemon(true);
+                workers[i].start();
+            }
+            for (Thread w : workers) {
+                try { w.join(); } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("загрузка прервана");
+                }
+            }
+        }
+        if (failure.get() != null) throw failure.get();
+        if (done.get() != total) {
+            throw new IOException("загрузка неполная: " + done.get() + " из " + total + " байт");
+        }
+    }
+
+    /* Качает диапазон [cursor[0]..end] в канал с позиционной записью, двигая
+       cursor[0] по мере записи — при исключении он указывает на место обрыва. */
+    private static void streamRange(String url, long[] cursor, long end,
+                                    java.nio.channels.FileChannel ch,
+                                    java.util.concurrent.atomic.AtomicLong done,
+                                    java.util.concurrent.atomic.AtomicInteger lastPct,
+                                    long total, Sink sink,
+                                    java.util.concurrent.atomic.AtomicReference<IOException> failure) throws IOException {
+        HttpURLConnection conn = null;
+        try {
+            conn = openFollowingRedirects(url, "bytes=" + cursor[0] + "-" + end);
+            int code = conn.getResponseCode();
+            if (code != 206) throw new IOException("HTTP " + code + " (нет Range)");
+            byte[] buf = new byte[BUF];
+            try (InputStream in = new BufferedInputStream(conn.getInputStream(), BUF)) {
+                int n;
+                while ((n = in.read(buf)) != -1 && failure.get() == null) {
+                    java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(buf, 0, n);
+                    long pos = cursor[0];
+                    while (bb.hasRemaining()) pos += ch.write(bb, pos);
+                    cursor[0] = pos;
+                    reportDownload(done.addAndGet(n), total, lastPct, sink);
+                }
+            }
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /* Обычная загрузка одним потоком (сервер без Range). */
+    private static void downloadSingle(String url, Path part, Sink sink) throws IOException {
+        HttpURLConnection conn = null;
+        try {
+            conn = openFollowingRedirects(url, null);
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) throw new IOException("HTTP " + code + " при загрузке " + url);
             long total = conn.getContentLengthLong();
             if (total > MAX_ARCHIVE_BYTES) throw new IOException("архив Chromium слишком большой");
-
+            java.util.concurrent.atomic.AtomicInteger lastPct = new java.util.concurrent.atomic.AtomicInteger(-1);
             long read = 0;
-            int lastPct = -1;
             byte[] buf = new byte[BUF];
             try (InputStream in = new BufferedInputStream(conn.getInputStream(), BUF);
                  OutputStream out = new BufferedOutputStream(Files.newOutputStream(part), BUF)) {
@@ -135,30 +276,28 @@ final class CgCefNatives {
                     out.write(buf, 0, n);
                     read += n;
                     if (read > MAX_ARCHIVE_BYTES) throw new IOException("архив Chromium превысил лимит");
-                    if (total > 0) {
-                        int pct = (int) (read * 100 / total);
-                        if (pct != lastPct && pct % 2 == 0) {
-                            lastPct = pct;
-                            sink.status("Загрузка Chromium… " + pct + "%");
-                        }
-                    }
+                    if (total > 0) reportDownload(read, total, lastPct, sink);
                 }
-            }
-            try {
-                Files.move(part, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicFailed) {
-                Files.move(part, output, StandardCopyOption.REPLACE_EXISTING);
             }
         } finally {
             if (conn != null) conn.disconnect();
-            Files.deleteIfExists(part);
+        }
+    }
+
+    private static void reportDownload(long done, long total,
+                                       java.util.concurrent.atomic.AtomicInteger lastPct, Sink sink) {
+        int pct = (int) (done * 100 / total);
+        int prev = lastPct.get();
+        if (pct != prev && lastPct.compareAndSet(prev, pct)) {
+            sink.status("Загрузка Chromium… " + pct + "%");
+            sink.progress(done / (float) total);
         }
     }
 
     /* GitHub release-ссылки редиректят на objects.githubusercontent.com; JDK не
        переходит между разными протоколами/хостами автоматически на всех сборках —
-       ведём цепочку редиректов вручную (до 5). */
-    private static HttpURLConnection openFollowingRedirects(String urlString) throws IOException {
+       ведём цепочку редиректов вручную (до 5). Range передаётся на каждом шаге. */
+    private static HttpURLConnection openFollowingRedirects(String urlString, String range) throws IOException {
         String current = urlString;
         for (int i = 0; i < 5; i++) {
             HttpURLConnection conn = (HttpURLConnection) URI.create(current).toURL().openConnection();
@@ -166,6 +305,7 @@ final class CgCefNatives {
             conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setInstanceFollowRedirects(false);
             conn.setRequestProperty("User-Agent", "CONTROLGUI-CEF");
+            if (range != null) conn.setRequestProperty("Range", range);
             conn.connect();
             int code = conn.getResponseCode();
             if (code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_MOVED_TEMP
@@ -198,12 +338,31 @@ final class CgCefNatives {
 
     /* ── распаковка tar.gz (минимальный ustar/GNU-читатель) ──────────────── */
 
+    /* Считает прочитанные из файла (сжатые) байты — по ним точный прогресс
+       распаковки: сжатое читается линейно от 0 до размера архива. */
+    private static final class CountingIn extends java.io.FilterInputStream {
+        long count;
+        CountingIn(InputStream in) { super(in); }
+        @Override public int read() throws IOException {
+            int b = super.read();
+            if (b >= 0) count++;
+            return b;
+        }
+        @Override public int read(byte[] b, int off, int len) throws IOException {
+            int n = super.read(b, off, len);
+            if (n > 0) count += n;
+            return n;
+        }
+    }
+
     private static void extractTarGz(Path tarGz, Path outRoot, Sink sink) throws IOException {
         Path root = outRoot.toAbsolutePath().normalize();
+        long archiveSize = Math.max(1, Files.size(tarGz));
         long written = 0;
         long lastNote = 0;
+        CountingIn counting;
         try (InputStream fin = new BufferedInputStream(Files.newInputStream(tarGz), BUF);
-             GZIPInputStream gin = new GZIPInputStream(fin, BUF)) {
+             GZIPInputStream gin = new GZIPInputStream(counting = new CountingIn(fin), BUF)) {
             byte[] header = new byte[512];
             String longName = null;
             // отложенное состояние GNU-sparse (PAX 1.0): macOS-бандл java-cef
@@ -300,9 +459,11 @@ final class CgCefNatives {
                 }
                 skipPadding(gin, size);
 
-                if (written - lastNote > 32L * 1024 * 1024) {
+                if (written - lastNote > 4L * 1024 * 1024) {
                     lastNote = written;
-                    sink.status("Распаковка Chromium… " + (written / (1024 * 1024)) + " МБ");
+                    float p = Math.min(0.99f, counting.count / (float) archiveSize);
+                    sink.status("Распаковка Chromium… " + (int) (p * 100) + "%");
+                    sink.progress(p);
                 }
             }
         }

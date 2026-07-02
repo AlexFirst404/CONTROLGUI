@@ -11,7 +11,7 @@ const path = require('path');
 const zlib = require('zlib');
 
 const ROOT = path.join(__dirname, '..');
-const VERSION = process.argv[2] || '1.6.7';
+const VERSION = process.argv[2] || '1.6.8';
 const MTIME = 1700000000; // фиксированное время для воспроизводимости
 
 // ----------------------------------------------------------------- ustar tar ---

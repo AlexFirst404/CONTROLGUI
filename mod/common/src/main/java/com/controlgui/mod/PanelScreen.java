@@ -22,6 +22,7 @@ public class PanelScreen extends Screen {
 
     private static CgCefBrowser browser; // общий на всё время игры
     private static int loadedGeneration = -1; // с какой «жизнью» панели загружена страница
+    private static String loadedUrl; // какой URL реально загружен (desktop или старый UI)
     private boolean swallowFirstChar; // буква хоткея «просачивается» char-событием при открытии из чужого экрана
 
     public PanelScreen() {
@@ -51,19 +52,31 @@ public class PanelScreen extends Screen {
         if (!CgCef.isInitialized()) return; // Chromium ещё качается/грузится — доберём в tick()
         if (PanelManager.phase() != PanelManager.Phase.READY) return;
         if (browser == null) {
-            browser = CgCef.createBrowser(PanelManager.baseUrl() + "/desktop.html?ingame=1", true);
+            loadedUrl = panelUrl();
+            browser = CgCef.createBrowser(loadedUrl, true);
             loadedGeneration = PanelManager.generation();
-        } else if (loadedGeneration != PanelManager.generation()) {
-            browser.loadURL(PanelManager.baseUrl() + "/desktop.html?ingame=1");
+        } else if (loadedGeneration != PanelManager.generation() || !panelUrl().equals(loadedUrl)) {
+            // перезагружаем и когда панель на порту сменилась БЕЗ мёртвого
+            // интервала (напр. вместо устаревшей открыли свежее приложение):
+            // generation не вырос, но нужный URL стал другим
+            loadedUrl = panelUrl();
+            browser.loadURL(loadedUrl);
             loadedGeneration = PanelManager.generation();
         }
         resizeBrowser();
     }
 
+    /* Оконный рабочий стол; если реиспользуем чужую устаревшую панель без
+       desktop.html — старый полноэкранный UI (иначе «404: файл не найден»). */
+    private static String panelUrl() {
+        return PanelManager.baseUrl()
+                + (PanelManager.hasDesktopUi() ? "/desktop.html?ingame=1" : "/?ingame=1");
+    }
+
     @Override
     public void tick() {
         super.tick();
-        // первый запуск: MCEF мог доинициализироваться уже при открытом
+        // первый запуск: Chromium мог доинициализироваться уже при открытом
         // экране — одноразовый колбэк в init() это пропустил
         if (browser == null) ensureBrowser();
     }

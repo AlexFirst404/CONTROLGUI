@@ -5,7 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "CefPumpMixin",
-    "FramerateLimitTrackerMixin"
+    "FramerateLimitTrackerMixin",
+    "TitleScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

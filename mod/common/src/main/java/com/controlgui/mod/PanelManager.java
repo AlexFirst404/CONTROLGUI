@@ -50,10 +50,16 @@ public final class PanelManager {
             .connectTimeout(Duration.ofSeconds(2))
             .build();
 
+    /* Первая версия панели, в которой появился оконный режим (desktop.html). */
+    private static final String DESKTOP_UI_SINCE = "1.6.7";
+    /* Первая версия панели с POST /api/quit (тихая замена устаревшей). */
+    private static final String QUIT_API_SINCE = "1.6.8";
+
     private static volatile Phase phase = Phase.IDLE;
     private static volatile String statusText = "";
     private static volatile Process panelProc;      // null, если панель не наша
     private static volatile int generation = 0;     // растёт при (пере)запуске панели
+    private static volatile boolean desktopUi = true; // умеет ли панель оконный режим
     private static CompletableFuture<String> pending; // guarded by PanelManager.class
 
     private PanelManager() {}
@@ -64,6 +70,10 @@ public final class PanelManager {
     /* Меняется, когда панель пришлось (пере)поднимать: страница в браузере
        к этому моменту мертва и её нужно перезагрузить. */
     public static int generation() { return generation; }
+    /* false — работаем с чужой устаревшей панелью (например, открыто настольное
+       приложение прошлой версии): грузим старый полноэкранный UI вместо
+       desktop.html, иначе будет «404: файл не найден». */
+    public static boolean hasDesktopUi() { return desktopUi; }
 
     /* Гарантирует работающую панель; возвращает базовый URL. Повторные
        вызовы во время запуска возвращают тот же future. Завершённый future
@@ -95,7 +105,27 @@ public final class PanelManager {
 
     private static String startBlocking() {
         // 1) уже работает? (настольное приложение или прошлый запуск)
-        if (probe()) return BASE_URL;
+        String runningVer = probeVersion();
+        if (runningVer != null) {
+            if (versionAtLeast(runningVer, DESKTOP_UI_SINCE)) {
+                desktopUi = true;
+                return BASE_URL; // свежая панель — просто используем
+            }
+            // панель устарела (нет desktop.html — был бы 404). Если она умеет
+            // /api/quit и на ней нет работающих серверов — тихо заменяем на свою.
+            Constants.LOG.info("На порту {} панель {} (нужна {}+)", Constants.PANEL_PORT, runningVer, DESKTOP_UI_SINCE);
+            if (versionAtLeast(runningVer, QUIT_API_SINCE) && quitStalePanel()) {
+                Constants.LOG.info("Устаревшая панель остановлена — запускаю свежую");
+                // порт освобождается мгновенно после выхода процесса; подстрахуемся
+                for (int i = 0; i < 10 && probe(); i++) sleep(300);
+            } else {
+                // заменить нельзя (старая версия без /api/quit, чужие серверы
+                // работают и т.п.) — работаем с ней через старый полноэкранный UI
+                desktopUi = false;
+                return BASE_URL;
+            }
+        }
+        desktopUi = true;
         generation++; // панель была мертва — открытая в браузере страница устарела
 
         // 2) папка данных — общая с настольным приложением
@@ -281,12 +311,57 @@ public final class PanelManager {
     /* ── статус/завершение ──────────────────────────────────────────────── */
 
     private static boolean probe() {
+        return probeVersion() != null;
+    }
+
+    /* null — панели на порту нет; иначе её версия ("1.6.6"; "0" — не распознали,
+       но это точно панель CONTROLGUI). Версию берём СТРОГО из поля app ответа
+       /api/status: тело содержит и пути (root, java), где слово CONTROLGUI
+       с цифрами может встретиться раньше и подменить версию. */
+    private static String probeVersion() {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(BASE_URL + "/api/status"))
                     .timeout(Duration.ofMillis(1500)).GET().build();
             HttpResponse<String> res = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
-            // на порту может жить посторонний сервис — проверяем, что это панель
-            return res.statusCode() == 200 && res.body() != null && res.body().contains("CONTROLGUI");
+            if (res.statusCode() != 200 || res.body() == null) return null;
+            JsonElement parsed = JsonParser.parseString(res.body());
+            if (!parsed.isJsonObject()) return null;
+            JsonObject o = parsed.getAsJsonObject();
+            // на порту может жить посторонний сервис — панель узнаём по полю app
+            if (!o.has("app") || !o.get("app").isJsonPrimitive()) return null;
+            String app = o.get("app").getAsString();
+            if (!app.startsWith("CONTROLGUI")) return null;
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(\\d+(?:\\.\\d+)*)").matcher(app);
+            return m.find() ? m.group(1) : "0";
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /* a >= b для версий вида 1.6.7 (покомпонентно, числами). */
+    private static boolean versionAtLeast(String a, String b) {
+        String[] pa = a.split("\\."), pb = b.split("\\.");
+        int n = Math.max(pa.length, pb.length);
+        for (int i = 0; i < n; i++) {
+            int va, vb;
+            try { va = i < pa.length ? Integer.parseInt(pa[i]) : 0; } catch (NumberFormatException e) { va = 0; }
+            try { vb = i < pb.length ? Integer.parseInt(pb[i]) : 0; } catch (NumberFormatException e) { vb = 0; }
+            if (va != vb) return va > vb;
+        }
+        return true;
+    }
+
+    /* Просит устаревшую панель завершиться (она откажет, если на ней работают
+       серверы). true — панель подтвердила выход. */
+    private static boolean quitStalePanel() {
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(BASE_URL + "/api/quit"))
+                    .timeout(Duration.ofSeconds(3))
+                    .header("X-CG-Local", "1")
+                    .POST(HttpRequest.BodyPublishers.noBody()).build();
+            HttpResponse<String> res = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+            return res.statusCode() == 200;
         } catch (Exception e) {
             return false;
         }

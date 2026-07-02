@@ -9,7 +9,7 @@ public class Constants {
     public static final String MOD_NAME = "CONTROLGUI";
     /* Версия панели, зашитой в jar (assets/controlgui/panel.zip). Должна
        совпадать с app-версией в lib/api.js на момент сборки мода. */
-    public static final String PANEL_VERSION = "1.6.7";
+    public static final String PANEL_VERSION = "1.6.8";
     /* Порт локальной панели — тот же, что у настольного приложения. */
     public static final int PANEL_PORT = 8400;
 

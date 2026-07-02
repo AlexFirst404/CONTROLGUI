@@ -204,6 +204,25 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJson(res, 200, { ok: true });
     }
+    // тихое самозавершение панели: нужно Minecraft-моду, чтобы заменить
+    // устаревшую панель прошлой версии на свою свежую. Строго локально
+    // (loopback), с кастомным заголовком (браузер не пошлёт его cross-origin
+    // без CORS-преflight) и ТОЛЬКО когда не запущен ни один сервер.
+    if (urlPath === '/api/quit' && req.method === 'POST') {
+      const ra = req.socket.remoteAddress || '';
+      const loopback = ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1';
+      if (!loopback || req.headers['x-cg-local'] !== '1') {
+        return sendJson(res, 403, { error: 'Только локально' });
+      }
+      const mgr = require('./lib/manager');
+      // anyActive: живые процессы + автоустановка Java (proc ещё null) +
+      // переходные статусы + живые «осиротевшие» серверы
+      if (mgr.anyActive()) return sendJson(res, 409, { error: 'Есть работающие серверы' });
+      sendJson(res, 200, { ok: true });
+      // даём ответу уйти клиенту, затем выходим штатно
+      setTimeout(() => process.exit(0), 300);
+      return;
+    }
     return handleApi(req, res);
   }
   serveStatic(req, res);
