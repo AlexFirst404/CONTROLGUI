@@ -35,10 +35,12 @@
     gate: { w: 520, h: 560, title: 'Вход в аккаунт', icon: 'user' },
     server: { w: 900, h: 600, title: 'Сервер', icon: 'command' },
     editor: { w: 760, h: 540, title: 'Редактор', icon: 'script-text' },
+    files: { w: 820, h: 560, title: 'Проводник', icon: 'folder' },
   };
 
   function srcFor(kind, id) {
     if (kind === 'server') return '/?embed=1&go=server/' + encodeURIComponent(id);
+    if (kind === 'files') return '/?embed=1&go=files/' + encodeURIComponent(id);
     if (kind === 'editor') {
       // id = "<serverId>:<путь файла>" — путь кодируем вложенно, чтобы пережил go
       const cut = id.indexOf(':');
@@ -47,6 +49,25 @@
       return '/?embed=1&go=' + encodeURIComponent('editor/' + sid + '/' + encodeURIComponent(p));
     }
     return SRC[kind];
+  }
+
+  /* Недавно открытые файлы — для win-меню. */
+  function recentFiles() {
+    try { return JSON.parse(localStorage.getItem('cgRecentFiles') || '[]'); }
+    catch (e) { return []; }
+  }
+  function rememberRecent(sid, path) {
+    const list = recentFiles().filter((r) => !(r.sid === sid && r.path === path));
+    list.unshift({ sid, path, ts: Date.now() });
+    try { localStorage.setItem('cgRecentFiles', JSON.stringify(list.slice(0, 10))); }
+    catch (e) { /* приватный режим */ }
+  }
+  /* Файл/сервер исчез — выкидываем из «недавних», чтобы не копить мёртвые. */
+  function forgetRecent(sid, path) {
+    const list = recentFiles().filter((r) =>
+      path != null ? !(r.sid === sid && r.path === path) : r.sid !== sid);
+    try { localStorage.setItem('cgRecentFiles', JSON.stringify(list)); }
+    catch (e) { /* приватный режим */ }
   }
 
   const wins = new Map(); // key -> {key, kind, id, el, frame, btn, min, maxed}
@@ -133,13 +154,16 @@
   }
 
   /* Перетаскивание/ресайз: во время жеста включаем «щит», иначе iframe
-     проглатывает pointermove и жест обрывается на границе окна. */
-  function gesture(startEvent, onMove, onEnd) {
+     проглатывает pointermove и жест обрывается на границе окна. cursorCss —
+     курсор на время жеста (ns-resize и т.п.), чтобы не мигал стрелкой. */
+  function gesture(startEvent, cursorCss, onMove, onEnd) {
     startEvent.preventDefault();
+    shield.style.cursor = cursorCss || 'default';
     shield.classList.remove('hidden');
     const move = (e) => onMove(e);
     const up = () => {
       shield.classList.add('hidden');
+      shield.style.cursor = '';
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
@@ -194,7 +218,7 @@
     const btnMax = document.createElement('button');
     btnMax.className = 'cg-win-btn';
     btnMax.title = 'Развернуть/восстановить';
-    btnMax.appendChild(icon('app-window'));
+    btnMax.appendChild(icon('maximize'));
     const btnClose = document.createElement('button');
     btnClose.className = 'cg-win-btn close';
     btnClose.title = 'Закрыть';
@@ -226,7 +250,7 @@
         focus(win);
         const sx = e.clientX, sy = e.clientY;
         const sl = el.offsetLeft, st = el.offsetTop, sw = el.offsetWidth, sh = el.offsetHeight;
-        gesture(e, (ev) => {
+        gesture(e, getComputedStyle(hnd).cursor, (ev) => {
           const dx = ev.clientX - sx, dy = ev.clientY - sy;
           if (d.includes('e')) el.style.width = Math.max(380, sw + dx) + 'px';
           if (d.includes('s')) el.style.height = Math.max(240, sh + dy) + 'px';
@@ -264,7 +288,7 @@
       focus(win);
       if (win.maxed) return; // развёрнутое не таскается
       const sx = e.clientX - el.offsetLeft, sy = e.clientY - el.offsetTop;
-      gesture(e, (ev) => {
+      gesture(e, 'move', (ev) => {
         el.style.left = (ev.clientX - sx) + 'px';
         el.style.top = (ev.clientY - sy) + 'px';
       }, () => { clampToDesktop(el); saveGeom(win); });
@@ -435,6 +459,7 @@
     const up = isUp(srv.status);
     const items = [
       menuItem('Открыть панель', 'command', false, () => createWindow('server', srv.id, srv.name)),
+      menuItem('Проводник', 'folder', false, () => createWindow('files', srv.id, 'Проводник — ' + (srv.name || srv.id))),
     ];
     if (up) {
       items.push(menuItem('Остановить', 'pause', false, () => serverAction(srv.id, 'stop')));
@@ -457,7 +482,12 @@
           const err = await r.json().catch(() => null);
           toast((err && err.error) || 'Не удалось удалить');
         } else {
-          closeWindow('server:' + srv.id);
+          // закрываем ВСЕ окна удалённого сервера: панель, проводник, редакторы
+          for (const w of Array.from(wins.values())) {
+            if ((w.kind === 'server' || w.kind === 'files') && w.id === srv.id) closeWindow(w.key);
+            if (w.kind === 'editor' && w.id && w.id.slice(0, w.id.indexOf(':')) === srv.id) closeWindow(w.key);
+          }
+          forgetRecent(srv.id, null);
         }
       } catch (e) { toast('Панель недоступна'); }
       refreshServers.lastSig = null;
@@ -540,6 +570,105 @@
     b.addEventListener('click', () => createWindow(b.dataset.app));
   });
 
+  /* ── win-меню («Пуск»): серверы, недавние файлы, аккаунт, настройки ── */
+
+  const startBtn = $('#cg-start');
+  const startMenu = $('#cg-start-menu');
+
+  function smItem(label, iconName, handler, dotClass) {
+    const it = document.createElement('button');
+    it.className = 'cg-sm-item';
+    it.appendChild(icon(iconName));
+    const sp = document.createElement('span');
+    sp.textContent = label;
+    it.appendChild(sp);
+    if (dotClass) {
+      const dot = document.createElement('span');
+      dot.className = 'cg-sm-dot ' + dotClass;
+      it.appendChild(dot);
+    }
+    it.addEventListener('click', () => { hideStartMenu(); handler(); });
+    return it;
+  }
+
+  function renderStartMenu() {
+    const srvBox = $('#cg-sm-servers');
+    srvBox.textContent = '';
+    if (!servers.length) {
+      const e = document.createElement('div');
+      e.className = 'cg-sm-empty';
+      e.textContent = 'Серверов пока нет';
+      srvBox.appendChild(e);
+    }
+    for (const srv of servers) {
+      srvBox.appendChild(smItem(srv.name || srv.id, 'server',
+        () => createWindow('server', srv.id, srv.name), statusDot(srv.status)));
+    }
+    const recBox = $('#cg-sm-recent');
+    recBox.textContent = '';
+    const rec = recentFiles();
+    if (!rec.length) {
+      const e = document.createElement('div');
+      e.className = 'cg-sm-empty';
+      e.textContent = 'Ещё ничего не открывали';
+      recBox.appendChild(e);
+    }
+    for (const r of rec) {
+      const base = String(r.path || '').split('/').pop();
+      recBox.appendChild(smItem(base, 'script-text', () => {
+        // наверх списка НЕ двигаем: если файл мёртв, editor-окно закроется с
+        // reason=editor-failed и запись будет вычищена
+        createWindow('editor', r.sid + ':' + r.path, base);
+      }));
+    }
+  }
+
+  /* Ник и аватар аккаунта центра (через локальную панель). */
+  async function loadAccountCard() {
+    let nick = 'Аккаунт';
+    let avatarUrl = null;
+    try {
+      const me = await (await fetch('/api/central/me')).json();
+      if (me && me.user && me.user.username) nick = me.user.username;
+      else if (me && me.username) nick = me.username;
+      if (me && me.user && me.user.discord && me.user.discord.avatar) avatarUrl = me.user.discord.avatar;
+    } catch (e) { /* центр недоступен */ }
+    $('#cg-sm-nick').textContent = nick;
+    const av = $('#cg-sm-avatar');
+    av.textContent = '';
+    if (avatarUrl) {
+      const img = document.createElement('img');
+      img.src = avatarUrl;
+      img.alt = '';
+      av.appendChild(img);
+    } else {
+      av.textContent = (nick[0] || '?').toUpperCase();
+    }
+  }
+
+  function hideStartMenu() {
+    startMenu.classList.add('hidden');
+    startBtn.classList.remove('open');
+  }
+  function toggleStartMenu() {
+    if (startMenu.classList.contains('hidden')) {
+      renderStartMenu();
+      loadAccountCard();
+      startMenu.classList.remove('hidden');
+      startBtn.classList.add('open');
+    } else {
+      hideStartMenu();
+    }
+  }
+  startBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleStartMenu(); });
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#cg-start-menu') && !e.target.closest('#cg-start')) hideStartMenu();
+  });
+  // клик внутрь iframe-окна не доходит до document — ловим по потере фокуса
+  window.addEventListener('blur', hideStartMenu);
+  $('#cg-sm-account').addEventListener('click', () => { hideStartMenu(); createWindow('profile'); });
+  $('#cg-sm-settings').addEventListener('click', () => { hideStartMenu(); createWindow('settings'); });
+
   // сообщения от окон (открыть сервер/редактор, вход/выход, закрыть окно)
   window.addEventListener('message', async (e) => {
     if (e.origin !== location.origin || !e.data || !e.data.cg) return;
@@ -550,11 +679,22 @@
         if (t) { win.nameEl.textContent = t; win.btnLabel.textContent = t; }
       }
     } else if (e.data.cg === 'open' && e.data.what === 'editor' && e.data.id && e.data.path) {
+      rememberRecent(e.data.id, e.data.path);
       createWindow('editor', e.data.id + ':' + e.data.path, e.data.title || e.data.path);
     } else if (e.data.cg === 'close-win') {
       // окно просит закрыть само себя (например «Закрыть» в редакторе)
       for (const w of wins.values()) {
-        if (w.frame.contentWindow === e.source) { closeWindow(w.key); break; }
+        if (w.frame.contentWindow === e.source) {
+          // редактор не смог открыть файл (удалён/недоступен) — чистим
+          // «недавние» и говорим об этом, иначе окно молча мигнёт и исчезнет
+          if (e.data.reason === 'editor-failed' && w.kind === 'editor' && w.id) {
+            const cut = w.id.indexOf(':');
+            forgetRecent(w.id.slice(0, cut), w.id.slice(cut + 1));
+            toast('Файл недоступен (удалён или сервер выключен)');
+          }
+          closeWindow(w.key);
+          break;
+        }
       }
     } else if (e.data.cg === 'need-login') {
       createWindow('gate');
@@ -597,6 +737,11 @@
       opened++;
       if (kind === 'server') {
         serverTitle(id).then((t) => { if (t) { win.nameEl.textContent = t; win.btnLabel.textContent = t; } });
+      }
+      if (kind === 'files') {
+        serverTitle(id).then((t) => {
+          if (t) { win.nameEl.textContent = 'Проводник — ' + t; win.btnLabel.textContent = 'Проводник — ' + t; }
+        });
       }
       if (kind === 'editor' && id) {
         const base = id.slice(id.indexOf(':') + 1).split('/').pop();

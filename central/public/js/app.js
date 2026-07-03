@@ -117,6 +117,7 @@
     document.documentElement.classList.add('embed');
     if (go === 'gate') document.documentElement.classList.add('embed-gate');
     if (go.startsWith('editor/')) document.documentElement.classList.add('embed-editor');
+    if (go.startsWith('files/')) document.documentElement.classList.add('embed-files');
     const m = go.match(/^server\/(.+)$/);
     if (m) history.replaceState(null, '', '#server=' + m[1]);
     else if (go === 'profile') history.replaceState(null, '', '#profile');
@@ -129,6 +130,12 @@
     if (!m) return null;
     try { return { id: m[1], path: decodeURIComponent(m[2]) }; }
     catch (e) { return null; }
+  })();
+  /* Окно-проводник файлов сервера: go=files/<serverId> */
+  const EMBED_FILES = (() => {
+    if (!EMBED || !EMBED.startsWith('files/')) return null;
+    const m = EMBED.match(/^files\/(.+)$/);
+    return m ? { id: m[1] } : null;
   })();
 
   const state = {
@@ -1133,6 +1140,17 @@
   /* Загрузка приложения: в десктопе сперва требуем аккаунт центра (гейт), затем обычный старт. */
   async function bootApp() {
     // окно-редактор: минимальный запуск — только сам редактор, без опросов
+    // окно-проводник: файловый менеджер сервера без шапки и вкладок
+    if (EMBED_FILES) {
+      state.currentId = EMBED_FILES.id;
+      $('#screen-server').classList.remove('hidden');
+      $('#tab-files').classList.remove('hidden');
+      document.title = 'Проводник';
+      loadMe();
+      loadStatus();
+      loadFiles();
+      return;
+    }
     if (EMBED_EDITOR) {
       state.currentId = EMBED_EDITOR.id;
       $('#screen-server').classList.remove('hidden');
@@ -1144,7 +1162,7 @@
       // сессии) — редактор не открылся; просим рабочий стол закрыть окно,
       // иначе останется мёртвое пустое
       if ($('#file-editor').classList.contains('hidden') && window.parent !== window) {
-        window.parent.postMessage({ cg: 'close-win' }, location.origin);
+        window.parent.postMessage({ cg: 'close-win', reason: 'editor-failed' }, location.origin);
       }
       return;
     }

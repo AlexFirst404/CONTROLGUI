@@ -12,9 +12,16 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 .cg-win { position: absolute; display: flex; flex-direction: column;
   min-width: 380px; min-height: 240px;
   background: #1c1c1c; border: 2px solid #4a4a4a;
-  box-shadow: 0 12px 44px rgba(0, 0, 0, .6); }
-.cg-win.focus { border-color: var(--accent); }
+  box-shadow: 0 12px 44px rgba(0, 0, 0, .6);
+  animation: cg-win-in .15s ease-out;
+  transition: border-color .12s, box-shadow .15s; }
+.cg-win.focus { border-color: var(--accent); box-shadow: 0 16px 52px rgba(0, 0, 0, .7); }
 .cg-win.min { display: none; }
+
+@keyframes cg-win-in {
+  from { opacity: 0; transform: translateY(10px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
 
 .cg-win-title { display: flex; align-items: center; gap: 10px; flex: none;
   padding: 8px 10px; background: #242424; border-bottom: 2px solid #3a3a3a;
@@ -25,26 +32,30 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 .cg-win-btns { display: flex; gap: 6px; }
 .cg-win-btn { display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 24px; padding: 0; background: #3a3a3a; border: 2px solid #555;
-  color: #cfcfcf; cursor: pointer; }
+  color: #cfcfcf; cursor: pointer;
+  transition: background .1s, border-color .1s, color .1s, transform .07s; }
 .cg-win-btn:hover { background: #4a4a4a; color: #fff; }
+.cg-win-btn:active { transform: scale(.9); }
 .cg-win-btn.close:hover { background: #a13530; border-color: #c05650; }
 .cg-win-btn .pi { width: 12px; height: 12px; color: inherit; }
 
 .cg-win-body { position: relative; flex: 1; min-height: 0; background: #161616; }
 .cg-win-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 
-/* ручки изменения размера (8 зон по краям/углам) */
+/* ручки изменения размера (8 зон по краям/углам) — курсор меняется на
+   соответствующую «растягивающую» стрелку (CEF пробрасывает его в GLFW) */
 .cg-rs { position: absolute; z-index: 3; }
-.cg-rs-n  { top: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
-.cg-rs-s  { bottom: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
-.cg-rs-e  { right: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
-.cg-rs-w  { left: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }
-.cg-rs-ne { top: -4px; right: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
-.cg-rs-sw { bottom: -4px; left: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
-.cg-rs-nw { top: -4px; left: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
-.cg-rs-se { bottom: -4px; right: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.cg-rs-n  { top: -5px; left: 12px; right: 12px; height: 10px; cursor: ns-resize; }
+.cg-rs-s  { bottom: -5px; left: 12px; right: 12px; height: 10px; cursor: ns-resize; }
+.cg-rs-e  { right: -5px; top: 12px; bottom: 12px; width: 10px; cursor: ew-resize; }
+.cg-rs-w  { left: -5px; top: 12px; bottom: 12px; width: 10px; cursor: ew-resize; }
+.cg-rs-ne { top: -5px; right: -5px; width: 17px; height: 17px; cursor: nesw-resize; }
+.cg-rs-sw { bottom: -5px; left: -5px; width: 17px; height: 17px; cursor: nesw-resize; }
+.cg-rs-nw { top: -5px; left: -5px; width: 17px; height: 17px; cursor: nwse-resize; }
+.cg-rs-se { bottom: -5px; right: -5px; width: 17px; height: 17px; cursor: nwse-resize; }
 
-/* во время перетаскивания iframe не должен красть события мыши */
+/* во время перетаскивания iframe не должен красть события мыши; курсор жеста
+   (например ns-resize) задаёт desktop.js, чтобы он не мигал стрелкой */
 #cg-drag-shield { position: fixed; inset: 0; z-index: 9000; }
 #cg-drag-shield.hidden { display: none; }
 
@@ -56,7 +67,9 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
   display: flex; flex-direction: column; align-items: center; gap: 7px;
   border: 2px solid transparent; cursor: pointer; user-select: none;
   pointer-events: auto; }
+.cg-ico { transition: background .12s, border-color .12s, transform .08s; }
 .cg-ico:hover { background: #ffffff14; border-color: #ffffff22; }
+.cg-ico:active { transform: scale(.95); }
 .cg-ico.sel { background: #ffffff1f; border-color: var(--accent); }
 .cg-ico-img { width: 34px; height: 34px; color: var(--accent-bright); }
 .cg-ico-dot { position: absolute; right: 22px; top: 34px; width: 9px; height: 9px;
@@ -71,9 +84,12 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 
 /* ── контекстное меню ПКМ ──────────────────────────────────── */
 #cg-menu { position: fixed; z-index: 9600; min-width: 190px; padding: 5px;
-  background: #1c1c1cf8; border: 2px solid #4a4a4a;
+  background: rgba(16, 16, 16, .88);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 2px solid #ffffff28;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .6);
-  display: flex; flex-direction: column; gap: 2px; }
+  display: flex; flex-direction: column; gap: 2px;
+  animation: cg-menu-in .11s ease-out; }
 #cg-menu.hidden { display: none; }
 .cg-menu-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px;
   background: none; border: 0; color: #dcdcdc; font-family: var(--font-ui);
@@ -109,29 +125,89 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
   opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; }
 #cg-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* ── часы и дата (снизу справа) ────────────────────────────── */
-#cg-clock { position: fixed; right: 12px; bottom: 12px; z-index: 9500;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
-  padding: 7px 12px; background: #1c1c1cf2; border: 2px solid #4a4a4a;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, .55); user-select: none; }
-#cg-clock-time { font-family: var(--font-head); font-size: 16px; color: #fff; }
-#cg-clock-date { font-family: var(--font-ui); font-size: 12px; color: #a9a9a9; }
+/* ── часы и дата (в правом краю панели) ────────────────────── */
+#cg-clock { display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+  padding: 2px 6px 2px 12px; user-select: none; }
+#cg-clock-time { font-family: var(--font-head); font-size: 15px; color: #fff; line-height: 1.1; }
+#cg-clock-date { font-family: var(--font-ui); font-size: 11px; color: #a9a9a9; line-height: 1.1; }
 
 /* развёрнутое окно — рамочные ручки не активны */
 .cg-win.maxed .cg-rs { display: none; }
 
-/* ── панель задач (снизу слева, как в винде — но наша) ─────── */
-#cg-taskbar { position: fixed; left: 12px; bottom: 12px; z-index: 9500;
-  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
-  background: #1c1c1cf2; border: 2px solid #4a4a4a;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, .55); }
+/* ── единая панель задач (на всю ширину, «стекло») ─────────── */
+#cg-taskbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9500;
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  background: rgba(8, 8, 8, .58);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-top: 2px solid #ffffff1e;
+  box-shadow: 0 -8px 26px rgba(0, 0, 0, .45); }
+#cg-start { display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 34px; padding: 0; background: transparent; border: 2px solid transparent;
+  cursor: pointer; transition: background .12s, border-color .12s, transform .08s; }
+#cg-start img { width: 24px; height: 24px; image-rendering: pixelated; }
+#cg-start:hover { background: #ffffff1c; border-color: #ffffff2a; }
+#cg-start:active { transform: scale(.92); }
+#cg-start.open { background: #ffffff24; border-color: var(--accent); }
 .cg-task-btn { display: inline-flex; align-items: center; gap: 7px;
-  padding: 7px 11px; background: #2b2b2b; border: 2px solid #454545;
-  color: #dcdcdc; font-family: var(--font-ui); font-size: 14px; cursor: pointer; }
-.cg-task-btn:hover { background: #3a3a3a; color: #fff; }
+  padding: 7px 11px; background: #ffffff10; border: 2px solid #ffffff1c;
+  color: #dcdcdc; font-family: var(--font-ui); font-size: 14px; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s, transform .08s; }
+.cg-task-btn:hover { background: #ffffff22; color: #fff; }
+.cg-task-btn:active { transform: translateY(1px); }
 .cg-task-btn.active { border-color: var(--accent); color: #fff; }
 .cg-task-btn.minned { opacity: .62; }
 .cg-task-btn .pi { width: 14px; height: 14px; color: var(--accent-bright); }
-.cg-task-sep { width: 2px; align-self: stretch; margin: 2px 3px; background: #454545; }
+.cg-task-sep { width: 2px; align-self: stretch; margin: 2px 3px; background: #ffffff1e; }
+.cg-task-spring { flex: 1; }
 #cg-task-wins { display: inline-flex; gap: 6px; }
 #cg-task-wins .cg-task-btn span { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── win-меню («Пуск») ─────────────────────────────────────── */
+#cg-start-menu { position: fixed; left: 8px; bottom: 54px; z-index: 9550;
+  width: 460px; max-height: 62vh; display: flex; flex-direction: column;
+  background: rgba(12, 12, 12, .82);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 2px solid #ffffff24; box-shadow: 0 14px 48px rgba(0, 0, 0, .65);
+  transform-origin: bottom left; animation: cg-menu-in .13s ease-out; }
+#cg-start-menu.hidden { display: none; }
+.cg-sm-cols { display: flex; gap: 0; flex: 1; min-height: 0; }
+.cg-sm-col { flex: 1; min-width: 0; padding: 12px 10px 8px; display: flex; flex-direction: column; }
+.cg-sm-col + .cg-sm-col { border-left: 2px solid #ffffff14; }
+.cg-sm-title { font-family: var(--font-head); font-size: 12px; letter-spacing: .6px;
+  color: #9a9a9a; margin: 0 4px 8px; text-transform: uppercase; }
+.cg-sm-list { overflow-y: auto; min-height: 60px; max-height: 44vh; display: flex; flex-direction: column; gap: 2px; }
+.cg-sm-item { display: flex; align-items: center; gap: 9px; padding: 8px 9px;
+  background: none; border: 0; color: #dcdcdc; font-family: var(--font-ui);
+  font-size: 14px; text-align: left; cursor: pointer;
+  transition: background .1s, color .1s; }
+.cg-sm-item:hover { background: #ffffff1c; color: #fff; }
+.cg-sm-item .pi { width: 14px; height: 14px; flex: none; color: var(--accent-bright); }
+.cg-sm-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cg-sm-item .cg-sm-dot { flex: none; width: 8px; height: 8px; margin-left: auto; }
+.cg-sm-dot.run { background: #80da5b; }
+.cg-sm-dot.mid { background: #e8c84f; }
+.cg-sm-dot.off { background: #6a6a6a; }
+.cg-sm-empty { color: #7a7a7a; font-family: var(--font-ui); font-size: 13px; padding: 8px 9px; }
+.cg-sm-bottom { display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px; border-top: 2px solid #ffffff14; }
+.cg-sm-acc { display: inline-flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
+  padding: 6px 8px; background: none; border: 2px solid transparent; cursor: pointer;
+  color: #e8e8e8; font-family: var(--font-ui); font-size: 14px;
+  transition: background .12s, border-color .12s; }
+.cg-sm-acc:hover { background: #ffffff1c; border-color: #ffffff24; }
+.cg-sm-avatar { width: 26px; height: 26px; flex: none; display: inline-flex;
+  align-items: center; justify-content: center; background: var(--accent);
+  color: #10240b; font-family: var(--font-head); font-size: 14px; overflow: hidden; }
+.cg-sm-avatar img { width: 100%; height: 100%; object-fit: cover; }
+#cg-sm-nick { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cg-sm-iconbtn { display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: 0; background: #ffffff10; border: 2px solid #ffffff1c;
+  cursor: pointer; transition: background .12s, transform .08s; }
+.cg-sm-iconbtn:hover { background: #ffffff22; }
+.cg-sm-iconbtn:active { transform: scale(.92); }
+.cg-sm-iconbtn .pi { width: 16px; height: 16px; color: var(--accent-bright); }
+
+@keyframes cg-menu-in {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}

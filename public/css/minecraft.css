@@ -109,6 +109,15 @@ html.embed-editor #screen-server > .tabbar,
 html.embed-editor #screen-server > .tab-pane:not(#tab-files) { display: none !important; }
 html.embed-editor #tab-files #files-browser { display: none !important; }
 html.embed-editor #tab-files, html.embed-editor #file-editor { margin-top: 0; }
+/* окно-проводник: только файловый браузер, без шапки сервера и вкладок */
+html.embed-files #screen-list, html.embed-files #screen-proxy,
+html.embed-files #screen-create, html.embed-files #screen-remote,
+html.embed-files #screen-profile, html.embed-files #screen-users { display: none !important; }
+html.embed-files #screen-server > .server-head,
+html.embed-files #screen-server > .progress-wrap,
+html.embed-files #screen-server > .tabbar,
+html.embed-files #screen-server > .tab-pane:not(#tab-files) { display: none !important; }
+html.embed-files #tab-files, html.embed-files #files-browser { margin-top: 0; }
 
 .bg-pattern::before {
   content: ""; position: absolute; left: -44px; top: -44px; width: calc(100% + 44px); height: calc(100% + 44px);
