@@ -1,0 +1,63 @@
+name: Build patched java-cef natives (Windows)
+
+# Собирает нативный java-cef (jcef.dll) с патчем windowless_frame_rate=260 —
+# снимает жёсткий OSR-кап 30 FPS в панели CONTROLGUI внутри Minecraft.
+# Клонирует Keksuccino/java-cef на запиненном коммите (тот же, что вкопирован в
+# мод как org.cef), патчит одну строку и собирает под ту же версию CEF (116.0.27),
+# поэтому ABI совпадает. Артефакт (windows_amd64.tar.gz) приватный — скачивается
+# через `gh run download`, из него берётся только патченый jcef.dll и вшивается
+# в мод (остальные нативы по-прежнему из тарбола Keksuccino).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [jcef-native]
+
+jobs:
+  windows-amd64:
+    runs-on: windows-2022
+    steps:
+      - name: Setup JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Clone java-cef @ pinned commit
+        shell: pwsh
+        run: |
+          git clone https://github.com/Keksuccino/java-cef.git jcef
+          cd jcef
+          git checkout eaeb3d4370aa3526ee237ad1981ad59af3de4dd1
+      - name: Patch windowless_frame_rate -> 260
+        shell: pwsh
+        run: |
+          $f = "jcef/native/CefBrowser_N.cpp"
+          $c = Get-Content -Raw $f
+          if ($c -notmatch [regex]::Escape("CefBrowserSettings settings;")) { throw "anchor not found" }
+          $c = $c -replace [regex]::Escape("CefBrowserSettings settings;"), "CefBrowserSettings settings;`n  settings.windowless_frame_rate = 260;"
+          Set-Content -NoNewline -Path $f -Value $c
+          Select-String -Path $f -Pattern "windowless_frame_rate"
+      - name: Build
+        shell: pwsh
+        working-directory: jcef
+        run: |
+          mkdir jcef_build
+          cd jcef_build
+          cmake -G "Ninja" -DPROJECT_ARCH=amd64 -DCMAKE_BUILD_TYPE=Release ..
+          ninja -j4
+          cd native
+          Rename-Item Release windows_amd64
+          cd ..
+          Move-Item native/windows_amd64 windows_amd64
+          tar -czf windows_amd64.tar.gz windows_amd64
+          (Get-FileHash -Algorithm SHA256 windows_amd64.tar.gz).Hash | Out-File windows_amd64.tar.gz.sha256
+          Get-Content windows_amd64.tar.gz.sha256
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows_amd64-jcef
+          path: |
+            jcef/jcef_build/windows_amd64.tar.gz
+            jcef/jcef_build/windows_amd64.tar.gz.sha256
+          retention-days: 14
