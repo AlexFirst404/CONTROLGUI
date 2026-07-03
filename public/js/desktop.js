@@ -13,10 +13,24 @@
   const iconsBox = $('#cg-icons');
   const menuEl = $('#cg-menu');
 
-  // тема — из общих настроек панели
+  // масштаб интерфейса применяем КО ВСЕМУ рабочему столу (а не к отдельному
+  // окну-настроек, чей body-зум затрагивал только саму страницу настроек).
+  // deskZoom — текущий множитель: при CSS zoom на <html> координаты указателя
+  // (clientX) считаются в ВИЗУАЛЬНЫХ пикселях, а left/top/transform — в
+  // ЛОГИЧЕСКИХ; чтобы окна/иконки при перетаскивании не «убегали» от курсора на
+  // масштабе ≠100%, дельту жеста делим на deskZoom.
+  let deskZoom = 1;
+  function applyDeskScale(scale) {
+    const z = (typeof scale === 'number' && scale >= 50 && scale <= 300) ? scale : 100;
+    deskZoom = z / 100;
+    document.documentElement.style.zoom = z === 100 ? '' : deskZoom;
+  }
+
+  // тема и масштаб — из общих настроек панели
   try {
     const s = JSON.parse(localStorage.getItem('controlgui-settings') || '{}');
     document.body.classList.add(s.theme === 'theme-blue' ? 'theme-blue' : 'theme-lime');
+    applyDeskScale(s.scale);
   } catch (e) { document.body.classList.add('theme-lime'); }
 
   // нативное контекстное меню CEF не к месту на рабочем столе
@@ -317,11 +331,23 @@
       if (e.target.closest('.cg-win-btn')) return;
       focus(win);
       if (win.maxed) return; // развёрнутое не таскается
-      const sx = e.clientX - el.offsetLeft, sy = e.clientY - el.offsetTop;
+      const startLeft = el.offsetLeft, startTop = el.offsetTop;
+      const ox = e.clientX, oy = e.clientY;
+      let dx = 0, dy = 0;
+      el.classList.add('cg-dragging');
+      // Двигаем окно композитным transform, а не left/top: содержимое окна
+      // (iframe панели) не перерастеризуется каждый кадр — только сдвигается
+      // готовый слой. На высоком разрешении это убирает рывки перетаскивания.
       gesture(e, 'move', (ev) => {
-        el.style.left = (ev.clientX - sx) + 'px';
-        el.style.top = (ev.clientY - sy) + 'px';
-      }, () => { clampToDesktop(el); saveGeom(win); });
+        dx = (ev.clientX - ox) / deskZoom; dy = (ev.clientY - oy) / deskZoom;
+        el.style.transform = 'translate3d(' + dx + 'px,' + dy + 'px,0)';
+      }, () => {
+        el.style.transform = '';
+        el.classList.remove('cg-dragging');
+        el.style.left = (startLeft + dx) + 'px';
+        el.style.top = (startTop + dy) + 'px';
+        clampToDesktop(el); saveGeom(win);
+      });
     });
     title.addEventListener('dblclick', (e) => {
       if (e.target.closest('.cg-win-btn')) return;
@@ -412,9 +438,16 @@
   }
 
   /* ── узлы рабочего стола: сервер или пользовательский элемент ── */
+  // единая сетка рабочего стола: иконки прилипают к ячейкам этого размера
+  // (совпадает с шагом авторасклада в renderIcons — 100×96)
+  const GRID_X = 100, GRID_Y = 96;
+  function snapToGrid(x, y) {
+    return { x: Math.max(0, Math.round(x / GRID_X) * GRID_X),
+             y: Math.max(0, Math.round(y / GRID_Y) * GRID_Y) };
+  }
   function keyOf(node) { return node.kind === 'server' ? 'srv:' + node.id : 'itm:' + node.id; }
   function getPos(node) { return iconPos[keyOf(node)] || null; }
-  function savePos(node, x, y) { iconPos[keyOf(node)] = { x, y }; savePosAll(); }
+  function savePos(node, x, y) { const p = snapToGrid(x, y); iconPos[keyOf(node)] = { x: p.x, y: p.y }; savePosAll(); }
   function clearPos(node) { delete iconPos[keyOf(node)]; savePosAll(); }
   function parentOfNode(node) { return node.kind === 'server' ? (serverParents[node.id] || null) : (node.item.parent || null); }
   function setParent(node, folderId) {
@@ -449,7 +482,9 @@
       dot.className = 'cg-ico-dot ' + statusDot(node.srv.status);
       ico.appendChild(img); ico.appendChild(dot);
     } else {
-      iconName = node.item.type === 'folder' ? 'folder' : 'script-text';
+      if (node.item.type === 'folder') iconName = 'folder';
+      else if (node.item.type === 'file') iconName = node.item.isDir ? 'folder' : 'script-text';
+      else iconName = 'script-text';
       label = node.item.name;
       ico.dataset.type = node.item.type;
       ico.dataset.itemId = node.item.id;
@@ -477,7 +512,38 @@
   function openNode(node) {
     if (node.kind === 'server') { createWindow('server', node.srv.id, node.srv.name); return; }
     if (node.item.type === 'folder') createWindow('folder', node.item.id, node.item.name);
+    else if (node.item.type === 'file') openDesktopFile(node.item);
     else createWindow('doc', node.item.id, node.item.name);
+  }
+
+  /* Ярлык на реальный путь ПК (создан из проводника «На рабочий стол») —
+     открывает окно «Этот компьютер» в нужной папке. */
+  function parentDir(p) {
+    const norm = String(p || '');
+    const i = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
+    if (i < 0) return norm;
+    let par = norm.slice(0, i);
+    if (/^[a-zA-Z]:$/.test(par)) par += '\\'; // корень диска Windows
+    if (par === '') par = '/';                // корень POSIX
+    return par;
+  }
+  function openDesktopFile(item) {
+    const folder = item.isDir ? item.path : parentDir(item.path);
+    const existing = wins.get('pc');
+    if (existing) {
+      if (existing.min) restore(existing); else focus(existing);
+      try { existing.frame.contentWindow.postMessage({ cg: 'pc-navigate', path: folder }, location.origin); } catch (e) { /* */ }
+      return;
+    }
+    try { localStorage.setItem('cgPcStartPath', folder); } catch (e) { /* */ }
+    createWindow('pc');
+  }
+  function addDesktopFile(p, name, isDir) {
+    if (!p) return;
+    const it = { id: newId(), type: 'file', name: name || String(p), path: String(p), isDir: !!isDir, parent: null };
+    deskItems.push(it); saveItems();
+    renderIcons();
+    toast('Добавлено на рабочий стол: ' + it.name);
   }
 
   function renderIcons() {
@@ -506,9 +572,9 @@
     if (e.button !== 0) return;
     const startX = e.clientX, startY = e.clientY;
     const startLeft = iconEl.offsetLeft, startTop = iconEl.offsetTop;
-    let dragging = false;
+    let dragging = false, dx = 0, dy = 0;
     const move = (ev) => {
-      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      dx = (ev.clientX - startX) / deskZoom; dy = (ev.clientY - startY) / deskZoom;
       if (!dragging && Math.abs(dx) + Math.abs(dy) < 5) return;
       if (!dragging) {
         dragging = true;
@@ -517,8 +583,9 @@
         shield.classList.remove('hidden');
         iconEl.classList.add('cg-ico-dragging');
       }
-      iconEl.style.left = Math.max(0, startLeft + dx) + 'px';
-      iconEl.style.top = Math.max(0, startTop + dy) + 'px';
+      // тянем композитным transform, а не left/top — нет relayout и перекраски
+      // содержимого рабочего стола каждый кадр (важно на высоком разрешении)
+      iconEl.style.transform = 'translate3d(' + dx + 'px,' + dy + 'px,0)';
     };
     const up = (ev) => {
       window.removeEventListener('pointermove', move);
@@ -528,20 +595,25 @@
       iconDragging = false;
       shield.classList.add('hidden'); shield.style.cursor = '';
       iconEl.classList.remove('cg-ico-dragging');
-      // элемент мог быть откреплён фоновым обновлением — тогда его offset=0,
-      // позицию не сохраняем (иначе иконка «прыгнет» в угол)
+      iconEl.style.transform = '';
+      // финальную позицию считаем от старта + сдвиг (transform не меняет offset)
+      const finalX = Math.max(0, startLeft + dx), finalY = Math.max(0, startTop + dy);
+      // элемент мог быть откреплён фоновым обновлением — тогда позицию не
+      // сохраняем (иначе иконка «прыгнет» в угол)
       const detached = !iconEl.isConnected;
       const folderId = detached ? null : folderUnder(ev.clientX, ev.clientY, node);
       if (folderId) {
         if (node.kind === 'item' && node.item.type === 'folder' && wouldCycle(node.id, folderId)) {
           toast('Нельзя вложить папку в саму себя');
-          savePos(node, iconEl.offsetLeft, iconEl.offsetTop);
+          savePos(node, finalX, finalY);
         } else {
           setParent(node, folderId); clearPos(node);
         }
         renderIcons(); refreshFolderWindows();
       } else if (!detached) {
-        savePos(node, iconEl.offsetLeft, iconEl.offsetTop);
+        savePos(node, finalX, finalY); // savePos прилипает к сетке
+        const p = snapToGrid(finalX, finalY);
+        iconEl.style.left = p.x + 'px'; iconEl.style.top = p.y + 'px';
       }
       if (renderPending) { renderPending = false; renderIcons(); }
     };
@@ -600,6 +672,9 @@
       const ok = await confirmBox('Удалить папку «' + it.name + '»?' + (kids.length ? ' Её содержимое вернётся на рабочий стол.' : ''));
       if (!ok) return;
       for (const k of kids) setParent(k, null); // не теряем сервера/документы
+    } else if (it.type === 'file') {
+      const ok = await confirmBox('Убрать ярлык «' + it.name + '» с рабочего стола? Сам файл на диске останется.');
+      if (!ok) return;
     } else {
       const ok = await confirmBox('Удалить документ «' + it.name + '»?');
       if (!ok) return;
@@ -716,7 +791,7 @@
     if (node.kind === 'server') { showServerMenu(node.srv, x, y, node); return; }
     const it = node.item;
     const items = [
-      menuItem('Открыть', it.type === 'folder' ? 'folder' : 'script-text', false, () => openNode(node)),
+      menuItem('Открыть', (it.type === 'folder' || (it.type === 'file' && it.isDir)) ? 'folder' : 'script-text', false, () => openNode(node)),
       menuItem('Переименовать', 'edit', false, () => startRename(node)),
     ];
     if (parentOfNode(node)) {
@@ -1062,6 +1137,11 @@
       }
     } else if (e.data.cg === 'set-blur') {
       setIngameBlur(!!e.data.on);
+    } else if (e.data.cg === 'set-scale') {
+      // окно-настройки сообщило новый масштаб — применяем ко всему десктопу
+      applyDeskScale(e.data.scale);
+    } else if (e.data.cg === 'add-desktop-file') {
+      addDesktopFile(e.data.path, e.data.name, !!e.data.isDir);
     } else if (e.data.cg === 'need-login') {
       createWindow('gate');
     } else if (e.data.cg === 'logged-in') {

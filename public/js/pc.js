@@ -108,6 +108,10 @@
       else el.title = ent.name;
       el.addEventListener('pointerdown', () => selectEntry(el));
       el.addEventListener('dblclick', () => openEntry(ent));
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        selectEntry(el); showMenu(ent, e.clientX, e.clientY);
+      });
       listEl.appendChild(el);
     }
     if (truncated) {
@@ -227,8 +231,122 @@
     else if (e.key === 'Escape') { e.preventDefault(); closePrompt(); }
   });
 
-  // старт: последняя папка или список дисков
+  /* ── контекстное меню: копировать в сервер / на рабочий стол ─── */
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  const menuEl = $('#pc-menu');
+  let menuTarget = null; // элемент {name,type,path}, над которым открыто меню
+
+  function hideMenu() { menuEl.classList.remove('on'); menuTarget = null; }
+
+  function showMenu(ent, x, y) {
+    menuTarget = ent;
+    menuEl.innerHTML = '';
+    const add = (icon, label, fn) => {
+      const mi = document.createElement('div');
+      mi.className = 'pc-mi';
+      const i = document.createElement('i');
+      i.className = 'pi'; i.style.setProperty('--i', "url('/icons/" + icon + ".svg')");
+      const s = document.createElement('span'); s.textContent = label;
+      mi.appendChild(i); mi.appendChild(s);
+      mi.addEventListener('click', () => { hideMenu(); fn(); });
+      menuEl.appendChild(mi);
+    };
+    add('server', 'Копировать в сервер…', () => openCopy(ent));
+    add('monitor', 'На рабочий стол', () => toDesktop(ent));
+    menuEl.classList.add('on');
+    // держим меню в пределах окна
+    const r = menuEl.getBoundingClientRect();
+    const nx = Math.min(x, window.innerWidth - r.width - 6);
+    const ny = Math.min(y, window.innerHeight - r.height - 6);
+    menuEl.style.left = Math.max(4, nx) + 'px';
+    menuEl.style.top = Math.max(4, ny) + 'px';
+  }
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#pc-menu')) hideMenu();
+  }, true);
+  window.addEventListener('blur', hideMenu);
+  listEl.addEventListener('scroll', hideMenu);
+
+  /* «На рабочий стол» — просим окно рабочего стола создать ярлык на этот путь. */
+  function toDesktop(ent) {
+    if (window.parent === window) { toast('Доступно только внутри Minecraft'); return; }
+    try {
+      window.parent.postMessage({
+        cg: 'add-desktop-file', path: ent.path, name: ent.name, isDir: ent.type === 'dir',
+      }, location.origin);
+      toast('Добавлено на рабочий стол');
+    } catch (e) { toast('Не удалось добавить'); }
+  }
+
+  /* ── копирование в сервер ─────────────────────────────────── */
+  const copyEl = $('#pc-copy');
+  const copyServerSel = $('#pc-copy-server');
+  const copySubSel = $('#pc-copy-sub');
+  const copyOkBtn = $('#pc-copy-ok');
+  let copyTarget = null;
+  let serversLoaded = false;
+
+  async function openCopy(ent) {
+    copyTarget = ent;
+    if (!serversLoaded) {
+      copyServerSel.innerHTML = '<option>Загрузка…</option>';
+      try {
+        const r = await api('servers');
+        const data = await r.json();
+        const list = (data && data.servers) || [];
+        if (!list.length) { toast('Нет ни одного сервера'); return; }
+        copyServerSel.innerHTML = '';
+        for (const s of list) {
+          const o = document.createElement('option');
+          o.value = s.id; o.textContent = s.name;
+          copyServerSel.appendChild(o);
+        }
+        serversLoaded = true;
+      } catch (e) { toast('Не удалось получить список серверов'); return; }
+    }
+    if (!copyServerSel.options.length) { toast('Нет ни одного сервера'); return; }
+    $('#pc-copy-title').textContent = 'Копировать «' + ent.name + '» в сервер';
+    copyEl.classList.add('on');
+  }
+  function closeCopy() { copyEl.classList.remove('on'); copyTarget = null; }
+
+  async function submitCopy() {
+    if (!copyTarget) { closeCopy(); return; }
+    const serverId = copyServerSel.value;
+    const sub = copySubSel.value;
+    if (!serverId) { toast('Выберите сервер'); return; }
+    copyOkBtn.disabled = true;
+    const prev = copyOkBtn.textContent;
+    copyOkBtn.textContent = 'Копирование…';
+    try {
+      const r = await api('copy-to-server', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, HDR),
+        body: JSON.stringify({ src: copyTarget.path, serverId, sub }),
+      });
+      const data = await r.json();
+      if (!r.ok) { toast((data && data.error) || 'Не удалось скопировать'); return; }
+      toast('Скопировано в «' + (data.server || 'сервер') + '»' + (sub ? ' → ' + sub : ''));
+      closeCopy();
+    } catch (e) { toast('Не удалось скопировать'); }
+    finally { copyOkBtn.disabled = false; copyOkBtn.textContent = prev; }
+  }
+  copyOkBtn.addEventListener('click', submitCopy);
+  $('#pc-copy-cancel').addEventListener('click', closeCopy);
+
+  // навигация по просьбе рабочего стола (двойной клик по ярлыку на ПК-путь)
+  window.addEventListener('message', (e) => {
+    if (e.origin !== location.origin || !e.data || e.data.cg !== 'pc-navigate') return;
+    if (editing) showList();
+    navigate(String(e.data.path || ''));
+  });
+
+  // старт: путь, заданный рабочим столом (ярлык), иначе последняя папка/диски
   let start = '';
-  try { start = localStorage.getItem('cgPcLastPath') || ''; } catch (e) { /* */ }
+  try {
+    start = localStorage.getItem('cgPcStartPath') || '';
+    if (start) localStorage.removeItem('cgPcStartPath');
+    else start = localStorage.getItem('cgPcLastPath') || '';
+  } catch (e) { /* */ }
   navigate(start);
 })();

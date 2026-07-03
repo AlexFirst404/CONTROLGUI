@@ -583,9 +583,19 @@
   function applyAppSettings(settings) {
     document.body.classList.remove('theme-lime', 'theme-blue');
     document.body.classList.add(settings.theme === 'theme-blue' ? 'theme-blue' : 'theme-lime');
-    document.body.style.zoom = settings.scale === 100 ? '' : settings.scale + '%';
     document.body.classList.toggle('no-bganim', settings.bgAnim === false);
     document.body.classList.toggle('hide-graphs', settings.graphs === false);
+    if (EMBED) {
+      // В моде масштаб интерфейса нельзя применять зумом body окна-настроек —
+      // это масштабирует только саму страницу настроек внутри iframe, а не весь
+      // рабочий стол. Передаём значение окну рабочего стола, оно зумит десктоп.
+      document.body.style.zoom = '';
+      if (window.parent !== window) {
+        try { window.parent.postMessage({ cg: 'set-scale', scale: settings.scale }, location.origin); } catch (e) { /* */ }
+      }
+    } else {
+      document.body.style.zoom = settings.scale === 100 ? '' : settings.scale + '%';
+    }
   }
 
   let appSettings = loadAppSettings();
@@ -627,7 +637,6 @@
     } else {
       scaleSlider.set(appSettings.scale);
     }
-    $('#set-bganim').classList.toggle('on', appSettings.bgAnim !== false);
     $('#set-graphs').classList.toggle('on', appSettings.graphs !== false);
     $('#set-ingame-blur').classList.toggle('on', ingameBlurOn());
     API.trayMinimize().then((r) => $('#set-tray').classList.toggle('on', !!(r && r.enabled))).catch(() => {});
@@ -5432,9 +5441,6 @@
         showToast('Режим переключён на «' + label + '»…', 'ok');
       } catch (e) { showToast(e.message); }
     }));
-    mkToggle($('#set-bganim'), appSettings.bgAnim !== false);
-    $('#set-bganim').addEventListener('click', () =>
-      changeAppSettings({ bgAnim: $('#set-bganim').classList.contains('on') }));
     mkToggle($('#set-graphs'), appSettings.graphs !== false);
     $('#set-graphs').addEventListener('click', () =>
       changeAppSettings({ graphs: $('#set-graphs').classList.contains('on') }));

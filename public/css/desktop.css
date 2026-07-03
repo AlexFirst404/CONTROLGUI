@@ -18,6 +18,9 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
   transition: border-color .12s, box-shadow .15s; }
 .cg-win.focus { border-color: var(--accent); box-shadow: 0 16px 52px rgba(0, 0, 0, .7); }
 .cg-win.min { display: none; }
+/* во время перетаскивания двигаем окно через transform (композитный слой) —
+   без relayout/перекраски содержимого iframe каждый кадр; важно на 4K */
+.cg-win.cg-dragging { will-change: transform; transition: none; animation: none; }
 /* закрытие — плавное «схлопывание» к кнопкам управления (правый верх) */
 .cg-win.cg-closing { animation: cg-win-out .19s cubic-bezier(.4, 0, 1, 1) forwards;
   transform-origin: 88% 6%; pointer-events: none; }
@@ -96,7 +99,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 .cg-ico:hover { background: #ffffff14; border-color: #ffffff22; }
 .cg-ico:active { transform: scale(.95); }
 .cg-ico.sel { background: #ffffff1f; border-color: var(--accent); }
-.cg-ico.cg-ico-dragging { opacity: .78; z-index: 6; transform: scale(1.04);
+.cg-ico.cg-ico-dragging { opacity: .78; z-index: 6; will-change: transform;
   background: #ffffff1f; border-color: var(--accent); transition: none; }
 .cg-ico-img { width: 34px; height: 34px; color: var(--accent-bright); }
 .cg-ico-dot { position: absolute; right: 22px; top: 34px; width: 9px; height: 9px;

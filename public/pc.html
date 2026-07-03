@@ -55,9 +55,9 @@
     color: #9a9a9a; font-size: 12px; }
 
   /* мини-приглашение имени (создать папку/документ) */
-  #pc-prompt { position: absolute; inset: 0; z-index: 5; display: none;
+  #pc-prompt, #pc-copy { position: absolute; inset: 0; z-index: 5; display: none;
     align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
-  #pc-prompt.on { display: flex; }
+  #pc-prompt.on, #pc-copy.on { display: flex; }
   .pc-prompt-box { min-width: 300px; padding: 16px; background: #1c1c1c; border: 2px solid #4a4a4a; }
   .pc-prompt-box h4 { margin: 0 0 10px; font-family: var(--font-head); font-size: 14px; color: #eee; font-weight: normal; }
   .pc-prompt-box input { width: 100%; box-sizing: border-box; padding: 8px 10px; margin-bottom: 12px;
@@ -69,6 +69,22 @@
     z-index: 20; padding: 9px 15px; background: #1c1c1cf5; border: 2px solid #a13530;
     color: #f2dcda; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; }
   #pc-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* контекстное меню элемента (копировать в сервер / на рабочий стол) */
+  #pc-menu { position: fixed; z-index: 30; min-width: 190px; display: none;
+    background: #1c1c1c; border: 2px solid #4a4a4a; box-shadow: 0 8px 26px rgba(0,0,0,.6); padding: 4px; }
+  #pc-menu.on { display: block; }
+  .pc-mi { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 13px;
+    color: #ddd; cursor: default; white-space: nowrap; }
+  .pc-mi:hover { background: #ffffff16; color: #fff; }
+  .pc-mi .pi { width: 14px; height: 14px; color: var(--accent-bright); }
+
+  /* выбор сервера для копирования */
+  .pc-copy-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .pc-copy-row label { flex: none; width: 62px; font-size: 13px; color: #b7b7b7; }
+  .pc-copy-row select { flex: 1; min-width: 0; padding: 7px 9px; background: #111;
+    border: 2px solid #4a4a4a; color: #e8e8e8; font-family: var(--font-ui); font-size: 13.5px; }
+  .pc-copy-row select:focus { outline: none; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -96,7 +112,25 @@
       </div>
     </div>
   </div>
+  <div id="pc-copy">
+    <div class="pc-prompt-box">
+      <h4 id="pc-copy-title">Копировать в сервер</h4>
+      <div class="pc-copy-row"><label>Сервер</label><select id="pc-copy-server"></select></div>
+      <div class="pc-copy-row"><label>Куда</label><select id="pc-copy-sub">
+        <option value="">Корень сервера</option>
+        <option value="mods">mods</option>
+        <option value="plugins">plugins</option>
+        <option value="config">config</option>
+        <option value="datapacks">datapacks</option>
+      </select></div>
+      <div class="pc-prompt-btns">
+        <button class="pc-btn" id="pc-copy-ok">Копировать</button>
+        <button class="pc-btn" id="pc-copy-cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
 </div>
+<div id="pc-menu"></div>
 <div id="pc-toast"></div>
 <script src="js/pc.js"></script>
 </body>

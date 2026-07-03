@@ -124,6 +124,13 @@ html.embed-settings #screen-list, html.embed-settings #screen-server,
 html.embed-settings #screen-proxy, html.embed-settings #screen-create,
 html.embed-settings #screen-remote, html.embed-settings #screen-profile,
 html.embed-settings #screen-users { display: none !important; }
+/* настройки занимают всё окно целиком, а не карточку-модалку по центру */
+html.embed-settings, html.embed-settings body { height: 100%; }
+html.embed-settings #appset-root.modal-wrap { position: static; background: none; padding: 0; height: 100%; display: block; overflow: hidden; }
+html.embed-settings #appset-root .modal { max-width: none; width: 100%; height: 100%; border: 0; box-shadow: none;
+  max-height: none; display: flex; flex-direction: column; overflow: hidden; }
+html.embed-settings #appset-root .modal-head { display: none !important; }
+html.embed-settings #appset-root .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 
 /* окно «Аккаунт»: только профиль */
 html.embed-profile #screen-list, html.embed-profile #screen-server,
