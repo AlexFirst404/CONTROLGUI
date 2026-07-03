@@ -131,13 +131,14 @@ public class PanelScreen extends Screen {
         applyZoom();
     }
 
-    /* Масштаб страницы следует за масштабом интерфейса игры: GUI scale 2 —
-       базовые 100%, 3 — ~150%, 4 — 200% (CEF: фактор = 1.2^уровень). */
+    /* Масштаб страницы следует за масштабом интерфейса игры (CEF: фактор =
+       1.2^уровень; GUI scale 2 — базовый), минус один шаг (~17% мельче):
+       окна рабочего стола должны помещаться на экран целиком. */
     static void applyZoom() {
         Minecraft mc = Minecraft.getInstance();
         if (browser == null || mc == null) return;
         double scale = mc.getWindow().getGuiScale();
-        if (scale > 0) browser.setZoomLevel(Math.log(scale / 2.0) / Math.log(1.2));
+        if (scale > 0) browser.setZoomLevel(Math.log(scale / 2.0) / Math.log(1.2) - 1.0);
     }
 
     /* Зовётся из load-хендлера CGBrowser: CEF хранит зум по хосту последней

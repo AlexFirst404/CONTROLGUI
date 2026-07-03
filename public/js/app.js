@@ -108,17 +108,27 @@
   ];
 
   /* Режим «окна» рабочего стола внутри игры (desktop.html): страница живёт
-     в iframe и показывает один раздел. go: home|server/<id>|settings|profile|gate */
+     в iframe и показывает один раздел.
+     go: home|server/<id>|settings|profile|gate|editor/<id>/<путь> */
   const EMBED = (() => {
     const q = new URLSearchParams(location.search);
     if (q.get('embed') !== '1') return null;
     const go = q.get('go') || 'home';
     document.documentElement.classList.add('embed');
     if (go === 'gate') document.documentElement.classList.add('embed-gate');
+    if (go.startsWith('editor/')) document.documentElement.classList.add('embed-editor');
     const m = go.match(/^server\/(.+)$/);
     if (m) history.replaceState(null, '', '#server=' + m[1]);
     else if (go === 'profile') history.replaceState(null, '', '#profile');
     return go;
+  })();
+  /* Окно-редактор файла: go=editor/<serverId>/<encodeURIComponent(путь)> */
+  const EMBED_EDITOR = (() => {
+    if (!EMBED || !EMBED.startsWith('editor/')) return null;
+    const m = EMBED.match(/^editor\/([^/]+)\/(.+)$/);
+    if (!m) return null;
+    try { return { id: m[1], path: decodeURIComponent(m[2]) }; }
+    catch (e) { return null; }
   })();
 
   const state = {
@@ -1122,6 +1132,22 @@
 
   /* Загрузка приложения: в десктопе сперва требуем аккаунт центра (гейт), затем обычный старт. */
   async function bootApp() {
+    // окно-редактор: минимальный запуск — только сам редактор, без опросов
+    if (EMBED_EDITOR) {
+      state.currentId = EMBED_EDITOR.id;
+      $('#screen-server').classList.remove('hidden');
+      $('#tab-files').classList.remove('hidden');
+      document.title = EMBED_EDITOR.path.split('/').pop() + ' — редактор';
+      loadMe();
+      await openFileEditor(EMBED_EDITOR.path);
+      // файл исчез/стал недоступен (например окно восстановлено из прошлой
+      // сессии) — редактор не открылся; просим рабочий стол закрыть окно,
+      // иначе останется мёртвое пустое
+      if ($('#file-editor').classList.contains('hidden') && window.parent !== window) {
+        window.parent.postMessage({ cg: 'close-win' }, location.origin);
+      }
+      return;
+    }
     if (!window.CG_REMOTE) {
       let cs = null;
       try { cs = await API.centralState(); } catch (e) { /* старая сборка без центра */ }
@@ -3952,6 +3978,22 @@
   }
 
   async function openFileEditor(relPath) {
+    // на рабочем столе в игре редактор — отдельное окно; но сначала проверяем,
+    // что файл вообще редактируем — иначе породим мёртвое пустое окно
+    if (EMBED && !EMBED_EDITOR && window.parent !== window) {
+      await guard(async () => {
+        const data = await API.fileGet(state.currentId, relPath);
+        if (data.binary) {
+          showToast('Этот файл нельзя открыть в редакторе: ' + (data.reason || 'двоичный') + ' (' + fmtBytes(data.size) + ')');
+          return;
+        }
+        window.parent.postMessage({
+          cg: 'open', what: 'editor', id: state.currentId,
+          path: relPath, title: relPath.split('/').pop(),
+        }, location.origin);
+      });
+      return;
+    }
     await guard(async () => {
       const data = await API.fileGet(state.currentId, relPath);
       if (data.binary) {
@@ -3982,6 +4024,11 @@
   }
 
   function closeFileEditor() {
+    // окно-редактор: «Закрыть» закрывает само окно рабочего стола
+    if (EMBED_EDITOR && window.parent !== window) {
+      window.parent.postMessage({ cg: 'close-win' }, location.origin);
+      return;
+    }
     state.editorPath = null;
     $('#file-editor').classList.add('hidden');
     $('#files-browser').classList.remove('hidden');

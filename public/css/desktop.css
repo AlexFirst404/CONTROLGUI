@@ -48,6 +48,78 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 #cg-drag-shield { position: fixed; inset: 0; z-index: 9000; }
 #cg-drag-shield.hidden { display: none; }
 
+/* ── серверы-иконки на рабочем столе ───────────────────────── */
+#cg-icons { position: absolute; left: 14px; top: 14px; bottom: 70px;
+  display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start;
+  gap: 6px; pointer-events: none; }
+.cg-ico { position: relative; width: 92px; padding: 10px 4px 7px;
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  border: 2px solid transparent; cursor: pointer; user-select: none;
+  pointer-events: auto; }
+.cg-ico:hover { background: #ffffff14; border-color: #ffffff22; }
+.cg-ico.sel { background: #ffffff1f; border-color: var(--accent); }
+.cg-ico-img { width: 34px; height: 34px; color: var(--accent-bright); }
+.cg-ico-dot { position: absolute; right: 22px; top: 34px; width: 9px; height: 9px;
+  border: 2px solid #101010; }
+.cg-ico-dot.run { background: #80da5b; }
+.cg-ico-dot.mid { background: #e8c84f; }
+.cg-ico-dot.off { background: #6a6a6a; }
+.cg-ico-name { max-width: 88px; text-align: center; font-family: var(--font-ui);
+  font-size: 13px; line-height: 1.25; color: #e8e8e8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* ── контекстное меню ПКМ ──────────────────────────────────── */
+#cg-menu { position: fixed; z-index: 9600; min-width: 190px; padding: 5px;
+  background: #1c1c1cf8; border: 2px solid #4a4a4a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .6);
+  display: flex; flex-direction: column; gap: 2px; }
+#cg-menu.hidden { display: none; }
+.cg-menu-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+  background: none; border: 0; color: #dcdcdc; font-family: var(--font-ui);
+  font-size: 14px; text-align: left; cursor: pointer; }
+.cg-menu-item:hover { background: #3a3a3a; color: #fff; }
+.cg-menu-item.danger { color: #f0a49e; }
+.cg-menu-item.danger:hover { background: #a13530; color: #fff; }
+.cg-menu-item .pi { width: 14px; height: 14px; color: var(--accent-bright); }
+.cg-menu-item.danger .pi { color: #f0a49e; }
+
+/* ── подтверждение (свой confirm: нативные диалоги в OSR гасятся) ── */
+#cg-confirm { position: fixed; inset: 0; z-index: 9700; display: flex;
+  align-items: center; justify-content: center; background: rgba(0, 0, 0, .55); }
+#cg-confirm.hidden { display: none; }
+.cg-confirm-box { min-width: 320px; max-width: 460px; padding: 18px;
+  background: #1c1c1c; border: 2px solid #4a4a4a;
+  box-shadow: 0 14px 48px rgba(0, 0, 0, .65); }
+#cg-confirm-text { font-family: var(--font-ui); font-size: 15px; color: #e8e8e8;
+  margin-bottom: 14px; line-height: 1.4; }
+#cg-confirm-input { width: 100%; box-sizing: border-box; margin: -4px 0 14px;
+  padding: 9px 10px; background: #111; border: 2px solid #4a4a4a; color: #e8e8e8;
+  font-family: var(--font-ui); font-size: 14px; }
+#cg-confirm-input:focus { outline: none; border-color: var(--accent); }
+#cg-confirm-input.hidden { display: none; }
+.cg-confirm-btns { display: flex; gap: 8px; justify-content: flex-end; }
+.cg-task-btn.danger { border-color: #a13530; color: #f0a49e; }
+.cg-task-btn.danger:hover { background: #a13530; color: #fff; }
+
+/* ── тост (ошибки действий) ────────────────────────────────── */
+#cg-toast { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%) translateY(12px);
+  z-index: 9800; padding: 10px 16px; background: #1c1c1cf5; border: 2px solid #a13530;
+  color: #f2dcda; font-family: var(--font-ui); font-size: 14px;
+  opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; }
+#cg-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── часы и дата (снизу справа) ────────────────────────────── */
+#cg-clock { position: fixed; right: 12px; bottom: 12px; z-index: 9500;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  padding: 7px 12px; background: #1c1c1cf2; border: 2px solid #4a4a4a;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .55); user-select: none; }
+#cg-clock-time { font-family: var(--font-head); font-size: 16px; color: #fff; }
+#cg-clock-date { font-family: var(--font-ui); font-size: 12px; color: #a9a9a9; }
+
+/* развёрнутое окно — рамочные ручки не активны */
+.cg-win.maxed .cg-rs { display: none; }
+
 /* ── панель задач (снизу слева, как в винде — но наша) ─────── */
 #cg-taskbar { position: fixed; left: 12px; bottom: 12px; z-index: 9500;
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;

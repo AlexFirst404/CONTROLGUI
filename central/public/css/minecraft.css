@@ -99,6 +99,16 @@ html.embed:not(.embed-gate) #account-gate { display: none !important; }
 html.embed #appset-root.modal-wrap { position: static; background: none; padding: 18px; }
 html.embed #appset-close, html.embed #set-tray-row,
 html.embed #launchmode-label { display: none !important; }
+/* окно-редактор файла: только #file-editor, без шапки сервера и вкладок */
+html.embed-editor #screen-list, html.embed-editor #screen-proxy,
+html.embed-editor #screen-create, html.embed-editor #screen-remote,
+html.embed-editor #screen-profile, html.embed-editor #screen-users { display: none !important; }
+html.embed-editor #screen-server > .server-head,
+html.embed-editor #screen-server > .progress-wrap,
+html.embed-editor #screen-server > .tabbar,
+html.embed-editor #screen-server > .tab-pane:not(#tab-files) { display: none !important; }
+html.embed-editor #tab-files #files-browser { display: none !important; }
+html.embed-editor #tab-files, html.embed-editor #file-editor { margin-top: 0; }
 
 .bg-pattern::before {
   content: ""; position: absolute; left: -44px; top: -44px; width: calc(100% + 44px); height: calc(100% + 44px);

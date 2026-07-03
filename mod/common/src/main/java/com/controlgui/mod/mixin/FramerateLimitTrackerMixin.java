@@ -22,4 +22,21 @@ public class FramerateLimitTrackerMixin {
             cir.setReturnValue(FramerateLimitTracker.FramerateThrottleReason.NONE);
         }
     }
+
+    /* При открытой панели снимаем лимит кадров ЦЕЛИКОМ: 260 в ванилле значит
+       «без лимита» (Minecraft зовёт limitDisplayFPS только при значении < 260),
+       иначе интерфейс упирается в пользовательскую настройку FPS (часто 60).
+       Гейт по причине NONE: AFK-троттлинг (30/10) и свёрнутое окно игры
+       продолжают работать — они экономят ресурсы осмысленно, а первый же ввод
+       мгновенно возвращает NONE и безлимит. (Кап меню наш первый инжект уже
+       переписал в NONE при открытой панели.) */
+    @Inject(method = "getFramerateLimit", at = @At("RETURN"), cancellable = true)
+    private void controlgui$unlimitPanel(CallbackInfoReturnable<Integer> cir) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!(mc.screen instanceof PanelScreen)) return;
+        FramerateLimitTracker self = (FramerateLimitTracker) (Object) this;
+        if (self.getThrottleReason() == FramerateLimitTracker.FramerateThrottleReason.NONE) {
+            cir.setReturnValue(260);
+        }
+    }
 }

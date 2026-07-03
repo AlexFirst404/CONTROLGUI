@@ -129,29 +129,31 @@ public final class PanelManager {
                 desktopUi = true;
                 return BASE_URL; // панель не старее вшитой — просто используем
             }
-            // панель устарела. Если она умеет /api/quit и на ней нет работающих
-            // серверов — тихо заменяем на свою; иначе подменяем только UI.
+            // панель устарела. ЖИВУЮ панель не трогаем (её могло открыть
+            // настольное приложение — после выхода из игры оно осталось бы с
+            // мёртвым бэкендом): подменяем только статику UI. /api/quit — лишь
+            // крайний случай, когда подменить нечем.
             Constants.LOG.info("На порту {} панель {} (в моде {})", Constants.PANEL_PORT, runningVer, Constants.PANEL_VERSION);
+            // работающая панель старее — она живёт в app/<runningVer>, наша
+            // распаковка в app/<PANEL_VERSION> её не трогает
+            Path pd = null;
+            try { pd = extractPanel(dataDir); }
+            catch (IOException e) { Constants.LOG.warn("Не распаковать панель из мода: {}", rootMessage(e)); }
+            if (pd != null) {
+                // статику (desktop.html, app.js, css…) отдаём из свежей панели
+                // мода, а /api идёт в работающую панель — окна работают везде
+                uiRoot = pd.resolve("public");
+                uiOverride = true;
+                desktopUi = true;
+                Constants.LOG.info("UI панели подменяется на {} (API остаётся {})", Constants.PANEL_VERSION, runningVer);
+                return BASE_URL;
+            }
             if (versionAtLeast(runningVer, QUIT_API_SINCE) && quitStalePanel()) {
                 Constants.LOG.info("Устаревшая панель остановлена — запускаю свежую");
                 // порт освобождается мгновенно после выхода процесса; подстрахуемся
                 for (int i = 0; i < 10 && probe(); i++) sleep(300);
             } else {
-                // работающая панель старее — она живёт в app/<runningVer>, наша
-                // распаковка в app/<PANEL_VERSION> её не трогает
-                Path pd = null;
-                try { pd = extractPanel(dataDir); }
-                catch (IOException e) { Constants.LOG.warn("Не распаковать панель из мода: {}", rootMessage(e)); }
-                if (pd != null) {
-                    // статику (desktop.html, app.js, css…) отдаём из свежей панели
-                    // мода, а /api идёт в работающую панель — окна работают везде
-                    uiRoot = pd.resolve("public");
-                    uiOverride = true;
-                    desktopUi = true;
-                    Constants.LOG.info("UI панели подменяется на {} (API остаётся {})", Constants.PANEL_VERSION, runningVer);
-                    return BASE_URL;
-                }
-                // подменить нечем (распаковка не удалась) — старый полноэкранный UI
+                // подменить нечем и заменить нельзя — старый полноэкранный UI
                 uiOverride = false;
                 desktopUi = versionAtLeast(runningVer, DESKTOP_UI_SINCE);
                 return BASE_URL;

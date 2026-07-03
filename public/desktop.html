@@ -11,10 +11,23 @@
 <link rel="stylesheet" href="css/desktop.css">
 </head>
 <body>
-<!-- рабочий стол внутри Minecraft: окна поверх заблюренной игры,
-     панель задач снизу слева. Управляется js/desktop.js -->
-<div id="cg-desktop"></div>
+<!-- рабочий стол внутри Minecraft: серверы-иконки, окна поверх заблюренной
+     игры, панель задач снизу слева, часы снизу справа. Управляется js/desktop.js -->
+<div id="cg-desktop">
+  <div id="cg-icons"></div>
+</div>
 <div id="cg-drag-shield" class="hidden"></div>
+<div id="cg-menu" class="hidden"></div>
+<div id="cg-confirm" class="hidden">
+  <div class="cg-confirm-box">
+    <div id="cg-confirm-text"></div>
+    <input id="cg-confirm-input" class="hidden" type="text" autocomplete="off" spellcheck="false">
+    <div class="cg-confirm-btns">
+      <button class="cg-task-btn danger" id="cg-confirm-yes">Да</button>
+      <button class="cg-task-btn" id="cg-confirm-no">Отмена</button>
+    </div>
+  </div>
+</div>
 <nav id="cg-taskbar">
   <button class="cg-task-btn" data-app="servers" title="Серверы"><i class="pi" style="--i:url('/icons/server.svg')"></i><span>Серверы</span></button>
   <button class="cg-task-btn" data-app="settings" title="Настройки панели"><i class="pi" style="--i:url('/icons/sliders.svg')"></i><span>Настройки</span></button>
@@ -22,6 +35,7 @@
   <span class="cg-task-sep"></span>
   <span id="cg-task-wins"></span>
 </nav>
+<div id="cg-clock"><span id="cg-clock-time">--:--</span><span id="cg-clock-date"></span></div>
 <script src="js/desktop.js"></script>
 </body>
 </html>
