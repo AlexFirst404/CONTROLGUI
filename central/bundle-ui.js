@@ -23,7 +23,8 @@ function copyDir(src, dst) {
 copyDir(path.join(SRC, 'js'), path.join(DST, 'js'));        // api.js + app.js
 // desktop.js — менеджер окон встроенной в игру панели; центру не нужен и на VPS
 // его класть не будем (лишний неиспользуемый файл на боевом сервере)
-for (const f of ['desktop.js']) {
+// pc.js — проводник по ФС компьютера (только локальное API), центру не нужен
+for (const f of ['desktop.js', 'pc.js']) {
   try { fs.rmSync(path.join(DST, 'js', f)); } catch (e) { /* уже нет */ }
 }
 copyDir(path.join(SRC, 'icons'), path.join(DST, 'icons'));

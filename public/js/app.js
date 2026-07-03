@@ -116,6 +116,8 @@
     const go = q.get('go') || 'home';
     document.documentElement.classList.add('embed');
     if (go === 'gate') document.documentElement.classList.add('embed-gate');
+    if (go === 'settings') document.documentElement.classList.add('embed-settings');
+    if (go === 'profile') document.documentElement.classList.add('embed-profile');
     if (go.startsWith('editor/')) document.documentElement.classList.add('embed-editor');
     if (go.startsWith('files/')) document.documentElement.classList.add('embed-files');
     const m = go.match(/^server\/(.+)$/);
@@ -599,6 +601,18 @@
     $$('#launchmode-btns .seg').forEach((b) => b.classList.toggle('sel', b.dataset.mode === mode));
   }
 
+  // размытие фона игры в моде — клиентская настройка (действует только внутри
+  // Minecraft). Хранится в localStorage, применяется окном рабочего стола.
+  function ingameBlurOn() {
+    try { return localStorage.getItem('cgIngameBlur') !== '0'; } catch (e) { return true; }
+  }
+  function setIngameBlurPref(on) {
+    try { localStorage.setItem('cgIngameBlur', on ? '1' : '0'); } catch (e) { /* приватный режим */ }
+    if (window.parent !== window) {
+      try { window.parent.postMessage({ cg: 'set-blur', on: !!on }, location.origin); } catch (e) { /* */ }
+    }
+  }
+
   function openAppSettings() {
     // текущий режим открытия (читается лаунчером при следующем старте)
     API.launchMode().then((r) => setLaunchModeBtns(r && r.mode ? r.mode : 'app')).catch(() => {});
@@ -615,6 +629,7 @@
     }
     $('#set-bganim').classList.toggle('on', appSettings.bgAnim !== false);
     $('#set-graphs').classList.toggle('on', appSettings.graphs !== false);
+    $('#set-ingame-blur').classList.toggle('on', ingameBlurOn());
     API.trayMinimize().then((r) => $('#set-tray').classList.toggle('on', !!(r && r.enabled))).catch(() => {});
     $('#appset-root').classList.remove('hidden');
     setTimeout(() => scaleSlider.refresh(), 30);
@@ -5428,6 +5443,11 @@
       const on = $('#set-tray').classList.contains('on');
       API.setTrayMinimize(on).catch((e) => { $('#set-tray').classList.toggle('on', !on); showToast(e.message); });
     });
+    // размытие фона игры (только в моде): клиентская настройка (localStorage),
+    // окну рабочего стола сообщаем сообщением — оно правит URL, мод читает его
+    mkToggle($('#set-ingame-blur'), ingameBlurOn());
+    $('#set-ingame-blur').addEventListener('click', () =>
+      setIngameBlurPref($('#set-ingame-blur').classList.contains('on')));
 
     // при изменении размера окна перерисовываем графики и черту вкладок
     let resizeTimer = null;

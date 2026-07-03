@@ -119,6 +119,21 @@ html.embed-files #screen-server > .tabbar,
 html.embed-files #screen-server > .tab-pane:not(#tab-files) { display: none !important; }
 html.embed-files #tab-files, html.embed-files #files-browser { margin-top: 0; }
 
+/* окно «Настройки»: только настройки, без списка серверов и прочих экранов */
+html.embed-settings #screen-list, html.embed-settings #screen-server,
+html.embed-settings #screen-proxy, html.embed-settings #screen-create,
+html.embed-settings #screen-remote, html.embed-settings #screen-profile,
+html.embed-settings #screen-users { display: none !important; }
+
+/* окно «Аккаунт»: только профиль */
+html.embed-profile #screen-list, html.embed-profile #screen-server,
+html.embed-profile #screen-proxy, html.embed-profile #screen-create,
+html.embed-profile #screen-remote, html.embed-profile #screen-users { display: none !important; }
+
+/* свитч «Размытие фона игры» — только внутри Minecraft (мод, embed) */
+#set-blur-row { display: none !important; }
+html.embed #set-blur-row { display: flex !important; }
+
 .bg-pattern::before {
   content: ""; position: absolute; left: -44px; top: -44px; width: calc(100% + 44px); height: calc(100% + 44px);
   background-image:

@@ -76,6 +76,8 @@ public final class CgCef {
             System.setProperty("jcef.path", platformDir.toString());
 
             if (CgCefNatives.isInstalled(nativesRoot, platform)) {
+                // вшитый FPS-патч jcef поверх уже установленного натива (до init CEF)
+                CgCefNatives.ensureOverride(nativesRoot, platform);
                 nativesReady = true;
                 Constants.LOG.info("CONTROLGUI CEF: натив уже установлен ({})", platform.normalizedName());
                 return;
@@ -98,6 +100,8 @@ public final class CgCef {
                 @Override public void status(String text) { statusText = text; }
                 @Override public void progress(float ratio) { nativesProgress = ratio; }
             });
+            // вшитый FPS-патч jcef поверх свежераспакованного натива (до init CEF)
+            CgCefNatives.ensureOverride(nativesRoot, platform);
             statusText = "";
             nativesReady = true;
             Constants.LOG.info("CONTROLGUI CEF: натив установлен ({})", platform.normalizedName());
@@ -140,10 +144,11 @@ public final class CgCef {
 
             String[] switches = {
                     "--autoplay-policy=no-user-gesture-required",
-                    // OSR-композитор в этой сборке жёстко ограничен 30 FPS
-                    // (CefBrowserSettings по умолчанию, из Java не настраивается) —
-                    // анимации и прокрутка дёргаются. Снимаем лимит целиком:
-                    // перерисовка всё равно только по инвалидации, вхолостую не жжёт
+                    // потолок 30 FPS у OSR снят в самом нативе: наш jcef.dll собран
+                    // с windowless_frame_rate=260 (см. CgCefNatives.ensureOverride).
+                    // Эти свитчи оставлены как страховка (на родном нативе без патча
+                    // они частично помогают); при закрытом экране анимации всё равно
+                    // паузятся (PAUSE_JS), так что вхолостую 260 к/с не жжём
                     "--disable-frame-rate-limit",
                     "--disable-gpu-vsync",
             };

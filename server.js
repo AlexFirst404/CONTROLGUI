@@ -61,6 +61,16 @@ function clientIp(req) {
   const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return xff || req.socket.remoteAddress || 'unknown';
 }
+// Host указывает на loopback? (защита /api/fs от DNS-rebinding). Порт не важен —
+// проверяем только имя хоста; чужой домен (evil.example) не пройдёт.
+function isLoopbackHost(hostHeader) {
+  if (!hostHeader) return false;
+  let host = String(hostHeader);
+  if (host.startsWith('[')) host = host.slice(1, host.indexOf(']')); // [::1]:port
+  else { const c = host.indexOf(':'); if (c >= 0) host = host.slice(0, c); }
+  host = host.toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
 function loginLockMs(ip) {
   const a = loginAttempts.get(ip);
   return a && a.lockedUntil > Date.now() ? a.lockedUntil - Date.now() : 0;
@@ -222,6 +232,23 @@ const server = http.createServer(async (req, res) => {
       // даём ответу уйти клиенту, затем выходим штатно
       setTimeout(() => process.exit(0), 300);
       return;
+    }
+    // проводник по файловой системе компьютера (окно «Этот компьютер» в моде).
+    // СТРОГО локально: loopback + кастомный заголовок + проверка Host. Удалённые
+    // запросы центра сюда не доходят (уходят веткой internalUserFor выше и не
+    // несут заголовок). Проверка Host обязательна против DNS-rebinding: браузер
+    // ставит в Host имя домена, на который зашёл пользователь (напр. evil.example),
+    // подделать его страница не может — так резаем доступ к диску чужому сайту,
+    // даже если он переклеил свой домен на 127.0.0.1 (запрос тогда same-origin и
+    // loopback, но Host — не наш).
+    if (urlPath.startsWith('/api/fs/')) {
+      const ra = req.socket.remoteAddress || '';
+      const loopback = ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1';
+      if (!loopback || req.headers['x-cg-local'] !== '1' || !isLoopbackHost(req.headers.host)) {
+        return sendJson(res, 403, { error: 'Только локально' });
+      }
+      const query = new URL(req.url, 'http://localhost').searchParams;
+      return require('./lib/fsbrowse').handle(req, res, urlPath, query);
     }
     return handleApi(req, res);
   }

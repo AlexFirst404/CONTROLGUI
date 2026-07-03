@@ -43,6 +43,7 @@ public class PanelScreen extends Screen {
             + "var f=d.querySelectorAll('iframe');for(var i=0;i<f.length;i++){try{rm(f[i].contentDocument);}catch(e){}}"
             + "}catch(e){}}rm(document);})();";
     private boolean swallowFirstChar; // буква хоткея «просачивается» char-событием при открытии из чужого экрана
+    private boolean spaceHeld; // пробел зажат — чтобы автоповтор GLFW не спамил toggle win-меню
 
     public PanelScreen() {
         this(false);
@@ -160,9 +161,24 @@ public class PanelScreen extends Screen {
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         if (this.minecraft != null && this.minecraft.level != null) {
-            renderBlurredBackground(graphics);
+            // блюр мира можно выключить свитчом в настройках панели: тогда за
+            // прозрачной панелью видна резкая игра (нижняя панель задач — своё
+            // «стекло» в CEF-слое, на неё это не влияет)
+            if (worldBlurEnabled()) renderBlurredBackground(graphics);
         } else {
             super.renderBackground(graphics, mouseX, mouseY, partialTick);
+        }
+    }
+
+    /* Настройка «размытие фона игры» пробрасывается со страницы параметром
+       cgblur в URL рабочего стола (моста JS→Java иначе нет). По умолчанию — вкл. */
+    private static boolean worldBlurEnabled() {
+        if (browser == null) return true;
+        try {
+            String url = browser.getURL();
+            return url == null || !url.contains("cgblur=0");
+        } catch (Exception e) {
+            return true;
         }
     }
 
@@ -210,7 +226,10 @@ public class PanelScreen extends Screen {
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
         if (super.mouseClicked(event, isDoubleClick)) return true;
         if (browser == null) return false;
-        browser.sendMousePress(browserX(event.x()), browserY(event.y()), event.button());
+        // Minecraft сам ловит двойной клик по таймингу — пробрасываем clickCount,
+        // иначе страница не получает dblclick (не открывались окна двойным кликом)
+        browser.sendMousePress(browserX(event.x()), browserY(event.y()), event.button(),
+                isDoubleClick ? 2 : 1);
         browser.setFocus(true);
         return true;
     }
@@ -246,11 +265,21 @@ public class PanelScreen extends Screen {
         if (browser == null) return false;
         browser.sendKeyPress(event.key(), event.scancode(), event.modifiers());
         browser.setFocus(true);
+        // пробел на рабочем столе (когда не печатают в поле) открывает win-меню;
+        // JS сам решает — если фокус в поле ввода, ничего не делает (пробел печатается).
+        // Только на первое нажатие: GLFW шлёт keyPressed и на автоповтор (зажат) —
+        // иначе win-меню мигало бы и спамило /api/central/me
+        if (event.key() == GLFW.GLFW_KEY_SPACE && !spaceHeld) {
+            spaceHeld = true;
+            try { browser.executeJavaScript("window.__cgSpace&&window.__cgSpace()", "about:controlgui", 0); }
+            catch (Exception e) { /* не критично */ }
+        }
         return true;
     }
 
     @Override
     public boolean keyReleased(KeyEvent event) {
+        if (event.key() == GLFW.GLFW_KEY_SPACE) spaceHeld = false;
         if (super.keyReleased(event)) return true;
         if (browser == null) return false;
         browser.sendKeyRelease(event.key(), event.scancode(), event.modifiers());

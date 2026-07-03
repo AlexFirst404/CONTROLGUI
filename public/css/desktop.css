@@ -13,13 +13,35 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
   min-width: 380px; min-height: 240px;
   background: #1c1c1c; border: 2px solid #4a4a4a;
   box-shadow: 0 12px 44px rgba(0, 0, 0, .6);
-  animation: cg-win-in .15s ease-out;
+  transform-origin: center;
+  animation: cg-win-in .26s cubic-bezier(.16, 1, .3, 1);
   transition: border-color .12s, box-shadow .15s; }
 .cg-win.focus { border-color: var(--accent); box-shadow: 0 16px 52px rgba(0, 0, 0, .7); }
 .cg-win.min { display: none; }
+/* закрытие — плавное «схлопывание» к кнопкам управления (правый верх) */
+.cg-win.cg-closing { animation: cg-win-out .19s cubic-bezier(.4, 0, 1, 1) forwards;
+  transform-origin: 88% 6%; pointer-events: none; }
+/* сворачивание — плавно вниз к панели задач */
+.cg-win.cg-minimizing { animation: cg-win-min .22s cubic-bezier(.4, 0, 1, 1) forwards;
+  transform-origin: 50% 130%; pointer-events: none; }
+/* восстановление из свёрнутого — снизу вверх */
+.cg-win.cg-restoring { animation: cg-win-restore .24s cubic-bezier(.16, 1, .3, 1);
+  transform-origin: 50% 130%; }
 
 @keyframes cg-win-in {
-  from { opacity: 0; transform: translateY(10px) scale(.97); }
+  from { opacity: 0; transform: translateY(14px) scale(.92); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cg-win-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(.82) translateY(-6px); }
+}
+@keyframes cg-win-min {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(.5) translateY(58vh); }
+}
+@keyframes cg-win-restore {
+  from { opacity: 0; transform: scale(.5) translateY(58vh); }
   to { opacity: 1; transform: none; }
 }
 
@@ -44,33 +66,38 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 
 /* ручки изменения размера (8 зон по краям/углам) — курсор меняется на
    соответствующую «растягивающую» стрелку (CEF пробрасывает его в GLFW) */
-.cg-rs { position: absolute; z-index: 3; }
-.cg-rs-n  { top: -5px; left: 12px; right: 12px; height: 10px; cursor: ns-resize; }
-.cg-rs-s  { bottom: -5px; left: 12px; right: 12px; height: 10px; cursor: ns-resize; }
-.cg-rs-e  { right: -5px; top: 12px; bottom: 12px; width: 10px; cursor: ew-resize; }
-.cg-rs-w  { left: -5px; top: 12px; bottom: 12px; width: 10px; cursor: ew-resize; }
-.cg-rs-ne { top: -5px; right: -5px; width: 17px; height: 17px; cursor: nesw-resize; }
-.cg-rs-sw { bottom: -5px; left: -5px; width: 17px; height: 17px; cursor: nesw-resize; }
-.cg-rs-nw { top: -5px; left: -5px; width: 17px; height: 17px; cursor: nwse-resize; }
-.cg-rs-se { bottom: -5px; right: -5px; width: 17px; height: 17px; cursor: nwse-resize; }
+/* z-index выше iframe окна: иначе кадр перехватывает наведение и курсор
+   у краёв не меняется. Ручки шире — заходят и внутрь окна, чтобы видимый
+   край надёжно попадал в зону ресайза. */
+.cg-rs { position: absolute; z-index: 6; }
+.cg-rs-n  { top: -5px; left: 14px; right: 14px; height: 12px; cursor: ns-resize; }
+.cg-rs-s  { bottom: -5px; left: 14px; right: 14px; height: 12px; cursor: ns-resize; }
+.cg-rs-e  { right: -5px; top: 14px; bottom: 14px; width: 12px; cursor: ew-resize; }
+.cg-rs-w  { left: -5px; top: 14px; bottom: 14px; width: 12px; cursor: ew-resize; }
+.cg-rs-ne { top: -5px; right: -5px; width: 19px; height: 19px; cursor: nesw-resize; }
+.cg-rs-sw { bottom: -5px; left: -5px; width: 19px; height: 19px; cursor: nesw-resize; }
+.cg-rs-nw { top: -5px; left: -5px; width: 19px; height: 19px; cursor: nwse-resize; }
+.cg-rs-se { bottom: -5px; right: -5px; width: 19px; height: 19px; cursor: nwse-resize; }
 
 /* во время перетаскивания iframe не должен красть события мыши; курсор жеста
    (например ns-resize) задаёт desktop.js, чтобы он не мигал стрелкой */
 #cg-drag-shield { position: fixed; inset: 0; z-index: 9000; }
 #cg-drag-shield.hidden { display: none; }
 
-/* ── серверы-иконки на рабочем столе ───────────────────────── */
-#cg-icons { position: absolute; left: 14px; top: 14px; bottom: 70px;
-  display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start;
-  gap: 6px; pointer-events: none; }
-.cg-ico { position: relative; width: 92px; padding: 10px 4px 7px;
+/* ── иконки на рабочем столе (сервера, папки, документы) ─────
+   свободно перетаскиваются: слой позиционирования, дети — absolute */
+#cg-icons { position: absolute; left: 14px; top: 14px; right: 14px; bottom: 70px;
+  pointer-events: none; }
+.cg-ico { position: absolute; width: 92px; padding: 10px 4px 7px; box-sizing: border-box;
   display: flex; flex-direction: column; align-items: center; gap: 7px;
   border: 2px solid transparent; cursor: pointer; user-select: none;
-  pointer-events: auto; }
-.cg-ico { transition: background .12s, border-color .12s, transform .08s; }
+  pointer-events: auto; touch-action: none;
+  transition: background .12s, border-color .12s, transform .08s; }
 .cg-ico:hover { background: #ffffff14; border-color: #ffffff22; }
 .cg-ico:active { transform: scale(.95); }
 .cg-ico.sel { background: #ffffff1f; border-color: var(--accent); }
+.cg-ico.cg-ico-dragging { opacity: .78; z-index: 6; transform: scale(1.04);
+  background: #ffffff1f; border-color: var(--accent); transition: none; }
 .cg-ico-img { width: 34px; height: 34px; color: var(--accent-bright); }
 .cg-ico-dot { position: absolute; right: 22px; top: 34px; width: 9px; height: 9px;
   border: 2px solid #101010; }
@@ -164,7 +191,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 
 /* ── win-меню («Пуск») ─────────────────────────────────────── */
 #cg-start-menu { position: fixed; left: 8px; bottom: 54px; z-index: 9550;
-  width: 460px; max-height: 62vh; display: flex; flex-direction: column;
+  width: 470px; min-height: 420px; max-height: 84vh; display: flex; flex-direction: column;
   background: rgba(12, 12, 12, .82);
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 2px solid #ffffff24; box-shadow: 0 14px 48px rgba(0, 0, 0, .65);
@@ -175,7 +202,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 .cg-sm-col + .cg-sm-col { border-left: 2px solid #ffffff14; }
 .cg-sm-title { font-family: var(--font-head); font-size: 12px; letter-spacing: .6px;
   color: #9a9a9a; margin: 0 4px 8px; text-transform: uppercase; }
-.cg-sm-list { overflow-y: auto; min-height: 60px; max-height: 44vh; display: flex; flex-direction: column; gap: 2px; }
+.cg-sm-list { overflow-y: auto; min-height: 60px; max-height: 66vh; display: flex; flex-direction: column; gap: 2px; }
 .cg-sm-item { display: flex; align-items: center; gap: 9px; padding: 8px 9px;
   background: none; border: 0; color: #dcdcdc; font-family: var(--font-ui);
   font-size: 14px; text-align: left; cursor: pointer;
@@ -211,3 +238,14 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
   from { opacity: 0; transform: translateY(8px) scale(.97); }
   to { opacity: 1; transform: none; }
 }
+
+/* ── нативные окна рабочего стола: папка и документ ─────────── */
+.cg-win-body.cg-win-native { overflow: auto; background: #161616; }
+.cg-folder { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; padding: 12px; min-height: 100%; box-sizing: border-box; }
+/* внутри папки иконки идут потоком, а не абсолютом */
+.cg-folder .cg-ico { position: static; }
+.cg-folder-empty { width: 100%; padding: 30px 16px; text-align: center;
+  color: #7f7f7f; font-family: var(--font-ui); font-size: 14px; line-height: 1.5; }
+.cg-doc-ta { width: 100%; height: 100%; box-sizing: border-box; resize: none;
+  border: 0; outline: none; padding: 12px 14px; background: #141414; color: #e6e6e6;
+  font-family: var(--font-mono, monospace); font-size: 13px; line-height: 1.55; }

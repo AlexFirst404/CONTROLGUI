@@ -333,12 +333,24 @@ public final class CgCefBrowser extends CefBrowserOsr {
         if (drag.isDragging()) dragTargetDragOver(new Point(mouseX, mouseY), 0, drag.mask());
     }
 
+    // число кликов последнего нажатия — тем же значением помечаем отпускание,
+    // иначе CEF не синтезирует dblclick в DOM (двойной клик не срабатывает)
+    private int pressClickCount = 1;
+
     public void sendMousePress(int mouseX, int mouseY, int button) {
+        sendMousePress(mouseX, mouseY, button, 1);
+    }
+
+    /* clickCount: 1 — обычный клик, 2 — двойной (Minecraft сам определяет по
+       таймингу и отдаёт в mouseClicked). Без корректного clickCount страница
+       не получает событие dblclick — не открывались окна по двойному клику. */
+    public void sendMousePress(int mouseX, int mouseY, int button, int clickCount) {
         button = swapMiddleRight(button);
         if (button == 0) btnMask |= CefMouseEvent.BUTTON1_MASK;
         else if (button == 1) btnMask |= CefMouseEvent.BUTTON2_MASK;
         else if (button == 2) btnMask |= CefMouseEvent.BUTTON3_MASK;
-        sendMouseEvent(new CefMouseEvent(GLFW_PRESS, mouseX, mouseY, 1, button, btnMask));
+        pressClickCount = clickCount < 1 ? 1 : clickCount;
+        sendMouseEvent(new CefMouseEvent(GLFW_PRESS, mouseX, mouseY, pressClickCount, button, btnMask));
     }
 
     public void sendMouseRelease(int mouseX, int mouseY, int button) {
@@ -346,7 +358,7 @@ public final class CgCefBrowser extends CefBrowserOsr {
         if (button == 0 && (btnMask & CefMouseEvent.BUTTON1_MASK) != 0) btnMask ^= CefMouseEvent.BUTTON1_MASK;
         else if (button == 1 && (btnMask & CefMouseEvent.BUTTON2_MASK) != 0) btnMask ^= CefMouseEvent.BUTTON2_MASK;
         else if (button == 2 && (btnMask & CefMouseEvent.BUTTON3_MASK) != 0) btnMask ^= CefMouseEvent.BUTTON3_MASK;
-        sendMouseEvent(new CefMouseEvent(GLFW_RELEASE, mouseX, mouseY, 1, button, btnMask));
+        sendMouseEvent(new CefMouseEvent(GLFW_RELEASE, mouseX, mouseY, pressClickCount, button, btnMask));
         if (drag.isDragging() && button == 0) finishDragging(mouseX, mouseY);
     }
 

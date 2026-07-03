@@ -27,6 +27,7 @@
     settings: '/?embed=1&go=settings',
     profile: '/?embed=1&go=profile',
     gate: '/?embed=1&go=gate',
+    pc: '/pc.html',
   };
   const DEFAULTS = {
     servers: { w: 840, h: 560, title: 'Серверы', icon: 'server' },
@@ -36,6 +37,10 @@
     server: { w: 900, h: 600, title: 'Сервер', icon: 'command' },
     editor: { w: 760, h: 540, title: 'Редактор', icon: 'script-text' },
     files: { w: 820, h: 560, title: 'Проводник', icon: 'folder' },
+    pc: { w: 880, h: 600, title: 'Этот компьютер', icon: 'monitor' },
+    // нативные окна рабочего стола (без iframe): папка и текстовый документ
+    folder: { w: 560, h: 420, title: 'Папка', icon: 'folder', native: true },
+    doc: { w: 620, h: 480, title: 'Документ', icon: 'script-text', native: true },
   };
 
   function srcFor(kind, id) {
@@ -105,16 +110,27 @@
 
   function minimize(win) {
     win.min = true;
-    win.el.classList.add('min');
     win.btn.classList.add('minned');
     win.btn.classList.remove('active');
+    const el = win.el;
+    el.classList.remove('cg-restoring');
+    el.classList.add('cg-minimizing');
+    // display:none ставим только ПОСЛЕ анимации сворачивания
+    el.addEventListener('animationend', () => {
+      el.classList.remove('cg-minimizing');
+      if (win.min) el.classList.add('min');
+    }, { once: true });
     saveGeom(win);
   }
 
   function restore(win) {
     win.min = false;
-    win.el.classList.remove('min');
+    const el = win.el;
+    el.classList.remove('min');
+    el.classList.remove('cg-minimizing');
     win.btn.classList.remove('minned');
+    el.classList.add('cg-restoring');
+    el.addEventListener('animationend', () => el.classList.remove('cg-restoring'), { once: true });
     focus(win);
     saveGeom(win);
   }
@@ -143,14 +159,20 @@
     saveGeom(win);
   }
 
-  function closeWindow(key) {
+  function closeWindow(key, opts) {
     const win = wins.get(key);
     if (!win) return;
-    win.el.remove();
-    win.btn.remove();
     wins.delete(key);
     delete geom[key];
     try { sessionStorage.setItem('cgWinGeom', JSON.stringify(geom)); } catch (e) { /* */ }
+    if (win.btn) win.btn.remove();
+    const el = win.el;
+    if (opts && opts.instant) { el.remove(); return; }
+    // «уничтожение» окна — схлопывание к кнопкам (transform-origin в CSS)
+    el.classList.add('cg-closing');
+    const kill = () => { if (el.parentNode) el.remove(); };
+    el.addEventListener('animationend', kill, { once: true });
+    setTimeout(kill, 320); // фолбэк, если анимация не отработала
   }
 
   /* Перетаскивание/ресайз: во время жеста включаем «щит», иначе iframe
@@ -186,7 +208,9 @@
     const existing = wins.get(key);
     if (existing) {
       if (titleOverride) { existing.nameEl.textContent = titleOverride; existing.btnLabel.textContent = titleOverride; }
-      restore(existing);
+      // свёрнутое — разворачиваем с анимацией; уже видимое — просто фокус
+      // (иначе анимация «рост снизу» переигрывается у окна, что и так на экране)
+      if (existing.min) restore(existing); else focus(existing);
       return existing;
     }
     const def = DEFAULTS[kind];
@@ -229,16 +253,22 @@
     title.appendChild(btns);
     el.appendChild(title);
 
-    // содержимое
+    // содержимое: iframe панели ИЛИ нативное окно рабочего стола (папка/документ)
     const body = document.createElement('div');
     body.className = 'cg-win-body';
-    const frame = document.createElement('iframe');
-    frame.className = 'cg-win-frame';
-    frame.src = srcFor(kind, id);
-    body.appendChild(frame);
+    let frame = null;
+    if (def.native) {
+      body.classList.add('cg-win-native');
+    } else {
+      frame = document.createElement('iframe');
+      frame.className = 'cg-win-frame';
+      frame.src = srcFor(kind, id);
+      body.appendChild(frame);
+    }
     el.appendChild(body);
 
-    const win = { key, kind, id, el, frame, btn: null, nameEl, btnLabel: null, min: false, maxed: false };
+    const win = { key, kind, id, el, frame, body, btn: null, nameEl, btnLabel: null, min: false, maxed: false };
+    if (def.native) buildNativeContent(win, kind, id);
 
     // ручки ресайза — размер меняется ТОЛЬКО за края и углы окна
     const DIRS = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
@@ -348,6 +378,20 @@
 
   let servers = [];
   let selectedIcon = null;
+  let iconDragging = false;    // идёт перетаскивание иконки — не пересобирать слой
+  let renderPending = false;   // пришло обновление серверов во время жеста
+
+  // пользовательские элементы рабочего стола (папки/документы) + позиции иконок
+  // + принадлежность серверов папкам — всё в localStorage
+  let deskItems = loadJson('cgDeskItems', []);
+  let iconPos = loadJson('cgIconPos', {});
+  let serverParents = loadJson('cgServerParents', {});
+  function loadJson(k, def) { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(def)); } catch (e) { return def; } }
+  function saveJson(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* приватный режим */ } }
+  const saveItems = () => saveJson('cgDeskItems', deskItems);
+  const savePosAll = () => saveJson('cgIconPos', iconPos);
+  const saveSP = () => saveJson('cgServerParents', serverParents);
+  function newId() { return 'x' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
 
   async function fetchServers() {
     try {
@@ -367,38 +411,248 @@
     return st === 'running' || st === 'starting' || st === 'stopping' || st === 'orphaned';
   }
 
+  /* ── узлы рабочего стола: сервер или пользовательский элемент ── */
+  function keyOf(node) { return node.kind === 'server' ? 'srv:' + node.id : 'itm:' + node.id; }
+  function getPos(node) { return iconPos[keyOf(node)] || null; }
+  function savePos(node, x, y) { iconPos[keyOf(node)] = { x, y }; savePosAll(); }
+  function clearPos(node) { delete iconPos[keyOf(node)]; savePosAll(); }
+  function parentOfNode(node) { return node.kind === 'server' ? (serverParents[node.id] || null) : (node.item.parent || null); }
+  function setParent(node, folderId) {
+    if (node.kind === 'server') { if (folderId) serverParents[node.id] = folderId; else delete serverParents[node.id]; saveSP(); }
+    else { node.item.parent = folderId || null; saveItems(); }
+  }
+  function topNodes() {
+    const out = [];
+    for (const srv of servers) if (!serverParents[srv.id]) out.push({ kind: 'server', id: srv.id, srv });
+    for (const it of deskItems) if (!it.parent) out.push({ kind: 'item', id: it.id, item: it });
+    return out;
+  }
+  function folderChildren(folderId) {
+    const out = [];
+    for (const srv of servers) if (serverParents[srv.id] === folderId) out.push({ kind: 'server', id: srv.id, srv });
+    for (const it of deskItems) if (it.parent === folderId) out.push({ kind: 'item', id: it.id, item: it });
+    return out;
+  }
+
+  /* Строит DOM-иконку узла (сервер/папка/документ). draggable=false — внутри
+     окна папки (там иконки в потоке, desktop-драг не имеет смысла). */
+  function buildIcon(node, draggable) {
+    const ico = document.createElement('div');
+    ico.className = 'cg-ico';
+    const img = document.createElement('i');
+    img.className = 'pi cg-ico-img';
+    let iconName = 'server';
+    let label = '';
+    if (node.kind === 'server') {
+      iconName = 'server'; label = node.srv.name || node.srv.id;
+      const dot = document.createElement('span');
+      dot.className = 'cg-ico-dot ' + statusDot(node.srv.status);
+      ico.appendChild(img); ico.appendChild(dot);
+    } else {
+      iconName = node.item.type === 'folder' ? 'folder' : 'script-text';
+      label = node.item.name;
+      ico.dataset.type = node.item.type;
+      ico.dataset.itemId = node.item.id;
+      ico.appendChild(img);
+    }
+    img.style.setProperty('--i', "url('/icons/" + iconName + ".svg')");
+    const name = document.createElement('span');
+    name.className = 'cg-ico-name';
+    name.textContent = label;
+    ico.appendChild(name);
+
+    ico.addEventListener('pointerdown', (e) => {
+      if (selectedIcon) selectedIcon.classList.remove('sel');
+      selectedIcon = ico; ico.classList.add('sel');
+      if (draggable !== false) startIconDrag(e, node, ico);
+    });
+    ico.addEventListener('dblclick', () => openNode(node));
+    ico.addEventListener('contextmenu', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      showNodeMenu(node, e.clientX, e.clientY);
+    });
+    return ico;
+  }
+
+  function openNode(node) {
+    if (node.kind === 'server') { createWindow('server', node.srv.id, node.srv.name); return; }
+    if (node.item.type === 'folder') createWindow('folder', node.item.id, node.item.name);
+    else createWindow('doc', node.item.id, node.item.name);
+  }
+
   function renderIcons() {
     iconsBox.textContent = '';
     selectedIcon = null;
-    for (const srv of servers) {
-      const ico = document.createElement('div');
-      ico.className = 'cg-ico';
-      ico.dataset.id = srv.id;
-      const img = document.createElement('i');
-      img.className = 'pi cg-ico-img';
-      img.style.setProperty('--i', "url('/icons/server.svg')");
-      const dot = document.createElement('span');
-      dot.className = 'cg-ico-dot ' + statusDot(srv.status);
-      const name = document.createElement('span');
-      name.className = 'cg-ico-name';
-      name.textContent = srv.name || srv.id;
-      ico.appendChild(img);
-      ico.appendChild(dot);
-      ico.appendChild(name);
-
-      ico.addEventListener('pointerdown', () => {
-        if (selectedIcon) selectedIcon.classList.remove('sel');
-        selectedIcon = ico;
-        ico.classList.add('sel');
-      });
-      ico.addEventListener('dblclick', () => createWindow('server', srv.id, srv.name));
-      ico.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showServerMenu(srv, e.clientX, e.clientY);
-      });
+    const nodes = topNodes();
+    const areaH = iconsBox.clientHeight || (window.innerHeight - 90);
+    const perCol = Math.max(1, Math.floor((areaH - 8) / 96));
+    let auto = 0;
+    for (const node of nodes) {
+      const ico = buildIcon(node);
+      const pos = getPos(node);
+      if (pos) { ico.style.left = pos.x + 'px'; ico.style.top = pos.y + 'px'; }
+      else {
+        ico.style.left = (Math.floor(auto / perCol) * 100) + 'px';
+        ico.style.top = ((auto % perCol) * 96) + 'px';
+        auto++;
+      }
       iconsBox.appendChild(ico);
     }
+  }
+
+  /* Перетаскивание иконки: начинается только после порога сдвига, чтобы не
+     ломать выделение и двойной клик. Бросок на папку — переносит внутрь. */
+  function startIconDrag(e, node, iconEl) {
+    if (e.button !== 0) return;
+    const startX = e.clientX, startY = e.clientY;
+    const startLeft = iconEl.offsetLeft, startTop = iconEl.offsetTop;
+    let dragging = false;
+    const move = (ev) => {
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (!dragging && Math.abs(dx) + Math.abs(dy) < 5) return;
+      if (!dragging) {
+        dragging = true;
+        iconDragging = true; // фоновый renderIcons не должен открепить этот элемент
+        shield.style.cursor = 'grabbing';
+        shield.classList.remove('hidden');
+        iconEl.classList.add('cg-ico-dragging');
+      }
+      iconEl.style.left = Math.max(0, startLeft + dx) + 'px';
+      iconEl.style.top = Math.max(0, startTop + dy) + 'px';
+    };
+    const up = (ev) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (!dragging) return;
+      iconDragging = false;
+      shield.classList.add('hidden'); shield.style.cursor = '';
+      iconEl.classList.remove('cg-ico-dragging');
+      // элемент мог быть откреплён фоновым обновлением — тогда его offset=0,
+      // позицию не сохраняем (иначе иконка «прыгнет» в угол)
+      const detached = !iconEl.isConnected;
+      const folderId = detached ? null : folderUnder(ev.clientX, ev.clientY, node);
+      if (folderId) {
+        if (node.kind === 'item' && node.item.type === 'folder' && wouldCycle(node.id, folderId)) {
+          toast('Нельзя вложить папку в саму себя');
+          savePos(node, iconEl.offsetLeft, iconEl.offsetTop);
+        } else {
+          setParent(node, folderId); clearPos(node);
+        }
+        renderIcons(); refreshFolderWindows();
+      } else if (!detached) {
+        savePos(node, iconEl.offsetLeft, iconEl.offsetTop);
+      }
+      if (renderPending) { renderPending = false; renderIcons(); }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+
+  // истинно, если target — это folderId или лежит внутри его поддерева
+  // (тогда вложение folderId в target создало бы петлю)
+  function wouldCycle(folderId, targetId) {
+    const byId = {};
+    for (const it of deskItems) byId[it.id] = it;
+    let cur = targetId, guard = 0;
+    while (cur && guard++ < 1000) {
+      if (cur === folderId) return true;
+      cur = byId[cur] ? byId[cur].parent : null;
+    }
+    return false;
+  }
+
+  function folderUnder(x, y, selfNode) {
+    for (const el of iconsBox.children) {
+      if (el.dataset.type !== 'folder') continue;
+      if (selfNode.kind === 'item' && el.dataset.itemId === selfNode.id) continue;
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return el.dataset.itemId;
+    }
+    return null;
+  }
+
+  /* ── создание/переименование/удаление элементов ── */
+  function createItem(type, x, y) {
+    const it = { id: newId(), type, name: type === 'folder' ? 'Новая папка' : 'Документ.txt', parent: null };
+    if (type === 'doc') it.content = '';
+    deskItems.push(it); saveItems();
+    if (x != null) { iconPos['itm:' + it.id] = { x: Math.max(0, x), y: Math.max(0, y) }; savePosAll(); }
+    renderIcons();
+    startRename({ kind: 'item', id: it.id, item: it });
+  }
+
+  async function startRename(node) {
+    if (node.kind === 'server') { toast('Имя сервера меняется в его настройках'); return; }
+    const name = await promptBox('Новое имя:', node.item.name);
+    if (!name) return;
+    node.item.name = name; saveItems();
+    renderIcons(); refreshFolderWindows();
+    const w = wins.get(node.item.type + ':' + node.id);
+    if (w) { w.nameEl.textContent = name; w.btnLabel.textContent = name; }
+  }
+
+  async function deleteItem(node) {
+    const it = node.item;
+    if (it.type === 'folder') {
+      const kids = folderChildren(it.id);
+      const ok = await confirmBox('Удалить папку «' + it.name + '»?' + (kids.length ? ' Её содержимое вернётся на рабочий стол.' : ''));
+      if (!ok) return;
+      for (const k of kids) setParent(k, null); // не теряем сервера/документы
+    } else {
+      const ok = await confirmBox('Удалить документ «' + it.name + '»?');
+      if (!ok) return;
+    }
+    deskItems = deskItems.filter((x) => x.id !== it.id); saveItems();
+    clearPos(node);
+    closeWindow(it.type + ':' + it.id);
+    renderIcons(); refreshFolderWindows();
+  }
+
+  /* ── нативное содержимое окон папки и документа ── */
+  function buildNativeContent(win, kind, id) {
+    if (kind === 'folder') renderFolderInto(win, id);
+    else if (kind === 'doc') renderDocInto(win, id);
+  }
+
+  function renderFolderInto(win, folderId) {
+    const it = deskItems.find((x) => x.id === folderId);
+    win.body.textContent = '';
+    if (!it) { const e = document.createElement('div'); e.className = 'cg-folder-empty'; e.textContent = 'Папка удалена'; win.body.appendChild(e); return; }
+    const wrap = document.createElement('div');
+    wrap.className = 'cg-folder';
+    const kids = folderChildren(folderId);
+    if (!kids.length) {
+      const e = document.createElement('div');
+      e.className = 'cg-folder-empty';
+      e.textContent = 'Папка пуста. Перетащите сюда иконки с рабочего стола.';
+      wrap.appendChild(e);
+    }
+    for (const node of kids) wrap.appendChild(buildIcon(node, false));
+    win.body.appendChild(wrap);
+    win.refresh = () => renderFolderInto(win, folderId);
+  }
+
+  function renderDocInto(win, docId) {
+    const it = deskItems.find((x) => x.id === docId);
+    win.body.textContent = '';
+    const ta = document.createElement('textarea');
+    ta.className = 'cg-doc-ta';
+    ta.spellcheck = false;
+    ta.value = it ? (it.content || '') : '';
+    if (!it) ta.disabled = true;
+    let t = null;
+    ta.addEventListener('input', () => {
+      if (!it) return;
+      it.content = ta.value;
+      clearTimeout(t); t = setTimeout(saveItems, 400);
+    });
+    win.body.appendChild(ta);
+  }
+
+  function refreshFolderWindows() {
+    for (const w of wins.values()) if (w.kind === 'folder' && w.refresh) w.refresh();
   }
 
   async function refreshServers() {
@@ -408,6 +662,9 @@
     if (sig === refreshServers.lastSig) return; // без изменений — не трогаем DOM
     refreshServers.lastSig = sig;
     servers = list;
+    // во время перетаскивания иконки НЕ пересобираем слой (иначе откепляем
+    // перетаскиваемый элемент) — отложим до конца жеста
+    if (iconDragging) { renderPending = true; return; }
     renderIcons();
   }
 
@@ -455,7 +712,23 @@
     refreshServers();
   }
 
-  function showServerMenu(srv, x, y) {
+  function showNodeMenu(node, x, y) {
+    if (node.kind === 'server') { showServerMenu(node.srv, x, y, node); return; }
+    const it = node.item;
+    const items = [
+      menuItem('Открыть', it.type === 'folder' ? 'folder' : 'script-text', false, () => openNode(node)),
+      menuItem('Переименовать', 'edit', false, () => startRename(node)),
+    ];
+    if (parentOfNode(node)) {
+      items.push(menuItem('На рабочий стол', 'chevron-up', false, () => {
+        setParent(node, null); renderIcons(); refreshFolderWindows();
+      }));
+    }
+    items.push(menuItem('Удалить', 'trash', true, () => deleteItem(node)));
+    showMenuAt(x, y, items);
+  }
+
+  function showServerMenu(srv, x, y, node) {
     const up = isUp(srv.status);
     const items = [
       menuItem('Открыть панель', 'command', false, () => createWindow('server', srv.id, srv.name)),
@@ -467,6 +740,11 @@
       items.push(menuItem('Перезапустить', 'reload', false, () => serverAction(srv.id, 'restart')));
     } else {
       items.push(menuItem('Запустить', 'play', false, () => serverAction(srv.id, 'start')));
+    }
+    if (node && parentOfNode(node)) {
+      items.push(menuItem('На рабочий стол', 'chevron-up', false, () => {
+        setParent(node, null); renderIcons(); refreshFolderWindows();
+      }));
     }
     items.push(menuItem('Удалить', 'trash', true, async () => {
       // inPlace-импорт: панель НЕ удаляет файлы — честный текст без ввода имени;
@@ -488,6 +766,10 @@
             if (w.kind === 'editor' && w.id && w.id.slice(0, w.id.indexOf(':')) === srv.id) closeWindow(w.key);
           }
           forgetRecent(srv.id, null);
+          // прибираем позицию иконки и принадлежность папке удалённого сервера
+          delete serverParents[srv.id]; saveSP();
+          delete iconPos['srv:' + srv.id]; savePosAll();
+          refreshFolderWindows();
         }
       } catch (e) { toast('Панель недоступна'); }
       refreshServers.lastSig = null;
@@ -531,6 +813,40 @@
     });
   }
 
+  /* Диалог ввода строки (создание/переименование). Возвращает строку или null.
+     Переиспользует DOM #cg-confirm (нативный prompt в OSR гасится). */
+  function promptBox(text, initial) {
+    return new Promise((resolve) => {
+      const root = $('#cg-confirm');
+      const input = $('#cg-confirm-input');
+      $('#cg-confirm-text').textContent = text;
+      input.classList.remove('hidden');
+      input.placeholder = '';
+      input.value = initial || '';
+      root.classList.remove('hidden');
+      input.focus();
+      input.select();
+      const yes = $('#cg-confirm-yes');
+      const no = $('#cg-confirm-no');
+      const done = (v) => {
+        root.classList.add('hidden');
+        yes.removeEventListener('click', onYes);
+        no.removeEventListener('click', onNo);
+        input.removeEventListener('keydown', onKey);
+        resolve(v);
+      };
+      const onYes = () => { const v = input.value.trim(); done(v || null); };
+      const onNo = () => done(null);
+      const onKey = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); onYes(); }
+        else if (e.key === 'Escape') { e.preventDefault(); onNo(); }
+      };
+      yes.addEventListener('click', onYes);
+      no.addEventListener('click', onNo);
+      input.addEventListener('keydown', onKey);
+    });
+  }
+
   let toastTimer = null;
   function toast(text) {
     let t = $('#cg-toast');
@@ -569,6 +885,52 @@
   document.querySelectorAll('#cg-taskbar .cg-task-btn[data-app]').forEach((b) => {
     b.addEventListener('click', () => createWindow(b.dataset.app));
   });
+
+  // ПКМ по пустому рабочему столу — создать папку/документ, открыть компьютер
+  desktop.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.cg-ico') || e.target.closest('.cg-win') || e.target.closest('#cg-menu')) return;
+    e.preventDefault();
+    const gx = e.clientX, gy = e.clientY;
+    const box = iconsBox.getBoundingClientRect();
+    showMenuAt(gx, gy, [
+      menuItem('Создать папку', 'folder', false, () => createItem('folder', gx - box.left, gy - box.top)),
+      menuItem('Создать документ', 'script-text', false, () => createItem('doc', gx - box.left, gy - box.top)),
+      menuItem('Этот компьютер', 'monitor', false, () => createWindow('pc')),
+    ]);
+  });
+
+  // мод зовёт по пробелу: открыть win-меню, если фокус НЕ в поле ввода
+  window.__cgSpace = function () {
+    let el = document.activeElement;
+    try {
+      while (el && el.tagName === 'IFRAME' && el.contentDocument) el = el.contentDocument.activeElement;
+    } catch (e) { return; } // чужой кадр — вероятно ввод, не мешаем
+    if (el) {
+      const t = el.tagName;
+      if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable) return;
+    }
+    toggleStartMenu();
+  };
+
+  // размытие фона игры: мод читает параметр cgblur из URL рабочего стола
+  function currentBlurPref() {
+    try { return localStorage.getItem('cgIngameBlur') !== '0'; } catch (e) { return true; }
+  }
+  function reconcileBlurUrl() {
+    const on = currentBlurPref();
+    const u = new URL(window.location.href);
+    const off = u.searchParams.get('cgblur') === '0';
+    // history.replaceState вместо location.replace: URL меняется БЕЗ перезагрузки
+    // страницы (окна/iframe не сносятся, нет мигания), а CEF отражает новый URL в
+    // browser.getURL() через OnAddressChange — мост блюра к моду продолжает работать
+    if (on && off) { u.searchParams.delete('cgblur'); history.replaceState(null, '', u.toString()); }
+    else if (!on && !off) { u.searchParams.set('cgblur', '0'); history.replaceState(null, '', u.toString()); }
+  }
+  function setIngameBlur(on) {
+    try { localStorage.setItem('cgIngameBlur', on ? '1' : '0'); } catch (e) { /* */ }
+    reconcileBlurUrl();
+  }
+  reconcileBlurUrl();
 
   /* ── win-меню («Пуск»): серверы, недавние файлы, аккаунт, настройки ── */
 
@@ -668,6 +1030,8 @@
   window.addEventListener('blur', hideStartMenu);
   $('#cg-sm-account').addEventListener('click', () => { hideStartMenu(); createWindow('profile'); });
   $('#cg-sm-settings').addEventListener('click', () => { hideStartMenu(); createWindow('settings'); });
+  const smPc = $('#cg-sm-pc');
+  if (smPc) smPc.addEventListener('click', () => { hideStartMenu(); createWindow('pc'); });
 
   // сообщения от окон (открыть сервер/редактор, вход/выход, закрыть окно)
   window.addEventListener('message', async (e) => {
@@ -684,7 +1048,7 @@
     } else if (e.data.cg === 'close-win') {
       // окно просит закрыть само себя (например «Закрыть» в редакторе)
       for (const w of wins.values()) {
-        if (w.frame.contentWindow === e.source) {
+        if (w.frame && w.frame.contentWindow === e.source) {
           // редактор не смог открыть файл (удалён/недоступен) — чистим
           // «недавние» и говорим об этом, иначе окно молча мигнёт и исчезнет
           if (e.data.reason === 'editor-failed' && w.kind === 'editor' && w.id) {
@@ -696,6 +1060,8 @@
           break;
         }
       }
+    } else if (e.data.cg === 'set-blur') {
+      setIngameBlur(!!e.data.on);
     } else if (e.data.cg === 'need-login') {
       createWindow('gate');
     } else if (e.data.cg === 'logged-in') {
@@ -732,7 +1098,7 @@
       const cut = key.indexOf(':');
       const kind = cut >= 0 ? key.slice(0, cut) : key;
       const id = cut >= 0 ? key.slice(cut + 1) : undefined;
-      if (!DEFAULTS[kind] || kind === 'gate') continue;
+      if (!DEFAULTS[kind] || kind === 'gate' || DEFAULTS[kind].native) continue;
       const win = createWindow(kind, id);
       opened++;
       if (kind === 'server') {

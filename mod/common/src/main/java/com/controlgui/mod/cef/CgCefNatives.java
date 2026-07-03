@@ -113,6 +113,45 @@ final class CgCefNatives {
         }
     }
 
+    /* Версия вшитого патча jcef (снят потолок 30 FPS). Растёт при смене dll —
+       тогда патч переприменяется поверх уже установленного натива. */
+    static final int OVERRIDE_VERSION = 1;
+
+    private static Path overrideMarker(Path root, CgCefPlatform platform) {
+        // маркер завязан и на коммит java-cef: смена натива (нового коммита)
+        // инвалидирует его и патч переприменяется на свежий натив
+        return root.resolve("." + platform.normalizedName()
+                + "-override-" + CgCef.JAVA_CEF_COMMIT + "-v" + OVERRIDE_VERSION + ".ok");
+    }
+
+    /* Подменяет распакованный jcef.dll собственной пересборкой java-cef с
+       windowless_frame_rate=260 (снят жёсткий кап 30 FPS у OSR). Патч вшит в jar
+       как ресурс cef-override/<platform>/jcef.dll; libcef.dll и helper — родные
+       из тарбола (тот же коммит/версия CEF, ABI совпадает). Делается ОДИН раз на
+       версию патча и ДО инициализации CEF (натив ещё не загружен — файл можно
+       перезаписать). Тихо пропускается, если патча под платформу нет. */
+    static void ensureOverride(Path root, CgCefPlatform platform) {
+        try {
+            Path marker = overrideMarker(root, platform);
+            if (Files.isRegularFile(marker)) return;
+            String resPath = "/assets/controlgui/cef-override/" + platform.normalizedName() + "/jcef.dll";
+            try (InputStream in = CgCefNatives.class.getResourceAsStream(resPath)) {
+                if (in == null) return; // нет патча под эту платформу — работаем как есть
+                Path target = platformDir(root, platform).resolve("jcef.dll");
+                if (target.getParent() == null || !Files.isDirectory(target.getParent())) return;
+                Path tmp = target.resolveSibling("jcef.dll.new");
+                Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.writeString(marker, "ok", StandardCharsets.UTF_8);
+            com.controlgui.mod.Constants.LOG.info(
+                    "CONTROLGUI CEF: применён FPS-патч jcef ({})", platform.normalizedName());
+        } catch (Throwable e) {
+            com.controlgui.mod.Constants.LOG.warn(
+                    "CONTROLGUI CEF: не удалось применить FPS-патч jcef — работаем на родном", e);
+        }
+    }
+
     /* ── загрузка ────────────────────────────────────────────────────────── */
 
     /* Скольки соединениями качать (GitHub-CDN часто режет скорость одного
