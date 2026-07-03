@@ -58,8 +58,16 @@ final class CGUiResource implements CefResourceHandler {
     public void getResponseHeaders(CefResponse response, IntRef responseLength, StringRef redirectUrl) {
         String name = file.getFileName().toString();
         int dot = name.lastIndexOf('.');
-        String mime = dot >= 0 ? MIME.get(name.substring(dot + 1).toLowerCase(Locale.ROOT)) : null;
-        response.setMimeType(mime != null ? mime : "application/octet-stream");
+        String ct = dot >= 0 ? MIME.get(name.substring(dot + 1).toLowerCase(Locale.ROOT)) : null;
+        if (ct == null) ct = "application/octet-stream";
+        // ВАЖНО: CefResponse.setMimeType ждёт ЧИСТЫЙ mime-тип ("text/html"), а не полный
+        // Content-Type со «; charset=utf-8». Со charset Chromium не распознаёт тип как HTML,
+        // показывает ИСХОДНИК страницы как текст, а кириллица без utf-8 превращается в
+        // мозаику. Тип отдаём чистым, а charset — отдельным заголовком Content-Type.
+        int semi = ct.indexOf(';');
+        String baseType = semi >= 0 ? ct.substring(0, semi).trim() : ct;
+        response.setMimeType(baseType);
+        response.setHeaderByName("Content-Type", ct, true);
         response.setStatus(200);
         response.setStatusText("OK");
         responseLength.set(length >= 0 && length <= Integer.MAX_VALUE ? (int) length : -1);
