@@ -24,6 +24,8 @@ function hashPw(password, salt) {
 function publicUser(u) {
   return {
     username: u.username, role: u.role, approved: !!u.approved, createdAt: u.createdAt,
+    // hasPassword=false у аккаунтов, созданных через Discord — фронт покажет «задайте пароль»
+    hasPassword: !!(u.hash && u.salt), mustSetPassword: !!u.mustSetPassword,
     discord: u.discord ? { id: u.discord.id, name: u.discord.name, avatar: u.discord.avatar || null } : null,
   };
 }
@@ -89,8 +91,9 @@ function count() { return all().length; }
 /* Проверка входа: ник+пароль и аккаунт одобрен. */
 function verify(username, password) {
   const u = findRaw(username);
-  if (!u) {
-    // считаем фиктивный хэш — чтобы время ответа не выдавало существование ника
+  if (!u || !u.hash || !u.salt) {
+    // нет аккаунта ИЛИ он без пароля (создан через Discord) — считаем фиктивный хэш,
+    // чтобы время ответа не выдавало существование ника, и не падаем на Buffer.from(undefined)
     crypto.pbkdf2Sync(String(password), 'cgr-dummy-salt', 120000, 32, 'sha256');
     return null;
   }
@@ -225,8 +228,61 @@ function setPassword(username, newPw) {
   if (!u) return { error: 'Аккаунт не найден' };
   const salt = crypto.randomBytes(16).toString('hex');
   u.salt = salt; u.hash = hashPw(newPw, salt);
+  delete u.mustSetPassword; // пароль задан — флаг «нужно задать пароль» снимаем
   saveAll(list);
   return { ok: true, username: u.username };
+}
+
+/* Задать ПЕРВЫЙ пароль (для аккаунта, созданного через Discord и ещё без пароля).
+   В отличие от changePassword не требует текущего пароля, но и работает только пока
+   пароля нет — иначе это был бы обход смены пароля у обычного аккаунта. */
+function setFirstPassword(username, newPw) {
+  if (String(newPw || '').length < 6) return { error: 'Пароль: минимум 6 символов' };
+  const list = all();
+  const u = list.find((a) => String(a.username).toLowerCase() === String(username).toLowerCase());
+  if (!u) return { error: 'Аккаунт не найден' };
+  if (u.hash && u.salt) return { error: 'У аккаунта уже есть пароль — смените его через профиль' };
+  const salt = crypto.randomBytes(16).toString('hex');
+  u.salt = salt; u.hash = hashPw(newPw, salt);
+  delete u.mustSetPassword;
+  saveAll(list);
+  return { ok: true, user: publicUser(u) };
+}
+
+/* Санитизация ника из Discord под validName (буквы/цифры/_/-, 1–32). */
+function sanitizeNick(raw) {
+  let n = String(raw || '').replace(/[^A-Za-z0-9_-]/g, '');
+  if (!n) n = 'user';
+  return n.slice(0, 32);
+}
+
+/* Создать аккаунт по профилю Discord (вход через Discord без существующего аккаунта).
+   Аккаунт БЕЗ ПАРОЛЯ (mustSetPassword) — пароль пользователь задаёт в профиле.
+   Ник берём из Discord, при коллизии добавляем суффикс. Discord-ID уникален (проверка). */
+function createFromDiscord(prof) {
+  if (!prof || !prof.id) return { error: 'Нет данных Discord' };
+  const list = all();
+  const did = String(prof.id);
+  const dup = list.find((a) => a.discord && String(a.discord.id) === did);
+  if (dup) return { ok: true, user: publicUser(dup), existed: true }; // уже есть — идемпотентно
+  // подбираем свободный ник на основе имени Discord
+  const base = sanitizeNick(prof.name || prof.username || 'user');
+  let name = base;
+  const taken = (n) => list.some((a) => String(a.username).toLowerCase() === n.toLowerCase());
+  if (taken(name)) {
+    for (let i = 2; i < 100000; i += 1) {
+      const cand = (base.slice(0, 27) + i);
+      if (!taken(cand)) { name = cand; break; }
+    }
+  }
+  const u = {
+    username: name, role: 'user', approved: true, createdAt: new Date().toISOString(),
+    mustSetPassword: true, // пароля пока нет — задаётся в профиле
+    discord: { id: did, name: String(prof.name || ''), avatar: prof.avatar || null, linkedAt: new Date().toISOString() },
+  };
+  list.push(u);
+  saveAll(list);
+  return { ok: true, user: publicUser(u), created: true };
 }
 
 /* Бэкофилл аватара Discord для уже привязанного аккаунта (старые привязки без аватара). */
@@ -304,7 +360,7 @@ if (_sweepTimer.unref) _sweepTimer.unref();
 
 module.exports = {
   COOKIE, ensureAdmin, register, verify, approve, remove, rename, setDiscord, changePassword, setDevice, adminInfo, count,
-  byDiscordId, makeResetToken, takeResetToken, setPassword, setDiscordAvatar,
+  byDiscordId, makeResetToken, takeResetToken, setPassword, setFirstPassword, createFromDiscord, setDiscordAvatar,
   pending, listUsers, approvedNames, isAdmin, exists,
   createSession, destroySession, cookieFor, clearCookie, parseCookies, userFromReq, validName,
   MAX_FAILS, lockMs, noteFail, clearFails,

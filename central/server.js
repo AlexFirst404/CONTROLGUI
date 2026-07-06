@@ -12,6 +12,7 @@ const agents = require('./lib/agents');
 const proxy = require('./lib/proxy');
 const settings = require('./lib/settings');
 const discord = require('./lib/discord');
+const downloads = require('./lib/downloads');
 
 const PORT = parseInt(process.env.PORT, 10) || 443;
 const CERT = process.env.CGR_CERT || path.join(__dirname, 'cert', 'cert.pem');
@@ -300,8 +301,16 @@ async function handleDiscordOAuth(req, res, urlPath, url) {
       return json(res, 200, { ok: true, reset: true, username: u.username, resetToken: accounts.makeResetToken(u.username) });
     }
     if (v.kind === 'login') {
-      const u = accounts.byDiscordId(prof.id);
-      if (!u) return json(res, 404, { error: 'К этому Discord не привязан ни один аккаунт CONTROLGUI.' });
+      let u = accounts.byDiscordId(prof.id);
+      // вход через Discord без существующего аккаунта -> создаём его сразу (ник из Discord),
+      // пароль пользователь задаст в профиле (mustSetPassword). Аккаунт-кап соблюдаем.
+      if (!u) {
+        if (accounts.count() >= MAX_ACCOUNTS) return json(res, 429, { error: 'Достигнут лимит аккаунтов на сервере.' });
+        const cr = accounts.createFromDiscord(prof);
+        if (cr.error) return json(res, 400, { error: cr.error });
+        u = accounts.byDiscordId(prof.id);
+        if (!u) return json(res, 500, { error: 'Не удалось создать аккаунт.' });
+      }
       const cookie = accounts.cookieFor(accounts.createSession(u.username));
       if (v.loginToken) {
         // вход из приложения — складываем cookie сессии для опроса
@@ -380,6 +389,13 @@ async function handleApi(req, res, urlPath, url, user) {
     if (!renameLimit(String(user.username).toLowerCase())) return json(res, 429, { error: 'Слишком часто. Подождите минуту.' });
     const b = await readBody(req);
     const r = accounts.changePassword(user.username, b.current, b.next);
+    return json(res, r.error ? 400 : 200, r);
+  }
+  // задать ПЕРВЫЙ пароль (аккаунт создан через Discord, пароля ещё нет)
+  if (urlPath === '/api/account/set-password' && req.method === 'POST') {
+    if (!renameLimit(String(user.username).toLowerCase())) return json(res, 429, { error: 'Слишком часто. Подождите минуту.' });
+    const b = await readBody(req);
+    const r = accounts.setFirstPassword(user.username, b.password);
     return json(res, r.error ? 400 : 200, r);
   }
   if (urlPath === '/api/account/discord/link-init' && req.method === 'POST') {
@@ -464,6 +480,23 @@ async function handle(req, res) {
     if (urlPath.startsWith('/agent/')) { const r = await handleAgent(req, res, urlPath, url); if (r !== false) return; res.writeHead(404); return res.end(); }
     // публичный адрес центра — клиенты узнают его и мигрируют на новый IP/host
     if (urlPath === '/api/endpoint' && req.method === 'GET') return json(res, 200, settings.endpoint());
+    // публичные загрузки приложения (без входа): список версий + сами файлы
+    if (urlPath === '/api/downloads' && req.method === 'GET') return json(res, 200, { versions: downloads.list() });
+    if (urlPath.startsWith('/downloads/') && (req.method === 'GET' || req.method === 'HEAD')) {
+      const f = downloads.resolveFile(urlPath.slice('/downloads/'.length));
+      if (!f) { res.writeHead(404); return res.end('404'); }
+      const ext = path.extname(f.name).toLowerCase();
+      res.writeHead(200, {
+        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Content-Length': f.size,
+        'Content-Disposition': 'attachment; filename="' + f.name.replace(/["\\]/g, '') + '"',
+        'Cache-Control': 'public, max-age=3600',
+      });
+      if (req.method === 'HEAD') return res.end();
+      const stream = fs.createReadStream(f.full);
+      stream.on('error', () => { try { res.destroy(); } catch (e) { /* */ } });
+      return stream.pipe(res);
+    }
     if (urlPath.startsWith('/api/account/discord/')) { const r = await handleDiscordOAuth(req, res, urlPath, url); if (r !== false) return; }
     if (await handleAuth(req, res, urlPath) !== false) return;
     // полное удалённое управление: /r/<globalId>/<путь панели> -> туннель (нужна сессия)

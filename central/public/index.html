@@ -17,6 +17,32 @@
     <div class="row" id="userbar"></div>
   </div>
 
+  <!-- ГЕРОЙ -->
+  <section class="hero">
+    <div class="hero-badge">MINECRAFT SERVER PANEL</div>
+    <h1 class="hero-title">Управляй сервером<br><b>как профи</b></h1>
+    <p class="hero-sub">Консоль, файлы, игроки, бэкапы, моды и плагины — в одном приложении.
+      Локально на своём ПК или удалённо через этот центр.</p>
+    <div class="hero-cta">
+      <a class="mc-btn primary lg" href="#downloads">Скачать приложение</a>
+      <a class="mc-btn lg" href="#account">Личный кабинет</a>
+    </div>
+    <div class="hero-feats">
+      <span>🖥 Консоль в реальном времени</span>
+      <span>📁 Проводник и редактор</span>
+      <span>🧩 Моды и плагины</span>
+      <span>💾 Бэкапы</span>
+      <span>🌐 Удалённый доступ</span>
+    </div>
+  </section>
+
+  <!-- ЗАГРУЗКИ -->
+  <div class="card dl-card" id="downloads">
+    <h2>Скачать приложение</h2>
+    <div id="dl-body"><div class="muted">Загрузка списка версий…</div></div>
+  </div>
+
+  <div id="account">
   <!-- АВТОРИЗАЦИЯ -->
   <div id="auth" class="card center-card hidden">
     <div class="tabs">
@@ -35,9 +61,19 @@
       <label>Логин (ник)</label><input class="fld" id="rg-user" required>
       <label>Пароль (мин. 6)</label><input class="fld" id="rg-pass" type="password" required>
       <div class="err" id="rg-err"></div>
-      <div class="muted" style="margin-top:8px">После регистрации аккаунт ждёт одобрения администратором.</div>
+      <div class="muted" style="margin-top:8px">После регистрации вы сразу войдёте в аккаунт.</div>
       <div class="row" style="margin-top:14px"><button class="mc-btn primary grow" type="submit">Зарегистрироваться</button></div>
     </form>
+  </div>
+
+  <!-- ЗАДАТЬ ПАРОЛЬ (аккаунт создан через Discord) -->
+  <div id="setpw" class="card hidden" style="border-color:#7984f5">
+    <h2>Задайте пароль для входа</h2>
+    <div class="muted">Ваш аккаунт создан через Discord. Задайте пароль, чтобы входить и без Discord — по нику и паролю.</div>
+    <label>Новый пароль (мин. 6)</label>
+    <input class="fld" id="sp-pass" type="password" autocomplete="new-password">
+    <div class="err" id="sp-err"></div>
+    <div class="row" style="margin-top:12px"><button class="mc-btn primary" id="sp-btn">Сохранить пароль</button></div>
   </div>
 
   <!-- ПРИЛОЖЕНИЕ -->
@@ -56,6 +92,7 @@
       <div id="servers"></div>
     </div>
   </div>
+  </div><!-- /#account -->
 </div>
 
 <style>
@@ -120,8 +157,38 @@ let me = null;
 async function load(){
   const r = await api('GET','/api/me');
   me = r.d && r.d.user;
-  if(me){ show('#auth',false); show('#app',true); renderUser(); loadServers(); }
-  else { show('#auth',true); show('#app',false); $('#userbar').innerHTML=''; }
+  if(me){
+    show('#auth',false); show('#app',true);
+    show('#setpw', !me.hasPassword); // аккаунт создан через Discord и ещё без пароля — просим задать
+    renderUser(); loadServers();
+  } else {
+    show('#auth',true); show('#app',false); show('#setpw',false); $('#userbar').innerHTML='';
+  }
+}
+function fmtSize(n){ if(!n) return ''; const u=['Б','КБ','МБ','ГБ']; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return (v>=10?Math.round(v):v.toFixed(1))+' '+u[i]; }
+function osEmoji(os){ return os==='windows'?'🪟':os==='macos'?'🍎':(String(os).indexOf('linux')===0?'🐧':'📦'); }
+async function loadDownloads(){
+  const box=$('#dl-body'); if(!box) return;
+  let d=null; try{ const r=await api('GET','/api/downloads'); d=r.d; }catch(e){}
+  const versions=(d&&d.versions)||[];
+  if(!versions.length){ box.innerHTML='<div class="muted">Файлы приложения скоро появятся здесь.</div>'; return; }
+  const latest=versions[0];
+  let h='<div class="dl-latest"><span class="dl-vtag">Последняя версия</span> <b>v'+esc(latest.version)+'</b></div><div class="dl-grid">';
+  for(const f of latest.files){
+    h+='<a class="dl-item" href="'+esc(f.url)+'" download><span class="dl-os">'+osEmoji(f.os)+'</span>'
+      +'<span class="dl-info"><span class="dl-label">'+esc(f.label)+'</span>'
+      +'<span class="dl-meta">'+esc(f.arch)+(f.size?' · '+fmtSize(f.size):'')+'</span></span>'
+      +'<span class="dl-arrow">↓</span></a>';
+  }
+  h+='</div>';
+  if(versions.length>1){
+    h+='<details class="dl-old"><summary>Предыдущие версии ('+(versions.length-1)+')</summary>';
+    for(let i=1;i<versions.length;i++){ const v=versions[i];
+      h+='<div class="dl-old-row"><b>v'+esc(v.version)+'</b> '+v.files.map(f=>'<a href="'+esc(f.url)+'" download>'+esc(f.label)+'</a>').join(' · ')+'</div>';
+    }
+    h+='</details>';
+  }
+  box.innerHTML=h;
 }
 function renderUser(){
   const admin = me.role==='admin';
@@ -263,9 +330,18 @@ $('#tab-reg').onclick=()=>{ $('#tab-reg').classList.add('active'); $('#tab-login
 $('#form-login').onsubmit=async(e)=>{ e.preventDefault(); const r=await api('POST','/api/login',{username:$('#li-user').value,password:$('#li-pass').value});
   if(r.ok) load(); else $('#li-err').textContent=(r.d&&r.d.error)||'Ошибка'; };
 $('#form-reg').onsubmit=async(e)=>{ e.preventDefault(); const r=await api('POST','/api/register',{username:$('#rg-user').value,password:$('#rg-pass').value});
-  if(r.ok){ $('#rg-err').className='err ok'; $('#rg-err').textContent='Заявка отправлена — ждите одобрения админа.'; } else { $('#rg-err').className='err'; $('#rg-err').textContent=(r.d&&r.d.error)||'Ошибка'; } };
+  if(r.ok){ $('#rg-err').className='err'; $('#rg-err').textContent=''; load(); } else { $('#rg-err').className='err'; $('#rg-err').textContent=(r.d&&r.d.error)||'Ошибка'; } };
+$('#sp-btn') && ($('#sp-btn').onclick=async()=>{
+  const pw=$('#sp-pass').value;
+  if((pw||'').length<6){ $('#sp-err').textContent='Минимум 6 символов.'; return; }
+  $('#sp-err').textContent='';
+  const r=await api('POST','/api/account/set-password',{password:pw});
+  if(r.ok){ $('#sp-pass').value=''; toast('Пароль сохранён. Теперь можно входить по нику и паролю.',true); load(); }
+  else $('#sp-err').textContent=(r.d&&r.d.error)||'Ошибка';
+});
 $('#link-btn').onclick=async()=>{ const r=await api('POST','/api/link',{code:$('#link-code').value});
   if(r.d&&r.d.error){ $('#link-err').className='err'; $('#link-err').textContent=r.d.error; } else { $('#link-err').className='err ok'; $('#link-err').textContent='Сервер привязан!'; $('#link-code').value=''; loadServers(); } };
+loadDownloads();
 load();
 </script>
 </body>
