@@ -75,6 +75,7 @@ window.API = (function () {
     fileDelete: (id, path) => call('DELETE', '/api/servers/' + id + '/file?path=' + encodeURIComponent(path)),
     filesCreate: (id, path, type) => call('POST', '/api/servers/' + id + '/files-create', { path: path, type: type }),
     filesRename: (id, from, to) => call('POST', '/api/servers/' + id + '/files-rename', { from: from, to: to }),
+    filesExtract: (id, path) => call('POST', '/api/servers/' + id + '/files-extract', { path: path }),
     upload: upload,
 
     launchMode: () => call('GET', '/api/launch-mode'),

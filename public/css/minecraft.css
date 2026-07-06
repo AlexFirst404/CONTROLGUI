@@ -421,9 +421,11 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .tab-pane { margin-top: 4px; }
 
 /* ------------------------------------------- метрики процесса ------------- */
-.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 10px; margin-bottom: 12px; }
-@media (max-width: 480px) { .stats-row { grid-template-columns: 1fr; } }
-.stat-card { padding: 10px 12px 8px; }
+/* flexbox, а не grid auto-fit: последний нечётный график растягивается на всю
+   строку, а не жмётся к левому краю с пустым местом справа при узком окне */
+.stats-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+@media (max-width: 480px) { .stats-row .stat-card { flex-basis: 100%; } }
+.stat-card { flex: 1 1 205px; min-width: 0; padding: 10px 12px 8px; }
 .stat-top { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; min-width: 0; }
 .pi.stat-ic { width: 17px; height: 17px; color: var(--accent-bright); }
 .stat-name { color: #9fb0a4; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
@@ -677,6 +679,11 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
   width: 42px; height: 42px; min-width: 0; padding: 0; margin: 0;
   display: flex; align-items: center; justify-content: center; }
 .notif-bell.mc-btn .pi { width: 20px; height: 20px; }
+/* кнопка «Сохранить настройки» — закреплена справа снизу, левее колокола.
+   Живёт внутри #tab-settings, поэтому скрывается вместе со вкладкой (display:none у родителя). */
+.settings-save-fixed.mc-btn { position: fixed; right: 66px; bottom: 16px; z-index: 91;
+  box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+#tab-settings { padding-bottom: 72px; } /* место под закреплённую кнопку */
 /* поповер — .mc-card, закреплён над кнопкой */
 .notif-pop.mc-card { position: fixed; right: 16px; bottom: 66px; z-index: 90;
   width: 300px; max-height: 50vh; overflow: auto; padding: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
@@ -803,6 +810,15 @@ input[type=password]::-ms-clear { display: none; }
 .console-wrap:hover .console-pop { opacity: 1; }
 .console-pop:hover { background: #242424; border-color: var(--accent); color: #fff; }
 .console-pop .pi { width: 20px; height: 20px; }
+/* кнопка «к последним сообщениям» — по центру внизу, когда прокручено вверх */
+.console-jump { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 5;
+  width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: rgba(20, 20, 20, .92); border: 1px solid var(--accent); color: #fff;
+  cursor: pointer; box-shadow: 0 3px 12px rgba(0, 0, 0, .5); transition: background .15s, transform .1s; }
+.console-jump:hover { background: #242424; }
+.console-jump:active { transform: translateX(-50%) scale(.92); }
+.console-jump.hidden { display: none; }
+.console-jump .pi { width: 20px; height: 20px; }
 
 /* --------------------------------------------- текстурпак (ресурспак) ------- */
 .rp-drop { border: 2px dashed #3d4a3f; background: var(--card-inset); padding: 18px 16px;

@@ -21,12 +21,6 @@ function copyDir(src, dst) {
 
 // 1) ассеты UI панели (НЕ трогаем index.html/admin.html/style.css центра)
 copyDir(path.join(SRC, 'js'), path.join(DST, 'js'));        // api.js + app.js
-// desktop.js — менеджер окон встроенной в игру панели; центру не нужен и на VPS
-// его класть не будем (лишний неиспользуемый файл на боевом сервере)
-// pc.js — проводник по ФС компьютера (только локальное API), центру не нужен
-for (const f of ['desktop.js', 'pc.js']) {
-  try { fs.rmSync(path.join(DST, 'js', f)); } catch (e) { /* уже нет */ }
-}
 copyDir(path.join(SRC, 'icons'), path.join(DST, 'icons'));
 copyDir(path.join(SRC, 'assets'), path.join(DST, 'assets')); // merge (cursor.png центра остаётся)
 copyDir(path.join(SRC, 'fonts'), path.join(DST, 'fonts'));

@@ -579,8 +579,10 @@
 
       <div class="console-wrap">
         <div class="console" id="console"></div>
+        <button class="console-jump hidden" id="console-jump" type="button"
+                title="К последним сообщениям"><i class="pi" data-ic="chevron-down"></i></button>
         <button class="console-pop" id="console-pop" type="button"
-                title="Открыть консоль в отдельном окне"><i class="pi" data-ic="app-window"></i></button>
+                title="Открыть консоль в отдельном окне"><i class="pi" data-ic="external-link"></i></button>
       </div>
 
       <div class="console-input-row">
@@ -703,9 +705,7 @@
         </div>
 
         <div class="hint">Изменения применяются после перезапуска сервера.</div>
-        <div class="btn-row btn-row-left">
-          <button type="submit" class="mc-btn primary"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
-        </div>
+        <button type="submit" id="settings-save-btn" class="mc-btn primary settings-save-fixed"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
       </form>
 
       <div class="mc-card form-panel danger-card">
@@ -723,8 +723,10 @@
             <button class="mc-btn sm primary" id="btn-new-file"><i class="pi" data-ic="file-plus"></i> Файл</button>
             <button class="mc-btn sm" id="btn-new-dir"><i class="pi" data-ic="folder-plus"></i> Папка</button>
             <button class="mc-btn sm accent" id="btn-upload"><i class="pi" data-ic="upload"></i> Загрузить</button>
+            <button class="mc-btn sm accent" id="btn-upload-dir" title="Загрузить папку целиком"><i class="pi" data-ic="folder-plus"></i> Папку</button>
             <button class="mc-btn sm" id="btn-files-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
             <input type="file" id="upload-input" class="hidden">
+            <input type="file" id="upload-dir-input" class="hidden" webkitdirectory multiple>
           </div>
         </div>
         <div class="label-dim files-path" id="files-path"></div>

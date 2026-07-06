@@ -10,6 +10,20 @@ const users = require('./lib/users');
 const store = require('./lib/store');
 
 const PORT = parseInt(process.env.PORT, 10) || 8400;
+// Сокет слушаем на всех интерфейсах (как раньше): ресурспак (/rp/) игровые клиенты
+// тянут по LAN-адресу хоста. НО админку (UI+API) отдаём ТОЛЬКО с loopback — локальная
+// панель = полный доступ владельца без пароля, поэтому LAN-доступ к управлению — дыра.
+// Кто осознанно хочет открыть всю панель в сеть — ставит CONTROLGUI_ALLOW_LAN=1.
+const ALLOW_LAN = process.env.CONTROLGUI_ALLOW_LAN === '1';
+function isLoopbackReq(req) {
+  const ra = (req.socket && req.socket.remoteAddress) || '';
+  return ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1';
+}
+
+// Сеть защиты: единичный кривой запрос (напр. NUL в пути) не должен ронять весь процесс
+// вместе с запущенными Minecraft-серверами. Логируем и продолжаем.
+process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e && e.stack || e); });
+process.on('unhandledRejection', (e) => { console.error('[unhandledRejection]', e && e.stack || e); });
 
 // Watchdog родителя: если панель запущена нативным окном (macOS .app передаёт свой PID),
 // и это окно умерло ненормально (Force Quit/краш) — корректно выходим, освобождая порт.
@@ -60,16 +74,6 @@ function clientIp(req) {
   // за реверс-прокси (рекомендуемый удалённый доступ) — X-Forwarded-For; иначе сокет
   const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return xff || req.socket.remoteAddress || 'unknown';
-}
-// Host указывает на loopback? (защита /api/fs от DNS-rebinding). Порт не важен —
-// проверяем только имя хоста; чужой домен (evil.example) не пройдёт.
-function isLoopbackHost(hostHeader) {
-  if (!hostHeader) return false;
-  let host = String(hostHeader);
-  if (host.startsWith('[')) host = host.slice(1, host.indexOf(']')); // [::1]:port
-  else { const c = host.indexOf(':'); if (c >= 0) host = host.slice(0, c); }
-  host = host.toLowerCase();
-  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
 function loginLockMs(ip) {
   const a = loginAttempts.get(ip);
@@ -142,6 +146,14 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Resource pack not found');
+    return;
+  }
+
+  // всё, кроме публичного ресурспака выше — только с loopback (или явный CONTROLGUI_ALLOW_LAN=1).
+  // Закрывает неаутентифицированный доступ к админке из LAN, не ломая раздачу ресурспака.
+  if (!ALLOW_LAN && !isLoopbackReq(req)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403: панель доступна только локально. Для доступа по сети запустите с CONTROLGUI_ALLOW_LAN=1');
     return;
   }
 
@@ -233,23 +245,6 @@ const server = http.createServer(async (req, res) => {
       setTimeout(() => process.exit(0), 300);
       return;
     }
-    // проводник по файловой системе компьютера (окно «Этот компьютер» в моде).
-    // СТРОГО локально: loopback + кастомный заголовок + проверка Host. Удалённые
-    // запросы центра сюда не доходят (уходят веткой internalUserFor выше и не
-    // несут заголовок). Проверка Host обязательна против DNS-rebinding: браузер
-    // ставит в Host имя домена, на который зашёл пользователь (напр. evil.example),
-    // подделать его страница не может — так резаем доступ к диску чужому сайту,
-    // даже если он переклеил свой домен на 127.0.0.1 (запрос тогда same-origin и
-    // loopback, но Host — не наш).
-    if (urlPath.startsWith('/api/fs/')) {
-      const ra = req.socket.remoteAddress || '';
-      const loopback = ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1';
-      if (!loopback || req.headers['x-cg-local'] !== '1' || !isLoopbackHost(req.headers.host)) {
-        return sendJson(res, 403, { error: 'Только локально' });
-      }
-      const query = new URL(req.url, 'http://localhost').searchParams;
-      return require('./lib/fsbrowse').handle(req, res, urlPath, query);
-    }
     return handleApi(req, res);
   }
   serveStatic(req, res);
@@ -271,9 +266,13 @@ server.listen(PORT, () => {
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error('Порт ' + PORT + ' занят. Запустите с другим портом: set PORT=8500 && node server.js');
-    process.exit(1);
+  } else {
+    console.error('Не удалось запустить сервер панели:', err && err.message || err);
   }
-  throw err;
+  // Ошибка привязки сокета неисправима — выходим ЯВНО (process.exit), а не throw:
+  // иначе исключение перехватит process.on('uncaughtException') и процесс зависнет
+  // живым без слушающего сокета (зомби).
+  process.exit(1);
 });
 
 // Аккуратно гасим запущенные серверы при закрытии панели

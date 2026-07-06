@@ -51,6 +51,16 @@ function getJson(host, p, token) {
 /* access_token (из implicit-фрагмента) -> профиль. Личность подтверждает сам Discord. {id, name} или {error}. */
 async function fetchUser(accessToken) {
   if (!/^[A-Za-z0-9._-]{8,256}$/.test(String(accessToken || ''))) return { error: 'Некорректный токен' };
+  // КРИТИЧНО: сначала подтверждаем, что токен выпущен ИМЕННО нашим приложением.
+  // GET /users/@me отдаёт профиль для ЛЮБОГО валидного identify-токена (в т.ч.
+  // выпущенного чужим OAuth-приложением) — без этой проверки чужой токен = захват
+  // аккаунта/сброс пароля. GET /oauth2/@me возвращает application.id токена; сверяем.
+  let auth;
+  try { auth = await getJson('discord.com', '/api/oauth2/@me', accessToken); } catch (e) { return { error: 'Discord недоступен' }; }
+  if (auth.status !== 200 || !auth.json.application || String(auth.json.application.id) !== String(cfg().clientId)) {
+    return { error: 'Токен выпущен не для этого приложения' };
+  }
+  if (auth.json.expires && Date.parse(auth.json.expires) <= Date.now()) return { error: 'Токен истёк' };
   let me;
   try { me = await getJson('discord.com', '/api/users/@me', accessToken); } catch (e) { return { error: 'Discord недоступен' }; }
   if (me.status !== 200 || !me.json.id) return { error: 'Discord: не удалось получить профиль' };

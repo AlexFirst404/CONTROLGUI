@@ -1,6 +1,0 @@
-plugins {
-    // версии: https://fabricmc.net/develop/ и https://projects.neoforged.net/neoforged/moddevgradle
-    // loom 1.17.x требует Gradle 9.5+ (wrapper обновлён соответственно)
-    id 'fabric-loom' version '1.17.13' apply false
-    id 'net.neoforged.moddev' version '2.0.141' apply false
-}

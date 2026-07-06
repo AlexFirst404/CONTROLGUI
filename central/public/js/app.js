@@ -255,6 +255,7 @@
     fb('#btn-new-file', can('files.write'));
     fb('#btn-new-dir', can('files.write'));
     fb('#btn-upload', can('files.upload'));
+    fb('#btn-upload-dir', can('files.upload'));
     // кнопки питания — каждая по своему праву
     const toggleBtn = (sel, perm) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !can(perm)); };
     toggleBtn('#btn-start', 'server.start');
@@ -2494,10 +2495,28 @@
 
   // ---------- консоль ----------
 
+  function updateConsoleJump() {
+    const c = $('#console'); const btn = $('#console-jump');
+    if (!c || !btn) return;
+    // та же граница, что и авто-прокрутка в appendConsoleLine (порог 40px)
+    const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 40;
+    btn.classList.toggle('hidden', atBottom);
+  }
+
   function connectConsole(id) {
     if (state.sse) state.sse.close();
     const consoleEl = $('#console');
+    // однократно вешаем слушатель прокрутки и клик по кнопке «к последним»
+    if (!consoleEl.dataset.jumpBound) {
+      consoleEl.dataset.jumpBound = '1';
+      consoleEl.addEventListener('scroll', updateConsoleJump);
+      const jump = $('#console-jump');
+      if (jump) jump.addEventListener('click', () => {
+        consoleEl.scrollTop = consoleEl.scrollHeight; updateConsoleJump();
+      });
+    }
     consoleEl.innerHTML = '';
+    updateConsoleJump();
     const sse = API.consoleStream(id);
     state.sse = sse;
     sse.onmessage = (event) => {
@@ -2524,6 +2543,7 @@
     consoleEl.appendChild(el);
     while (consoleEl.childNodes.length > 1200) consoleEl.removeChild(consoleEl.firstChild);
     if (atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+    updateConsoleJump();
   }
 
   function sendCommand() {
@@ -2721,13 +2741,36 @@
     return { label: key, type: 'text' };
   }
 
+  /* Слепок редактируемых значений вкладки «Настройки» — для отслеживания
+     несохранённых изменений (слайдеры/тоглы — кастомные виджеты без нативных
+     input-событий, поэтому сравниваем снимки, а не слушаем input). */
+  function snapshotSettings() {
+    if ((state.propsMode || 'fields') === 'raw') {
+      const ta = $('#settings-raw');
+      return 'raw:' + (ta ? ta.value : '');
+    }
+    const parts = [];
+    parts.push('mem:' + (state.memSettingsSlider ? state.memSettingsSlider.value : ''));
+    parts.push('cpu:' + (state.cpuSettingsSlider ? state.cpuSettingsSlider.value : ''));
+    parts.push('java:' + (state.javaSelectEl ? state.javaSelectEl.value : ''));
+    for (const el of $$('#settings-known [data-prop-key]')) {
+      parts.push(el.dataset.propKey + '=' + (el._getValue ? el._getValue() : ''));
+    }
+    return 'fields:' + parts.join('\n');
+  }
+  function markSettingsClean() { state.settingsBaseline = snapshotSettings(); }
+  function isSettingsDirty() {
+    return state.settingsBaseline != null && snapshotSettings() !== state.settingsBaseline;
+  }
+
   async function loadSettings() {
     if (!state.currentId) return;
     try {
       const data = await API.properties(state.currentId);
       renderSettings(data);
       applyPropsModeUI();
-      if ((state.propsMode || 'fields') === 'raw') loadRawProps();
+      if ((state.propsMode || 'fields') === 'raw') await loadRawProps();
+      markSettingsClean(); // базовый снимок после заполнения редактируемой формы
       renderIconCard();
       loadRpCard();
       renderCoreCard();
@@ -3169,7 +3212,7 @@
     if (reset) nav.offset = 0;
     const provider = contentProvider(kind);
     const box = $(cfg.els.results);
-    box.innerHTML = '<div class="pl-empty">Загрузка ' + cfg.wordGen + ' с ' + (provider === 'curseforge' ? 'CurseForge' : 'Modrinth') + '…</div>';
+    box.innerHTML = '<div class="inv-loading"><div class="mc-loader"></div><div class="load-note">Загрузка ' + cfg.wordGen + ' с ' + (provider === 'curseforge' ? 'CurseForge' : 'Modrinth') + '…</div></div>';
     $(cfg.els.pager).classList.add('hidden');
     const seq = ++nav.seq;
     try {
@@ -3241,7 +3284,7 @@
     for (let p = start; p < end; p++) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'mc-btn sm pg' + (p === cur ? ' primary' : '');
+      b.className = 'mc-btn sm pg' + (p === cur ? ' sel' : '');
       b.textContent = String(p + 1);
       b.addEventListener('click', () => contentGoToPage(kind, p));
       el.appendChild(b);
@@ -3651,10 +3694,10 @@
     if ((state.propsMode || 'fields') === mode) return;
     state.propsMode = mode;
     if (mode === 'fields') {
-      loadSettings(); // перечитать актуальные значения из файла и перерисовать поля
+      loadSettings(); // перечитать актуальные значения из файла и перерисовать поля (сбросит baseline)
     } else {
       applyPropsModeUI();
-      loadRawProps();
+      Promise.resolve(loadRawProps()).then(markSettingsClean); // baseline после загрузки текста
     }
   }
 
@@ -3676,7 +3719,7 @@
         ? 'server.properties сохранён. Перезапустите сервер, чтобы применить.'
         : 'server.properties сохранён.', 'ok');
       loadServers();
-      loadRawProps(); // перечитать (на случай нормализации)
+      Promise.resolve(loadRawProps()).then(markSettingsClean); // перечитать + сброс baseline
     });
   }
 
@@ -3908,6 +3951,9 @@
         b.addEventListener('click', (event) => { event.stopPropagation(); handler(); });
         return b;
       };
+      if (!entry.dir && /\.(zip|jar)$/i.test(entry.name) && can('files.write')) {
+        actions.appendChild(mkBtn('box', 'Распаковать архив', 'accent', () => extractEntry(entry)));
+      }
       if (can('files.write')) actions.appendChild(mkBtn('edit', 'Переименовать', '', () => renameEntry(entry)));
       if (can('files.delete')) actions.appendChild(mkBtn('trash', 'Удалить', 'danger', () => deleteEntry(entry)));
 
@@ -4139,6 +4185,45 @@
     });
   }
 
+  // загрузка набора файлов (в т.ч. с вложенными путями папки) — один итог, одно обновление
+  async function uploadMany(items) {
+    // items: [{ file, rel }] — rel относительно текущей папки (может содержать '/')
+    if (!items || !items.length) return;
+    let ok = 0;
+    let failName = null;
+    await guard(async () => {
+      for (const it of items) {
+        try {
+          await API.upload(state.currentId, joinPath(state.filesPath, it.rel), it.file);
+          ok++;
+        } catch (e) { if (!failName) failName = it.rel; }
+      }
+      if (ok === items.length) {
+        showToast(ok === 1 ? 'Файл загружен.' : ('Загружено файлов: ' + ok + '.'), 'ok');
+      } else if (ok) {
+        showToast('Загружено ' + ok + ' из ' + items.length + '. Не удалось: «' + failName + '».');
+      } else {
+        showToast('Не удалось загрузить: «' + failName + '».');
+      }
+      loadFiles();
+    });
+  }
+
+  async function extractEntry(entry) {
+    const ok = await confirmDialog(
+      'Распаковать архив «' + entry.name + '»?\nСодержимое появится в новой папке рядом с архивом.',
+      { title: 'Распаковка архива', yesText: 'Распаковать', danger: false });
+    if (!ok) return;
+    await guard(async () => {
+      const r = await API.filesExtract(state.currentId, joinPath(state.filesPath, entry.name));
+      let msg = 'Архив распакован в папку «' + (r.folder || '') + '» (файлов: ' + (r.count || 0) + ').';
+      if (r.skipped) msg += ' Пропущено записей: ' + r.skipped + '.';
+      if (r.tooLarge) msg += ' Из них слишком больших (> 512 МБ): ' + r.tooLarge + '.';
+      showToast(msg, r.tooLarge ? '' : 'ok');
+      loadFiles();
+    });
+  }
+
   // ---------- вкладки ----------
 
   /* Скользящая черта под активной вкладкой. Ведущий край движется быстрее
@@ -4169,7 +4254,14 @@
     bar.style.right = right + 'px';
   }
 
-  function switchTab(tab) {
+  async function switchTab(tab) {
+    // предупреждение о несохранённых изменениях при уходе со вкладки «Настройки»
+    if (state.currentTab === 'settings' && tab !== 'settings' && isSettingsDirty()) {
+      const leave = await confirmDialog(
+        'На вкладке «Настройки» есть несохранённые изменения. Выйти без сохранения?',
+        { title: 'Несохранённые изменения', yesText: 'Выйти без сохранения', danger: true });
+      if (!leave) return; // остаёмся на вкладке настроек, подсветка не менялась
+    }
     state.currentTab = tab;
     if (state.currentId) {
       pushHash('#server=' + state.currentId + '/tab/' + tab);
@@ -4976,6 +5068,59 @@
     return null;
   }
 
+  // Собрать перетащенные файлы, включая содержимое папок (webkitGetAsEntry).
+  // Возвращает промис со списком [{ file, rel }] (rel — путь с '/' для вложенных).
+  // ВАЖНО: webkitGetAsEntry() читается синхронно, пока жив объект события.
+  function collectDropEntries(dt) {
+    const items = dt.items ? Array.from(dt.items) : [];
+    const roots = [];
+    for (const it of items) {
+      if (it.kind !== 'file') continue;
+      const entry = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null;
+      if (entry) roots.push(entry);
+    }
+    if (!roots.length) {
+      // старый путь (нет entry-API) — без структуры папок
+      const flat = dt.files ? Array.from(dt.files) : [];
+      return Promise.resolve(flat.map((f) => ({ file: f, rel: f.name })));
+    }
+    const MAX_FILES = 5000;
+    const MAX_DEPTH = 48; // защита от циклов симлинков/джанкшенов (out.length не растёт в пустых ветках)
+    const out = [];
+    let capped = false;
+    function walk(entry, prefix, depth) {
+      return new Promise((resolve) => {
+        if (out.length >= MAX_FILES || depth > MAX_DEPTH) { capped = true; return resolve(); }
+        if (entry.isFile) {
+          entry.file((f) => { out.push({ file: f, rel: prefix + entry.name }); resolve(); }, () => resolve());
+        } else if (entry.isDirectory) {
+          const reader = entry.createReader();
+          const acc = [];
+          const readBatch = () => {
+            reader.readEntries((batch) => {
+              if (!batch.length) {
+                // readEntries отдаёт максимум ~100 за раз — читали, пока не пусто
+                let chain = Promise.resolve();
+                for (const child of acc) chain = chain.then(() => walk(child, prefix + entry.name + '/', depth + 1));
+                chain.then(resolve);
+              } else {
+                for (const b of batch) acc.push(b);
+                readBatch();
+              }
+            }, () => resolve());
+          };
+          readBatch();
+        } else resolve();
+      });
+    }
+    let chain = Promise.resolve();
+    for (const r of roots) chain = chain.then(() => walk(r, '', 0));
+    return chain.then(() => {
+      if (capped) showToast('Слишком много файлов или слишком глубокая вложенность — взяты первые ' + MAX_FILES + '.');
+      return out;
+    });
+  }
+
   function setupFileDrop() {
     const overlay = $('#drop-overlay');
     let depth = 0;
@@ -5003,10 +5148,14 @@
       depth = 0;
       overlay.classList.add('hidden');
       const ctx = dropContext();
-      const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
-      if (!ctx || !files.length) return;
-      if (ctx.kind === 'files') openDropConfirm(files);
-      else dropContentJars(ctx, files);
+      if (!ctx) return;
+      if (ctx.kind === 'files') {
+        // читаем структуру папок синхронно из живого события, затем показываем подтверждение
+        collectDropEntries(e.dataTransfer).then((items) => { if (items.length) openDropConfirm(items); });
+      } else {
+        const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+        if (files.length) dropContentJars(ctx, files);
+      }
     });
   }
 
@@ -5023,20 +5172,24 @@
     loadContent(ctx.kind); // обновить список установленных
   }
 
-  function openDropConfirm(files) {
-    $('#dropconfirm-path').textContent = 'Папка назначения: ' + (state.filesPath || 'корень');
+  function openDropConfirm(items) {
+    // items: [{ file, rel }] — rel может содержать '/' для файлов из вложенных папок
+    const folderCount = items.filter((it) => it.rel.indexOf('/') >= 0).length;
+    $('#dropconfirm-path').textContent = 'Папка назначения: ' + (state.filesPath || 'корень') +
+      (folderCount ? ' · с сохранением структуры папок' : '');
     const box = $('#dropconfirm-list');
     box.innerHTML = '';
-    for (const f of files) {
+    for (const it of items) {
+      const nested = it.rel.indexOf('/') >= 0;
       const row = document.createElement('div');
       row.className = 'drop-file';
-      row.appendChild(picon('file', 'var(--accent-bright)'));
+      row.appendChild(picon(nested ? 'folder' : 'file', 'var(--accent-bright)'));
       const nm = document.createElement('span');
       nm.className = 'drop-file-name';
-      nm.textContent = f.name;
+      nm.textContent = it.rel;
       const sz = document.createElement('span');
       sz.className = 'drop-file-size';
-      sz.textContent = fmtBytes(f.size);
+      sz.textContent = fmtBytes(it.file.size);
       row.appendChild(nm);
       row.appendChild(sz);
       box.appendChild(row);
@@ -5044,7 +5197,7 @@
     $('#dropconfirm-root').classList.remove('hidden');
     $('#dropconfirm-ok').onclick = async () => {
       $('#dropconfirm-root').classList.add('hidden');
-      for (const f of files) await uploadFile(f);
+      await uploadMany(items);
     };
     $('#dropconfirm-cancel').onclick = () => $('#dropconfirm-root').classList.add('hidden');
   }
@@ -5327,9 +5480,16 @@
       if (event.target.tagName !== 'A') $('#eula-check').classList.toggle('on');
     });
 
-    $('#btn-back').addEventListener('click', () => {
+    $('#btn-back').addEventListener('click', async () => {
       // на сайте (удалённое управление) — к списку серверов центра, а не назад к тому же серверу
       if (window.CG_REMOTE) { location.href = '/'; return; }
+      // предупреждение о несохранённых изменениях настроек при выходе к списку
+      if (state.currentTab === 'settings' && isSettingsDirty()) {
+        const leave = await confirmDialog(
+          'На вкладке «Настройки» есть несохранённые изменения. Выйти без сохранения?',
+          { title: 'Несохранённые изменения', yesText: 'Выйти без сохранения', danger: true });
+        if (!leave) return;
+      }
       showScreen('list');
       guard(loadServers);
     });
@@ -5393,6 +5553,22 @@
       const file = event.target.files[0];
       event.target.value = '';
       uploadFile(file);
+    });
+    $('#btn-upload-dir').addEventListener('click', () => $('#upload-dir-input').click());
+    $('#upload-dir-input').addEventListener('change', (event) => {
+      // при webkitdirectory каждый File несёт webkitRelativePath (папка/подпапка/файл)
+      let items = Array.from(event.target.files).map((f) => ({
+        file: f,
+        rel: (f.webkitRelativePath || f.name).replace(/\\/g, '/'),
+      }));
+      event.target.value = '';
+      // тот же кап, что и у перетаскивания — иначе огромная папка (мир на десятки
+      // тысяч файлов) синхронно построит столько же DOM-строк и подвесит вкладку
+      if (items.length > 5000) {
+        showToast('Слишком много файлов — загружаются первые 5000.');
+        items = items.slice(0, 5000);
+      }
+      if (items.length) openDropConfirm(items);
     });
     $('#btn-editor-save').addEventListener('click', saveFileEditor);
     $('#btn-editor-close').addEventListener('click', closeFileEditor);
