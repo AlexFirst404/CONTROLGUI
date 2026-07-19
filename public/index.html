@@ -87,34 +87,37 @@
         <div class="hint" style="margin-bottom:0">Применяется сразу и сохраняется в этом браузере/приложении.</div>
 
         <!-- УДАЛЁННЫЙ ДОСТУП: HTTPS + пароль, прямое подключение через проброс порта -->
-        <div class="opt-card" style="margin-top:18px" id="ra-card">
-          <div class="section-title" style="margin:0 0 8px"><i class="pi" data-ic="lock"></i> Удалённый доступ</div>
-          <span class="hint" style="display:block;margin:0 0 10px">Управляйте панелью с других устройств и через интернет: включите доступ, задайте пароль и пробросьте порт на роутере. Подключение — по HTTPS с самоподписанным сертификатом (браузер один раз предупредит — это нормально).</span>
-          <div class="toggle-row" style="padding:0">
+        <div id="ra-card" style="margin-top:20px">
+          <div class="section-title" style="margin:0 0 6px"><i class="pi" data-ic="lock"></i> Удалённый доступ</div>
+          <span class="hint" style="display:block;margin:0 0 12px">Управляйте панелью с других устройств и через интернет: включите доступ, задайте пароль и пробросьте порт на роутере. Подключение — по HTTPS с самоподписанным сертификатом (браузер один раз предупредит — это нормально).</span>
+
+          <div class="opt-card toggle-row">
             <span class="toggle-label">Включить удалённый доступ</span>
             <div class="mc-toggle" id="ra-toggle"></div>
           </div>
-          <div id="ra-body" class="hidden" style="margin-top:12px">
-            <div class="label-dim" id="ra-state" style="font-size:12px;margin:0 0 10px"></div>
-            <label class="mc-label">Пароль удалённого доступа (мин. 6)
-              <div style="display:flex;gap:8px;align-items:stretch;margin-top:4px">
-                <span class="pass-wrap" style="flex:1">
-                  <input class="fld" id="ra-pass" type="password" autocomplete="new-password" placeholder="задайте или смените пароль">
-                  <button type="button" class="pass-eye" id="ra-eye" title="Показать пароль"></button>
-                </span>
-                <button class="mc-btn sm" id="ra-pass-save" style="margin:0;white-space:nowrap"><i class="pi" data-ic="check"></i> Сохранить</button>
-              </div>
-            </label>
-            <label class="mc-label" style="margin-top:10px">Порт HTTPS (пробросьте его на роутере)
-              <div style="display:flex;gap:8px;align-items:stretch;margin-top:4px">
-                <input class="fld" id="ra-port" type="number" min="1" max="65535" style="max-width:140px">
-                <button class="mc-btn sm" id="ra-port-save" style="margin:0;white-space:nowrap"><i class="pi" data-ic="check"></i> Применить</button>
-              </div>
-            </label>
-            <div class="hint" id="ra-addr" style="margin:10px 0 0"></div>
-            <div class="hint" id="ra-fp" style="margin:8px 0 0;word-break:break-all"></div>
-            <div class="err" id="ra-err"></div>
+
+          <div class="opt-card" style="margin-top:12px">
+            <label class="opt-label ra-label" for="ra-pass">Пароль удалённого доступа (мин. 6)</label>
+            <div class="ra-row">
+              <span class="pass-wrap ra-grow">
+                <input class="fld" id="ra-pass" type="password" autocomplete="new-password" placeholder="задайте или смените пароль">
+                <button type="button" class="pass-eye" id="ra-eye" title="Показать пароль"></button>
+              </span>
+              <button class="mc-btn sm primary ra-btn" id="ra-pass-save"><i class="pi" data-ic="check"></i> Сохранить</button>
+            </div>
+            <label class="opt-label ra-label" for="ra-port" style="margin-top:14px">Порт HTTPS (пробросьте его на роутере)</label>
+            <div class="ra-row">
+              <input class="fld ra-port" id="ra-port" type="number" min="1" max="65535">
+              <button class="mc-btn sm ra-btn" id="ra-port-save"><i class="pi" data-ic="check"></i> Применить</button>
+            </div>
           </div>
+
+          <div id="ra-info" class="opt-card hidden" style="margin-top:12px">
+            <div class="ra-state" id="ra-state"></div>
+            <div class="hint" id="ra-addr" style="margin:8px 0 0"></div>
+            <div class="hint ra-fp" id="ra-fp" style="margin:8px 0 0"></div>
+          </div>
+          <div class="err" id="ra-err" style="margin-top:8px"></div>
         </div>
       </div>
     </div>

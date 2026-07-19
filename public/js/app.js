@@ -613,23 +613,27 @@
     const card = $('#ra-card');
     if (!card) return;
     try { raStatus = await API.remoteAccess(); } catch (e) { card.classList.add('hidden'); return; }
-    // в удалённой сессии настройки удалёнки менять нельзя — показываем только состояние
+    card.classList.remove('hidden');
     const t = $('#ra-toggle');
     t.classList.toggle('on', !!raStatus.enabled);
-    $('#ra-body').classList.toggle('hidden', !raStatus.enabled);
     const portEl = $('#ra-port');
     if (portEl && document.activeElement !== portEl) portEl.value = raStatus.port;
+    // блок состояния (адрес/отпечаток) виден только когда доступ включён
+    $('#ra-info').classList.toggle('hidden', !raStatus.enabled);
     $('#ra-state').textContent = raStatus.enabled
       ? (raStatus.running ? 'Работает: HTTPS-порт ' + raStatus.port + ' открыт для подключений.' : 'Включён, но листенер не запущен (порт занят?) — смотрите консоль панели.')
       : '';
-    const ips = raStatus.lanIps || [];
+    // IP из raStatus.lanIps сервер уже отфильтровал по /^\d+\.\d+\.\d+\.\d+$/ — метасимволов нет
+    const ips = (raStatus.lanIps || []).filter((ip) => /^\d+\.\d+\.\d+\.\d+$/.test(ip));
     $('#ra-addr').innerHTML = ips.length
       ? 'В локальной сети: <code>https://' + ips[0] + ':' + raStatus.port + '</code>. Из интернета — пробросьте порт <b>' + raStatus.port + '</b> на роутере на этот компьютер и используйте внешний IP.'
       : 'Пробросьте порт <b>' + raStatus.port + '</b> на роутере на этот компьютер.';
     $('#ra-fp').textContent = raStatus.fingerprint
-      ? 'Отпечаток сертификата (SHA-256): ' + raStatus.fingerprint.replace(/(..)/g, '$1:').slice(0, -1).toUpperCase().slice(0, 47) + '…'
+      ? 'Отпечаток сертификата (SHA-256): ' + raStatus.fingerprint.replace(/(..)(?=.)/g, '$1:').toUpperCase()
       : '';
-    if (state.remoteSession) { $('#ra-err').textContent = 'Менять настройки удалённого доступа можно только с локальной панели.'; }
+    // удалённая сессия: настройки удалёнки менять нельзя — блокируем карточку
+    card.classList.toggle('ra-locked', !!state.remoteSession);
+    $('#ra-err').textContent = state.remoteSession ? 'Менять настройки удалённого доступа можно только с локальной панели.' : '';
   }
   async function raAction(action, extra, okMsg) {
     $('#ra-err').textContent = '';
@@ -638,26 +642,27 @@
       if (okMsg) showToast(okMsg, 'ok');
       await refreshRemoteAccessCard();
       return true;
-    } catch (e) { $('#ra-err').textContent = e.message; return false; }
+    } catch (e) { $('#ra-err').textContent = e.message; await refreshRemoteAccessCard(); return false; }
   }
   function bindRemoteAccessCard() {
     const t = $('#ra-toggle');
     if (!t) return;
+    mkToggle(t); // переключатель кита: рисует ползунок и оптимистично переворачивает .on по клику
     t.addEventListener('click', async () => {
-      const on = t.classList.contains('on');
-      if (on) {
-        if (await confirmDialog('Выключить удалённый доступ? Все удалённые сессии будут разорваны.',
-          { title: 'Удалённый доступ', yesText: 'Выключить', danger: true })) {
-          raAction('disable', null, 'Удалённый доступ выключен.');
-        }
-      } else {
+      const wantOn = t.classList.contains('on'); // mkToggle уже перевернул визуальное состояние
+      if (wantOn) {
         if (raStatus && !raStatus.hasPassword) {
-          $('#ra-body').classList.remove('hidden');
+          t.classList.remove('on'); // без пароля включить нельзя — откатываем ползунок
           $('#ra-err').textContent = 'Сначала задайте пароль и нажмите «Сохранить» — доступ включится сам.';
-          setTimeout(() => $('#ra-pass').focus(), 40);
+          setTimeout(() => { const p = $('#ra-pass'); if (p) p.focus(); }, 40);
           return;
         }
-        raAction('enable', null, 'Удалённый доступ включён.');
+        if (!await raAction('enable', null, 'Удалённый доступ включён.')) t.classList.remove('on');
+      } else {
+        const ok = await confirmDialog('Выключить удалённый доступ? Все удалённые сессии будут разорваны.',
+          { title: 'Удалённый доступ', yesText: 'Выключить', danger: true });
+        if (!ok) { t.classList.add('on'); return; } // передумали — возвращаем ползунок включённым
+        raAction('disable', null, 'Удалённый доступ выключен.');
       }
     });
     $('#ra-pass-save').addEventListener('click', async () => {

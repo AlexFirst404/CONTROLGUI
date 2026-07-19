@@ -657,6 +657,20 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
   display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
 .modal { background: #1c1c1c; border: 2px solid #4a4a4a; max-width: 470px; width: 100%;
   box-shadow: 0 12px 44px rgba(0,0,0,.6); max-height: 88vh; overflow-y: auto; }
+/* модалка «Настройки панели» — шире: в неё вложены строки удалённого доступа
+   (поле + кнопка), которым в 470px тесно и элементы наезжают друг на друга */
+#appset-root .modal { max-width: 620px; }
+
+/* ----- карточка «Удалённый доступ» в настройках (стили кита) ----------------- */
+#ra-card { white-space: normal; } /* modal-body у нас pre-line — сбрасываем, чтобы не было лишних пустот */
+#ra-card .ra-label { display: block; color: #a9b3ab; font-size: 13px; margin: 0 0 6px; }
+#ra-card .ra-row { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+#ra-card .ra-row .ra-grow { flex: 1 1 220px; min-width: 0; }
+#ra-card .ra-row .ra-port { flex: 0 1 160px; max-width: 160px; }
+#ra-card .ra-btn { margin: 0; white-space: nowrap; flex: 0 0 auto; }
+#ra-card .ra-state { color: var(--accent-bright); font-size: 13px; line-height: 1.5; }
+#ra-card .ra-fp { word-break: break-all; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+#ra-card.ra-locked .opt-card { opacity: .55; pointer-events: none; } /* удалённая сессия — только чтение */
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px;
   background: #242424; border-bottom: 1px solid #3a3a3a;
   font-family: var(--font-head); font-size: 13px; letter-spacing: 1px; color: #e6e6e6; }
