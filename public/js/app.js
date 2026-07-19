@@ -165,10 +165,9 @@
     sugItems: [],
     sugIndex: -1,
     cm: null, // CodeMirror instance
-    me: null,            // текущий пользователь {username, admin, perms}
-    permissions: [],     // список всех прав (из бэкенда)
-    openMode: true,      // нет пользователей — полный доступ
-    editUser: null,      // редактируемый пользователь (null — режим создания)
+    me: null,            // текущий принципал {username, admin, perms}
+    openMode: true,      // полный доступ (локально или после пароля удалёнки)
+    remoteSession: false,// открыто через удалённый HTTPS-доступ
     logName: null,       // выбранный лог-файл
     logContent: '',      // загруженный текст лога
     logTimer: null,      // таймер live-обновления логов
@@ -194,6 +193,8 @@
       state.me = data.user;
       state.remoteSession = !!data.remote; // открыто через удалённый HTTPS-доступ
       state.openMode = !!data.openMode;
+      // «Выйти» имеет смысл только в удалённой сессии (локально входа нет)
+      const lo = $('#menu-logout'); if (lo) lo.classList.toggle('hidden', !state.remoteSession);
       applyPermissions();
     } catch (e) { /* при 401 клиент сам уведёт на /login */ }
   }
@@ -4867,9 +4868,6 @@
   initCycleButtons(document);
   mkToggle($('#toggle-online'), true);
   mkToggle($('#toggle-pvp'), true);
-  mkToggle($('#u-admin'), false);
-  mkToggle($('#u-all-servers'), true);
-  $('#u-eye').style.setProperty('--i', "url('/icons/eye.svg')");
   state.memCreateSlider = mkSlider($('#mem-create'), {
     min: 1024, max: state.maxMemMb, step: 512, value: 2048,
     format: fmtMem, labelEl: $('#mem-create-val'), onChange: updateMemHint,
@@ -4881,6 +4879,5 @@
   enhanceSelectsIn(document); // свои выпадашки для статичных <select> (ядро, версия, тема, категория)
 
   bind();
-  // десктоп: гейт аккаунта центра -> затем обычный старт (loadMe/loadStatus/loadServers/polling) + диплинки
-  bootApp();
+  bootApp(); // старт: loadMe/loadStatus/loadServers/polling + диплинки
 })();

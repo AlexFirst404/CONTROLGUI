@@ -61,12 +61,28 @@ if REMOTE and URL.startswith('https://'):
         with open(pins_path, 'w', encoding='utf-8') as f:
             json.dump(pins, f, indent=2)
 
-    def on_tls_error(_web, failing_uri, certificate, errors):
+    def cert_der(cert):
+        # DER надёжно: сперва PEM-свойство (стабильно в WebKitGTK 4.0/4.1), иначе сырые байты.
+        # Панель считает отпечаток как SHA-256 от DER — здесь получаем ровно DER.
         try:
-            der = certificate.props.certificate.get_data()
-            fp = hashlib.sha256(bytes(der)).hexdigest()
+            pem = cert.get_property('certificate-pem')
+            if pem:
+                import base64
+                import re
+                return base64.b64decode(re.sub(r'-----[^-]+-----|\s', '', pem))
         except Exception:
+            pass
+        try:
+            data = cert.get_property('certificate')  # GLib.Bytes (DER)
+            return bytes(data.get_data())
+        except Exception:
+            return None
+
+    def on_tls_error(_web, failing_uri, certificate, errors):
+        der = cert_der(certificate)
+        if der is None:
             return False  # не смогли прочитать серт — показываем стандартную ошибку
+        fp = hashlib.sha256(der).hexdigest()
         pins = load_pins()
         known = pins.get(key)
         if known == fp:

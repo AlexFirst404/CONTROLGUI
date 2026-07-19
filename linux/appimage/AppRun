@@ -73,9 +73,9 @@ case "${1:-}" in
     ;;
 esac
 
-# клиент-режим: подключение к удалённой панели (файл пишет controlgui connect <url>)
+# клиент-режим: подключение к удалённой панели (файл пишет cli.js в $CONTROLGUI_DATA/data/)
 CLIENT_MODE=0
-REMOTE_URL_FILE="$CONTROLGUI_DATA/remote-connect"
+REMOTE_URL_FILE="$CONTROLGUI_DATA/data/remote-connect"
 if [ "${1:-}" = "--connect" ] && [ -n "${2:-}" ]; then
   URL="$2"; CLIENT_MODE=1
 elif [ "${1:-}" != "--local" ] && [ -s "$REMOTE_URL_FILE" ]; then

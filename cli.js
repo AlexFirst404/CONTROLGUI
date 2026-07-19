@@ -26,14 +26,31 @@ function out(s) { process.stdout.write(s + '\n'); }
 function die(s) { process.stderr.write(s + '\n'); process.exit(1); }
 
 // ---------- пароль без эха ----------
+let stdinBuf = '';        // остаток буфера stdin между чтениями строк (не-TTY)
+let stdinEnded = false;
+function readLineNonTty() {
+  return new Promise((resolve) => {
+    const take = () => {
+      const nl = stdinBuf.indexOf('\n');
+      if (nl !== -1) { const line = stdinBuf.slice(0, nl); stdinBuf = stdinBuf.slice(nl + 1); return resolve(line.replace(/\r$/, '')); }
+      if (stdinEnded) { const line = stdinBuf; stdinBuf = ''; return resolve(line.replace(/\r$/, '')); }
+      return false;
+    };
+    if (take() !== false) return;
+    const stdin = process.stdin;
+    stdin.resume();
+    const onData = (c) => { stdinBuf += c; if (take() !== false) { stdin.removeListener('data', onData); stdin.removeListener('end', onEnd); } };
+    const onEnd = () => { stdinEnded = true; stdin.removeListener('data', onData); take(); };
+    stdin.on('data', onData);
+    stdin.on('end', onEnd);
+  });
+}
 function askHidden(prompt) {
   return new Promise((resolve) => {
     process.stdout.write(prompt);
     const stdin = process.stdin;
-    if (!stdin.isTTY) { // пайп/скрипт — читаем строку как есть
-      let d = '';
-      stdin.on('data', (c) => { d += c; });
-      stdin.on('end', () => resolve(d.trim()));
+    if (!stdin.isTTY) { // пайп/скрипт — читаем ОДНУ строку (не до EOF, иначе второй промпт зависнет)
+      readLineNonTty().then((s) => resolve(s.trim()));
       return;
     }
     stdin.setRawMode(true);
@@ -84,25 +101,49 @@ function cmdServe() {
   require(path.join(ROOT, 'server.js'));
 }
 function cmdStart() {
-  if (panelPid()) return out('Панель уже запущена (PID ' + panelPid() + ').');
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  const log = fs.openSync(path.join(DATA_DIR, 'panel.log'), 'a');
-  const child = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
-    detached: true, stdio: ['ignore', log, log],
-    env: Object.assign({}, process.env),
-    windowsHide: true,
+  panelListening((st) => {
+    if (st) return out('Панель уже работает на порту ' + PORT + '.');
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const log = fs.openSync(path.join(DATA_DIR, 'panel.log'), 'a');
+    const child = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
+      detached: true, stdio: ['ignore', log, log],
+      env: Object.assign({}, process.env),
+      windowsHide: true,
+    });
+    fs.writeFileSync(PID_FILE, String(child.pid));
+    child.unref();
+    // подтверждаем, что панель реально поднялась (порт мог быть занят чужим процессом)
+    let tries = 0;
+    const poll = () => panelListening((up) => {
+      if (up) { out('Панель запущена фоном (PID ' + child.pid + '). Локально: http://localhost:' + PORT); out('Лог: ' + path.join(DATA_DIR, 'panel.log')); return; }
+      if (++tries > 20) { out('Панель запущена (PID ' + child.pid + '), но не ответила на порту ' + PORT + ' за 5 с. Смотрите ' + path.join(DATA_DIR, 'panel.log')); return; }
+      setTimeout(poll, 250);
+    });
+    setTimeout(poll, 300);
   });
-  fs.writeFileSync(PID_FILE, String(child.pid));
-  child.unref();
-  out('Панель запущена фоном (PID ' + child.pid + '). Локально: http://localhost:' + PORT);
-  out('Лог: ' + path.join(DATA_DIR, 'panel.log'));
 }
+// штатная остановка: просим панель завершиться по HTTP (и остановить MC-серверы) —
+// работает одинаково на всех ОС; kill по PID оставлен как фолбэк.
 function cmdStop() {
+  const http = require('http');
+  const r = http.request({ host: '127.0.0.1', port: PORT, path: '/api/quit', method: 'POST',
+    headers: { 'x-cg-local': '1', 'x-cg-stop-servers': '1' }, timeout: 4000 }, (res) => {
+    res.resume();
+    if (res.statusCode === 200) {
+      try { fs.rmSync(PID_FILE, { force: true }); } catch (e) { /* */ }
+      out('Панель штатно завершается (запущенные Minecraft-серверы останавливаются, миры сохраняются).');
+    } else { out('Панель ответила HTTP ' + res.statusCode + '.'); killFallback(); }
+  });
+  r.on('error', () => killFallback());
+  r.on('timeout', () => { r.destroy(); killFallback(); });
+  r.end();
+}
+function killFallback() {
   const pid = panelPid();
-  if (!pid) return out('Панель не запущена (pid-файла нет или процесс мёртв).');
-  try { process.kill(pid, 'SIGTERM'); } catch (e) { return die('Не удалось остановить: ' + e.message); }
+  if (!pid) return out('Панель не запущена (не отвечает и pid-файла нет).');
+  try { process.kill(pid, 'SIGTERM'); } catch (e) { return die('Не удалось остановить PID ' + pid + ': ' + e.message); }
   try { fs.rmSync(PID_FILE, { force: true }); } catch (e) { /* */ }
-  out('Панели отправлен сигнал остановки (PID ' + pid + '). Запущенные Minecraft-серверы будут остановлены штатно.');
+  out('Панель не ответила по HTTP — отправлен сигнал остановки процессу PID ' + pid + '.');
 }
 function cmdStatus() {
   const pid = panelPid();
@@ -182,20 +223,27 @@ function cmdService(args) {
   };
   if (sub === 'install') {
     if (process.getuid && process.getuid() !== 0) die('Нужен root: sudo controlgui service install');
-    // сервис от имени вызвавшего пользователя (sudo) — его данные, его серверы
+    // сервис от имени вызвавшего пользователя (sudo) — его данные, его серверы.
+    // Домашний каталог берём из системной БД, а не угадываем «/home/<user>».
     const user = process.env.SUDO_USER || 'root';
-    const home = user === 'root' ? '/root' : ('/home/' + user);
+    let home = user === 'root' ? '/root' : '/home/' + user;
+    try {
+      const ent = require('child_process').execFileSync('getent', ['passwd', user], { encoding: 'utf8' }).trim();
+      const f = ent.split(':'); if (f[5]) home = f[5];
+    } catch (e) { /* нет getent — оставляем догадку */ }
     const dataDir = process.env.CONTROLGUI_DATA || path.join(home, '.local', 'share', 'controlgui');
+    // systemd поддерживает двойные кавычки в ExecStart/Environment — экранируем пути с пробелами
+    const q = (s) => '"' + String(s).replace(/"/g, '\\"') + '"';
     const unit = [
       '[Unit]',
       'Description=CONTROLGUI — Minecraft server panel',
       'After=network.target',
       '',
       '[Service]',
-      'ExecStart=' + process.execPath + ' ' + path.join(ROOT, 'server.js'),
-      'WorkingDirectory=' + ROOT,
+      'ExecStart=' + q(process.execPath) + ' ' + q(path.join(ROOT, 'server.js')),
+      'WorkingDirectory=' + q(ROOT),
       'Environment=PORT=' + PORT,
-      'Environment=CONTROLGUI_DATA=' + dataDir,
+      'Environment=' + q('CONTROLGUI_DATA=' + dataDir),
       'User=' + user,
       'Restart=always',
       'RestartSec=3',

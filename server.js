@@ -104,19 +104,27 @@ async function handleRequest(req, res) {
     req.cgUser = users.currentUser(req); // полный доступ (локально или после пароля удалёнки)
     req.cgRemote = viaRemote;            // для локально-only операций (quit, системный проводник)
 
-    // тихое самозавершение панели (использует деинсталлятор/обновление): строго локально
-    // (loopback), с кастомным заголовком (браузер не пошлёт его cross-origin без
-    // CORS-preflight) и ТОЛЬКО когда не запущен ни один сервер.
+    // штатное завершение панели (CLI `controlgui stop`, деинсталлятор, обновление):
+    // строго локально (loopback), с кастомным заголовком (браузер не пошлёт его
+    // cross-origin без CORS-preflight). Заголовок x-cg-stop-servers:1 (от CLI stop)
+    // разрешает корректно остановить запущенные Minecraft-серверы перед выходом —
+    // это нужно, т.к. на Windows process.kill(SIGTERM) = жёсткий TerminateProcess и
+    // штатный обработчик сигналов не срабатывает.
     if (urlPath === '/api/quit' && req.method === 'POST') {
       if (viaRemote || !isLoopbackReq(req) || req.headers['x-cg-local'] !== '1') {
         return sendJson(res, 403, { error: 'Только локально' });
       }
+      const stopServers = req.headers['x-cg-stop-servers'] === '1';
       // anyActive: живые процессы + автоустановка Java (proc ещё null) +
       // переходные статусы + живые «осиротевшие» серверы
-      if (manager.anyActive()) return sendJson(res, 409, { error: 'Есть работающие серверы' });
+      if (!stopServers && manager.anyActive()) return sendJson(res, 409, { error: 'Есть работающие серверы' });
       sendJson(res, 200, { ok: true });
-      // даём ответу уйти клиенту, затем выходим штатно
-      setTimeout(() => process.exit(0), 300);
+      if (stopServers && manager.anyRunning()) {
+        manager.stopAll();
+        setTimeout(() => process.exit(0), 5000); // ждём сохранения миров
+      } else {
+        setTimeout(() => process.exit(0), 300);
+      }
       return;
     }
     return handleApi(req, res);

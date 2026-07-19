@@ -25,10 +25,11 @@ esac
 
 # ---------- GUI-режим ----------
 URL="http://127.0.0.1:${PORT}"
-REMOTE_URL_FILE="$CONTROLGUI_DATA/remote-connect"
 CLIENT_MODE=0
 
-# клиент-режим: приложение подключается к удалённой панели (controlgui connect <url>)
+# клиент-режим: приложение подключается к удалённой панели (controlgui connect <url>).
+# Файл пишет cli.js в $CONTROLGUI_DATA/data/ (совпадает с DATA_DIR панели).
+REMOTE_URL_FILE="$CONTROLGUI_DATA/data/remote-connect"
 if [ "${1:-}" = "--connect" ] && [ -n "${2:-}" ]; then
   URL="$2"; CLIENT_MODE=1
 elif [ "${1:-}" = "--local" ]; then
