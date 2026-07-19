@@ -15,10 +15,18 @@ mkdir -p "$CONTROLGUI_DATA"
 PORT="${CONTROLGUI_PORT:-8400}"
 URL="http://127.0.0.1:$PORT"
 
+# клиент-режим: подключение к удалённой панели (controlgui connect <url>)
+CLIENT_MODE=0
+REMOTE_URL_FILE="$CONTROLGUI_DATA/data/remote-connect"
+if [ -s "$REMOTE_URL_FILE" ]; then
+  URL="$(head -n1 "$REMOTE_URL_FILE" | tr -d '[:space:]')"
+  CLIENT_MODE=1
+fi
+
 panel_up() {
   "$NODE" -e "require('http').get('$URL/',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" >/dev/null 2>&1
 }
-if ! panel_up; then
+if [ "$CLIENT_MODE" = "0" ] && ! panel_up; then
   ( cd "$APPSRC" && PORT="$PORT" CONTROLGUI_DATA="$CONTROLGUI_DATA" "$NODE" server.js >"$CONTROLGUI_DATA/panel.log" 2>&1 & )
   i=0
   while [ "$i" -lt 80 ]; do panel_up && break; sleep 0.25; i=$((i + 1)); done

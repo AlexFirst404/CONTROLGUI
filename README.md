@@ -1,97 +1,88 @@
-# CONTROLGUI — локальная панель управления Minecraft-серверами
+# CONTROLGUI
 
-Локальный сайт в стиле Minecraft для создания, настройки, запуска и удаления
-**настоящих** Minecraft-серверов на этом компьютере.
+**A real Minecraft server admin panel that runs on your own computer.** No cloud, no accounts, no npm dependencies — one Node.js process, a Minecraft-styled web UI, and full control over your servers.
 
-## Запуск
+[Русская версия / Russian version → README.ru.md](README.ru.md)
 
-1. Установите [Node.js 18+](https://nodejs.org) (для самой панели).
-2. Установите [Java 21+](https://adoptium.net) (для Minecraft-серверов 1.20.5+;
-   старым версиям хватает Java 17).
-3. Дважды кликните `start.bat` — или выполните в терминале:
+## Features
 
-   ```
-   node server.js
-   ```
+- **Create real servers in two clicks** — Vanilla, Paper, Purpur, Folia, Mohist, Forge, plus Velocity / BungeeCord proxies. Cores are downloaded from official sources; the right Java is installed automatically on all three OSes.
+- **Live console** with command input and autocomplete, log search, per-server CPU / RAM / disk graphs.
+- **File manager** with a built-in code editor, uploads (files and whole folders), zip/jar extraction.
+- **Players** — online list, inventory and stats viewer/editor (own NBT parser), kick / ban / OP / whitelist.
+- **Mods & plugins** — built-in [Modrinth](https://modrinth.com) catalog: search, one-click install with dependencies, enable/disable.
+- **Backups** — create, restore, download.
+- **Resource packs** — upload a pack and the panel serves it to game clients over LAN.
+- **Remote access** — flip a switch, set a password, forward one port on your router: manage your servers from anywhere over HTTPS (self-signed certificate generated locally in pure JS). No third-party servers involved — your machine is the only server.
+- **Headless / CLI mode** — install on a Linux VPS and manage it from another computer via browser or the built-in terminal UI (TUI).
 
-4. Откройте http://localhost:8400
+## Install
 
-Никаких `npm install` не нужно — панель работает только на встроенных модулях Node.js.
+Grab an installer from [Releases](https://github.com/AlexFirst404/CONTROLGUI/releases):
 
-## Что умеет
+| Platform | File | Notes |
+|---|---|---|
+| Windows | `CONTROLGUI-<v>-windows-setup.exe` | Bundles Node.js — nothing else to install |
+| Linux (Debian/Ubuntu) | `controlgui_<v>_all.deb` | Uses system `nodejs` (>= 18) |
+| Linux (any distro) | `CONTROLGUI-<v>-x86_64.AppImage` | Bundles Node.js |
+| Linux server (headless) | `controlgui-<v>-linux.tar.gz` | `tar -xzf … && sudo controlgui/install.sh` |
+| macOS (Apple Silicon) | `CONTROLGUI-<v>-macos-arm64.pkg` | Bundles Node.js |
 
-- **Создание сервера**: ядра Vanilla / Paper / Purpur / Folia / Mohist / Forge
-  (forge ставится официальным installer'ом, запуск через args-файл), любая версия,
-  порт, память (ползунок до объёма ОЗУ машины), режим игры, сложность, MOTD, сид;
-  online-mode и PVP — свитчи. Файлы качаются с официальных источников с прогресс-
-  баром. EULA принимается чекбоксом — без него сервер не создаётся.
-- **Управление**: запуск / остановка / перезапуск / принудительное завершение,
-  живая консоль с отправкой команд, историей (стрелки) и автоподсказками как в
-  игре (введите `/`, Tab — листать/подставить). Остановка, перезапуск, kill и
-  удаление — через модалки подтверждения.
-- **Мониторинг**: CPU, память (из лимита Xmx), чтение/запись (диск+сеть) именно
-  процесса сервера — карточки с живыми графиками на вкладке «Консоль»
-  (реальная JVM находится по слушающему порту: java.exe на JDK 21+ — лаунчер).
-- **Настройки**: правка `server.properties` формой (булевы параметры — свитчами,
-  память — ползунком) и сырым текстом, смена имени. Сохранение — с подтверждением.
-- **Файлы**: встроенный файловый менеджер каталога сервера — навигация по папкам,
-  создание файлов/папок, загрузка с диска (до 256 МБ), переименование, удаление
-  и текстовый редактор (до 1 МБ, с подтверждением сохранения).
-- **Игроки**: данные из лога (UUID, IP, достижения, сессия) + из файлов мира:
-  общее время игры (статистика `play_time`), инвентарь/броня/хотбар (NBT-парсер
-  `lib/nbt.js`), здоровье, опыт, позиция. Поддержаны оба макета мира: старый
-  `world/playerdata|stats` и новый (MC 26+) `world/players/data|stats`.
-  Головы скинов — mc-heads.net.
-- **Информация**: адреса для подключения (localhost и LAN), путь к файлам мира.
-- **Удаление**: с подтверждением, стирает каталог сервера целиком.
+Or run from source (any OS, Node.js >= 18, zero npm dependencies):
 
-## Структура
-
-```
-server.js          — входная точка (порт 8400, поменять: set PORT=8500)
-lib/               — бэкенд: API, менеджер java-процессов, загрузчик jar, реестр
-public/            — фронтенд: index.html, css/minecraft.css, js/
-servers/<id>/      — файлы каждого созданного сервера (jar, мир, конфиги)
-data/servers.json  — реестр серверов
-docs/specs/        — проектная спецификация
+```bash
+git clone https://github.com/AlexFirst404/CONTROLGUI.git
+cd CONTROLGUI
+node server.js          # open http://localhost:8400
 ```
 
-## Про интерфейс
+## Remote access over the internet
 
-Визуальный слой построен на UI-ките из `D:\MinecraftUI\site` (Ore UI / Bedrock-стиль):
+1. In the panel: **Menu → Panel settings → Remote access** — set a password; access turns on (HTTPS port **8433** by default).
+2. Forward port 8433 on your router to this computer.
+3. From anywhere: `https://your-ip:8433` → the browser warns about the self-signed certificate once (expected — verify the SHA-256 fingerprint shown in the panel) → enter the password → full panel.
 
-- шрифты `Minecraft` и `Minecraft Ten` (`public/fonts/`) — скопированы из кита;
-- токены, темы (`theme-lime` / `theme-blue` на `<body>`) и компоненты
-  (`.mc-btn`, `.fld`, `.mc-card`, `.mc-row`, `.mc-check`, модалки, фон `.bg-pattern`)
-  перенесены из `src/styles.css` кита в `public/css/minecraft.css`;
-- иконки серверов и favicon — `public/assets/` (menu-icons и gear из кита).
+The desktop apps can also connect directly: Windows — tray menu **"Remote panel…"**; Linux/macOS — `controlgui connect https://ip:8433` (back to local: `controlgui connect --local`). Certificate fingerprints are pinned on first use (TOFU) and verified on every connection.
 
-Чтобы сменить акцент с зелёного на синий — поменяйте класс `theme-lime`
-на `theme-blue` у `<body>` в `public/index.html`.
+## CLI & headless Linux server
 
-## Осиротевшие процессы
+```bash
+controlgui serve                  # run the panel in this terminal
+controlgui start | stop | status  # run it in the background
+controlgui remote password        # set the remote-access password
+controlgui remote enable          # start the HTTPS listener (port 8433)
+sudo controlgui service install   # systemd service with autostart
+controlgui tui                    # terminal UI (works over HTTPS too: controlgui tui https://ip:8433)
+```
 
-Если панель была завершена аварийно (kill процесса node, а не Ctrl+C), запущенные
-Minecraft-серверы продолжают работать. После перезапуска панель находит их по
-сохранённому PID и по занятому порту и показывает статус **«Работает вне панели»**
-(жёлтый): консоль такого процесса недоступна, но его можно принудительно завершить
-кнопкой «Убить процесс», после чего сервер снова полностью управляем (и удаляем).
-Пока такой процесс жив, удаление сервера блокируется — иначе Windows вернёт
-EPERM из-за занятых файлов мира.
+The TUI shows your servers with status and CPU/RAM, supports start/stop/restart, and gives you a live console with command input — right in an SSH session.
 
-## Благодарности / сторонние ресурсы
+## Security model
 
-- Иконки интерфейса — [Pixelarticons](https://pixelarticons.com) (MIT), лежат в `public/icons/`.
-- Редактор файлов — [CodeMirror 5](https://codemirror.net/5/) (MIT, подключается с CDN).
-- Иконки предметов инвентаря — официальные текстуры из
-  [InventivetalentDev/minecraft-assets](https://github.com/InventivetalentDev/minecraft-assets).
-- Головы скинов — [mc-heads.net](https://mc-heads.net).
-- Шрифты Minecraft / Minecraft Ten и стиль компонентов — из UI-кита проекта MinecraftUI.
+- Plain HTTP (port 8400) answers **only on localhost** — the LAN sees nothing but resource-pack downloads (`/rp/`).
+- Remote access is a separate HTTPS listener: PBKDF2-hashed password, HttpOnly session cookies, brute-force lockout (5 attempts → 5 minutes), certificate generated locally — the private key never leaves your machine.
+- Host-machine actions (quit app, native folder picker) refuse to run for remote sessions.
 
-## Примечания
+## Project layout
 
-- Панель слушает только этот компьютер; авторизации нет — не пробрасывайте порт
-  8400 наружу.
-- При закрытии панели (Ctrl+C) запущенные серверы корректно останавливаются.
-- Если jar не докачался (нет сети) — на экране сервера появится кнопка
-  «Скачать server.jar».
+```
+server.js          — entry point (port 8400; override with PORT env)
+cli.js / tui.js    — CLI and terminal UI
+lib/               — backend: API, java process manager, downloader, remote access
+public/            — frontend: index.html, css/minecraft.css, js/
+linux/ mac/        — .deb / tarball / AppImage / .pkg build scripts
+```
+
+## Building installers
+
+- **Windows** — `dotnet publish` of the WPF wrapper (WebView2) + Inno Setup script.
+- **Linux deb** — `node linux/build-deb.js` (pure-Node .deb builder, no dpkg needed).
+- **Linux tarball** — `node linux/build-tarball.js`.
+- **AppImage** — `linux/build-appimage.sh` (or the GitHub Actions workflow).
+- **macOS pkg** — `mac/build-pkg.sh` (or the GitHub Actions workflow).
+
+## License
+
+[GPL-3.0](LICENSE) © AlexFirst
+
+The UI uses Minecraft-style fonts, [Pixelarticons](https://pixelarticons.com/) (MIT), the [Modrinth API](https://docs.modrinth.com/) for the mod catalog, [mc-heads.net](https://mc-heads.net/) for player heads, item textures from [InventivetalentDev/minecraft-assets](https://github.com/InventivetalentDev/minecraft-assets), and [CodeMirror 5](https://codemirror.net/5/) (MIT) for the file editor.

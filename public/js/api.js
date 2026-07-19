@@ -3,9 +3,7 @@
 /* Тонкий клиент REST API панели. */
 
 window.API = (function () {
-  // База API. Локально пусто (тот же origin). На центральном сайте удалённого управления
-  // выставляется window.CG_API_BASE = '/r/<globalId>' — и все запросы идут через прокси-туннель.
-  function B(p) { return (window.CG_API_BASE || '') + p; }
+  function B(p) { return p; }
 
   async function call(method, url, body) {
     let res;
@@ -55,16 +53,12 @@ window.API = (function () {
     command: (id, command) => call('POST', '/api/servers/' + id + '/command', { command: command }),
     properties: (id) => call('GET', '/api/servers/' + id + '/properties'),
     saveProperties: (id, body) => call('PUT', '/api/servers/' + id + '/properties', body),
-    remoteGet: (id) => call('GET', '/api/servers/' + id + '/remote'),
-    remoteSet: (id, enabled) => call('POST', '/api/servers/' + id + '/remote', { enabled: enabled }),
     proxyLinkGet: (id) => call('GET', '/api/servers/' + id + '/proxy-link'),
     proxyLinkSet: (id, proxyId, action) => call('POST', '/api/servers/' + id + '/proxy-link', { proxyId: proxyId, action: action }),
-    remoteRegenerate: (id) => call('POST', '/api/servers/' + id + '/remote/regenerate'),
     consoleStream: (id) => new EventSource(B('/api/servers/' + id + '/console')),
     stats: (id) => call('GET', '/api/servers/' + id + '/stats'),
     player: (id, name) => call('GET', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),
     playerEdit: (id, body) => call('POST', '/api/servers/' + id + '/playeredit', body),
-    openUrl: (url) => call('POST', '/api/openurl', { url: url }),
     whitelist: (id) => call('GET', '/api/servers/' + id + '/whitelist'),
     whitelistChange: (id, action, name) => call('POST', '/api/servers/' + id + '/whitelist', { action: action, name: name }),
     moderate: (id, action, name) => call('POST', '/api/servers/' + id + '/moderate', { action: action, name: name }),
@@ -93,23 +87,9 @@ window.API = (function () {
     me: () => call('GET', '/api/auth/me'),
     logout: () => call('POST', '/api/auth/logout'),
 
-    // аккаунт центрального сервера (удалённые серверы в десктопе)
-    centralState: () => call('GET', '/api/central'),
-    centralLogin: (username, password) => call('POST', '/api/central/login', { username: username, password: password }),
-    centralRegister: (username, password) => call('POST', '/api/central/register', { username: username, password: password }),
-    centralLogout: () => call('POST', '/api/central/logout'),
-    centralLink: (code) => call('POST', '/api/central/link', { code: code }),
-    centralMe: () => call('GET', '/api/central/me'),
-    centralRename: (newName) => call('POST', '/api/central/rename', { newName: newName }),
-    centralChangePassword: (current, next) => call('POST', '/api/central/password', { current: current, next: next }),
-    centralDiscordLink: () => call('POST', '/api/central/discord/link'),
-    centralDiscordUnlink: () => call('POST', '/api/central/discord/unlink'),
-    centralDiscordLoginInit: () => call('POST', '/api/central/discord/login-init'),
-    centralDiscordLoginPoll: (t) => call('POST', '/api/central/discord/login-poll', { loginToken: t }),
-    usersList: () => call('GET', '/api/users'),
-    userCreate: (body) => call('POST', '/api/users', body),
-    userUpdate: (name, body) => call('PUT', '/api/users/' + encodeURIComponent(name), body),
-    userDelete: (name) => call('DELETE', '/api/users/' + encodeURIComponent(name)),
+    // прямой удалённый доступ (HTTPS + пароль)
+    remoteAccess: () => call('GET', '/api/remote-access'),
+    remoteAccessAction: (action, extra) => call('POST', '/api/remote-access', Object.assign({ action: action }, extra || {})),
 
     backups: (id) => call('GET', '/api/servers/' + id + '/backups'),
     backupCreate: (id, label) => call('POST', '/api/servers/' + id + '/backups', { label: label }),
@@ -139,13 +119,12 @@ window.API = (function () {
       const qs = 'q=' + encodeURIComponent(opts.q || '') +
         '&category=' + encodeURIComponent(opts.category || '') +
         '&sort=' + encodeURIComponent(opts.sort || 'relevance') +
-        '&offset=' + (opts.offset || 0) +
-        '&provider=' + encodeURIComponent(opts.provider || 'modrinth');
+        '&offset=' + (opts.offset || 0);
       return call('GET', '/api/servers/' + id + '/plugins/search?' + qs);
     },
-    pluginInstall: (id, projectId, provider) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId, provider: provider || 'modrinth' }),
-    pluginDetails: (id, projectId, provider) => call('GET', '/api/servers/' + id + '/plugins/project?id=' + encodeURIComponent(projectId) + '&provider=' + encodeURIComponent(provider || 'modrinth')),
-    modDetails: (id, projectId, provider) => call('GET', '/api/servers/' + id + '/mods/project?id=' + encodeURIComponent(projectId) + '&provider=' + encodeURIComponent(provider || 'modrinth')),
+    pluginInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId }),
+    pluginDetails: (id, projectId) => call('GET', '/api/servers/' + id + '/plugins/project?id=' + encodeURIComponent(projectId)),
+    modDetails: (id, projectId) => call('GET', '/api/servers/' + id + '/mods/project?id=' + encodeURIComponent(projectId)),
     pluginDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/plugins?file=' + encodeURIComponent(file)),
     pluginToggle: (id, file) => call('POST', '/api/servers/' + id + '/plugins/toggle', { file: file }),
 
@@ -155,11 +134,10 @@ window.API = (function () {
       const qs = 'q=' + encodeURIComponent(opts.q || '') +
         '&category=' + encodeURIComponent(opts.category || '') +
         '&sort=' + encodeURIComponent(opts.sort || 'relevance') +
-        '&offset=' + (opts.offset || 0) +
-        '&provider=' + encodeURIComponent(opts.provider || 'modrinth');
+        '&offset=' + (opts.offset || 0);
       return call('GET', '/api/servers/' + id + '/mods/search?' + qs);
     },
-    modInstall: (id, projectId, provider) => call('POST', '/api/servers/' + id + '/mods/install', { projectId: projectId, provider: provider || 'modrinth' }),
+    modInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/mods/install', { projectId: projectId }),
     modDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/mods?file=' + encodeURIComponent(file)),
     modToggle: (id, file) => call('POST', '/api/servers/' + id + '/mods/toggle', { file: file }),
 

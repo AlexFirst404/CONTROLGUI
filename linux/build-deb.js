@@ -11,7 +11,7 @@ const path = require('path');
 const zlib = require('zlib');
 
 const ROOT = path.join(__dirname, '..');
-const VERSION = process.argv[2] || '1.7.1';
+const VERSION = process.argv[2] || '2.0.0';
 const MTIME = 1700000000; // фиксированное время для воспроизводимости
 
 // ----------------------------------------------------------------- ustar tar ---
@@ -99,11 +99,13 @@ function makeTree() {
 
 function panel(t) {
   t.addFile('opt/controlgui/server.js', path.join(ROOT, 'server.js'), 0o644);
+  t.addFile('opt/controlgui/cli.js', path.join(ROOT, 'cli.js'), 0o644);
+  t.addFile('opt/controlgui/tui.js', path.join(ROOT, 'tui.js'), 0o644);
   t.addTree(path.join(ROOT, 'lib'), 'opt/controlgui/lib');
   t.addTree(path.join(ROOT, 'public'), 'opt/controlgui/public');
   // окно WebKitGTK для режима «приложение» (общее с AppImage)
   t.addFile('opt/controlgui/controlgui-window.py', path.join(__dirname, 'appimage', 'controlgui-window.py'), 0o644);
-  for (const extra of ['package.json', 'LICENSE', 'README.md']) {
+  for (const extra of ['package.json', 'LICENSE', 'README.md', 'README.ru.md']) {
     const p = path.join(ROOT, extra);
     if (fs.existsSync(p)) t.addFile('opt/controlgui/' + extra, p, 0o644);
   }

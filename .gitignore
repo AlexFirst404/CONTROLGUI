@@ -16,3 +16,6 @@ linux/*.deb
 linux/*.AppImage
 linux/.appimage-cache/
 linux/AppDir-*/
+
+# собранный серверный тарболл (воспроизводится: node linux/build-tarball.js)
+linux/*.tar.gz

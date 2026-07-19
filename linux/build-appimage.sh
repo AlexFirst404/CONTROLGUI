@@ -38,8 +38,8 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/opt/controlgui" \
          "$APPDIR/usr/share/icons/hicolor/256x256/apps" \
          "$APPDIR/usr/share/applications"
 
-# панель (как в .deb): server.js + lib + public
-cp "$ROOT/server.js" "$APPDIR/opt/controlgui/"
+# панель (как в .deb): server.js + cli/tui + lib + public
+cp "$ROOT/server.js" "$ROOT/cli.js" "$ROOT/tui.js" "$APPDIR/opt/controlgui/"
 cp -r "$ROOT/lib" "$ROOT/public" "$APPDIR/opt/controlgui/"
 cp "$HERE/appimage/controlgui-window.py" "$APPDIR/opt/controlgui/"
 

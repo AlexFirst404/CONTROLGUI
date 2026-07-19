@@ -188,46 +188,18 @@
     return perms.some((p) => can(p));
   }
 
-  function accountLabel() {
-    // в десктопе личность — аккаунт центра (создаётся на гейте); иначе локальный пользователь панели
-    if (!window.CG_REMOTE && cgCentralUser && cgCentralUser.username) return cgCentralUser.username;
-    if (state.openMode || !state.me || !state.me.username) return 'Локальный режим';
-    return state.me.username;
-  }
-
   async function loadMe() {
     try {
       const data = await API.me();
       state.me = data.user;
-      state.permissions = data.permissions || [];
-      // в удалённом режиме игнорируем openMode панели (доступ уже авторизован центром)
-      state.openMode = window.CG_REMOTE ? false : !!data.openMode;
+      state.remoteSession = !!data.remote; // открыто через удалённый HTTPS-доступ
+      state.openMode = !!data.openMode;
       applyPermissions();
     } catch (e) { /* при 401 клиент сам уведёт на /login */ }
   }
 
   /* Прячем вкладки/кнопки/пункты меню, недоступные пользователю. */
   function applyPermissions() {
-    const isAdmin = state.me && (state.me.admin || (state.me.perms && state.me.perms.admin));
-    // текущий аккаунт — в меню и на главной
-    const accName = $('#menu-account-name'); if (accName) accName.textContent = accountLabel();
-    const homeAcc = $('#home-account');
-    if (homeAcc) {
-      homeAcc.innerHTML = '';
-      homeAcc.appendChild(picon('user'));
-      const t = document.createElement('span');
-      t.textContent = 'Вы вошли как: ' + accountLabel();
-      homeAcc.appendChild(t);
-    }
-    // локальная авторизация убрана: локального экрана «Пользователи» и локального «Выйти» нет
-    // (вход — через аккаунт центра на гейте; выход — в «Профиле»)
-    $('#menu-users').classList.add('hidden');
-    $('#menu-logout').classList.add('hidden');
-    // удалённый режим: панель-локальные пункты не относятся к удалённому серверу — прячем
-    if (window.CG_REMOTE) {
-      // удалённое управление одним сервером: убираем промежуточный экран «Серверы» и локальные пункты
-      $$('.menu-item[data-menu="home"], .menu-item[data-menu="create"], .menu-item[data-menu="remote"], .menu-item[data-menu="settings"], .menu-item[data-menu="about"]').forEach((el) => el.classList.add('hidden'));
-    }
     // создание сервера
     $('#btn-goto-create').classList.toggle('hidden', !can('server.create'));
     // вкладки сервера (по любому из соответствующих прав)
@@ -612,18 +584,6 @@
     $$('#launchmode-btns .seg').forEach((b) => b.classList.toggle('sel', b.dataset.mode === mode));
   }
 
-  // размытие фона игры в моде — клиентская настройка (действует только внутри
-  // Minecraft). Хранится в localStorage, применяется окном рабочего стола.
-  function ingameBlurOn() {
-    try { return localStorage.getItem('cgIngameBlur') !== '0'; } catch (e) { return true; }
-  }
-  function setIngameBlurPref(on) {
-    try { localStorage.setItem('cgIngameBlur', on ? '1' : '0'); } catch (e) { /* приватный режим */ }
-    if (window.parent !== window) {
-      try { window.parent.postMessage({ cg: 'set-blur', on: !!on }, location.origin); } catch (e) { /* */ }
-    }
-  }
-
   function openAppSettings() {
     // текущий режим открытия (читается лаунчером при следующем старте)
     API.launchMode().then((r) => setLaunchModeBtns(r && r.mode ? r.mode : 'app')).catch(() => {});
@@ -639,10 +599,83 @@
       scaleSlider.set(appSettings.scale);
     }
     $('#set-graphs').classList.toggle('on', appSettings.graphs !== false);
-    $('#set-ingame-blur').classList.toggle('on', ingameBlurOn());
     API.trayMinimize().then((r) => $('#set-tray').classList.toggle('on', !!(r && r.enabled))).catch(() => {});
+    refreshRemoteAccessCard();
     $('#appset-root').classList.remove('hidden');
     setTimeout(() => scaleSlider.refresh(), 30);
+  }
+
+  // ---------- удалённый доступ (HTTPS + пароль) ----------
+
+  let raStatus = null;
+  async function refreshRemoteAccessCard() {
+    const card = $('#ra-card');
+    if (!card) return;
+    try { raStatus = await API.remoteAccess(); } catch (e) { card.classList.add('hidden'); return; }
+    // в удалённой сессии настройки удалёнки менять нельзя — показываем только состояние
+    const t = $('#ra-toggle');
+    t.classList.toggle('on', !!raStatus.enabled);
+    $('#ra-body').classList.toggle('hidden', !raStatus.enabled);
+    const portEl = $('#ra-port');
+    if (portEl && document.activeElement !== portEl) portEl.value = raStatus.port;
+    $('#ra-state').textContent = raStatus.enabled
+      ? (raStatus.running ? 'Работает: HTTPS-порт ' + raStatus.port + ' открыт для подключений.' : 'Включён, но листенер не запущен (порт занят?) — смотрите консоль панели.')
+      : '';
+    const ips = raStatus.lanIps || [];
+    $('#ra-addr').innerHTML = ips.length
+      ? 'В локальной сети: <code>https://' + ips[0] + ':' + raStatus.port + '</code>. Из интернета — пробросьте порт <b>' + raStatus.port + '</b> на роутере на этот компьютер и используйте внешний IP.'
+      : 'Пробросьте порт <b>' + raStatus.port + '</b> на роутере на этот компьютер.';
+    $('#ra-fp').textContent = raStatus.fingerprint
+      ? 'Отпечаток сертификата (SHA-256): ' + raStatus.fingerprint.replace(/(..)/g, '$1:').slice(0, -1).toUpperCase().slice(0, 47) + '…'
+      : '';
+    if (state.remoteSession) { $('#ra-err').textContent = 'Менять настройки удалённого доступа можно только с локальной панели.'; }
+  }
+  async function raAction(action, extra, okMsg) {
+    $('#ra-err').textContent = '';
+    try {
+      await API.remoteAccessAction(action, extra);
+      if (okMsg) showToast(okMsg, 'ok');
+      await refreshRemoteAccessCard();
+      return true;
+    } catch (e) { $('#ra-err').textContent = e.message; return false; }
+  }
+  function bindRemoteAccessCard() {
+    const t = $('#ra-toggle');
+    if (!t) return;
+    t.addEventListener('click', async () => {
+      const on = t.classList.contains('on');
+      if (on) {
+        if (await confirmDialog('Выключить удалённый доступ? Все удалённые сессии будут разорваны.',
+          { title: 'Удалённый доступ', yesText: 'Выключить', danger: true })) {
+          raAction('disable', null, 'Удалённый доступ выключен.');
+        }
+      } else {
+        if (raStatus && !raStatus.hasPassword) {
+          $('#ra-body').classList.remove('hidden');
+          $('#ra-err').textContent = 'Сначала задайте пароль и нажмите «Сохранить» — доступ включится сам.';
+          setTimeout(() => $('#ra-pass').focus(), 40);
+          return;
+        }
+        raAction('enable', null, 'Удалённый доступ включён.');
+      }
+    });
+    $('#ra-pass-save').addEventListener('click', async () => {
+      const pw = $('#ra-pass').value;
+      if (pw.length < 6) { $('#ra-err').textContent = 'Пароль: минимум 6 символов.'; return; }
+      if (await raAction('set-password', { password: pw }, 'Пароль сохранён.')) {
+        $('#ra-pass').value = '';
+        // первый пароль — включаем доступ сразу (пользователь этого и хотел)
+        if (raStatus && !raStatus.enabled) raAction('enable', null, 'Удалённый доступ включён.');
+      }
+    });
+    $('#ra-port-save').addEventListener('click', () => {
+      raAction('set-port', { port: parseInt($('#ra-port').value, 10) }, 'Порт применён.');
+    });
+    $('#ra-eye').addEventListener('click', () => {
+      const p = $('#ra-pass');
+      p.type = p.type === 'password' ? 'text' : 'password';
+      $('#ra-eye').style.setProperty('--i', "url('/icons/" + (p.type === 'text' ? 'eye-closed' : 'eye') + ".svg')");
+    });
   }
 
   // ---------- экраны ----------
@@ -662,13 +695,9 @@
     state.screen = name;
     $('#screen-list').classList.toggle('hidden', name !== 'list');
     $('#screen-create').classList.toggle('hidden', name !== 'create');
-    $('#screen-remote').classList.toggle('hidden', name !== 'remote');
-    $('#screen-profile').classList.toggle('hidden', name !== 'profile');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
-    $('#screen-users').classList.toggle('hidden', name !== 'users');
     $('#screen-proxy').classList.toggle('hidden', name !== 'proxy');
-    if (name !== 'profile' && typeof stopDiscordPoll === 'function') stopDiscordPoll();
-    // бургер-меню — на всех экранах (главный, создание, сервер, пользователи)
+    // бургер-меню — на всех экранах
     $('#btn-burger').classList.remove('hidden');
     if (name === 'create') updateJavaInstallUI();
     $('#app-menu').classList.remove('open');
@@ -682,10 +711,7 @@
     // (вкладки сервера пушит switchTab)
     if (name === 'list') pushHash('');
     else if (name === 'create') pushHash('#create');
-    else if (name === 'remote') pushHash('#remote');
-    else if (name === 'users') pushHash('#users');
     else if (name === 'proxy') pushHash('#proxy');
-    else if (name === 'profile') pushHash('#profile');
   }
 
   /* Применяем состояние из адреса при нажатии «назад/вперёд» — без выхода из SPA. */
@@ -695,14 +721,8 @@
       const hash = location.hash || '';
       if (hash === '#create') {
         if (state.screen !== 'create') { showScreen('create'); suggestPort(); loadVersions(); }
-      } else if (hash === '#users') {
-        if (state.screen !== 'users') openUsers();
       } else if (hash === '#proxy') {
         if (state.screen !== 'proxy') { showScreen('proxy'); renderProxyViz(); }
-      } else if (hash === '#remote') {
-        if (state.screen !== 'remote') openRemoteScreen();
-      } else if (hash === '#profile') {
-        if (state.screen !== 'profile') openProfileScreen();
       } else if (hash.indexOf('#server=') === 0) {
         const rest = hash.slice(8);
         const id = rest.split('/tab/')[0].split('/player/')[0];
@@ -769,37 +789,9 @@
 
   // ---------- список серверов ----------
 
-  // id серверов, которые ответили 404 «не найден» — больше не показываем (фантомы)
-  const deadServerIds = new Set();
   async function loadServers() {
-    let data;
-    try {
-      data = await API.servers();
-    } catch (e) {
-      // удалённое управление: панель офлайн/недоступна — показываем плашку, а НЕ «псевдоглавный»
-      // экран со списком и кнопками «создать сервер» (его в удалёнке быть не должно)
-      if (window.CG_REMOTE) {
-        if (e.status === 502 || /офлайн|offline|недоступн/i.test(e.message || ''))
-          showPlaque('Панель офлайн', 'Удалённая панель сейчас недоступна. Управление вернётся, когда она снова выйдет на связь.');
-        else if (e.status === 404) showPlaque('Не найдено', 'Сервер недоступен или был удалён.');
-        else showPlaque('Ошибка связи', e.message);
-        return;
-      }
-      throw e;
-    }
-    // deadServerIds — только для фантомных УДАЛЁННЫХ серверов; локальные (из store) всегда показываем
-    state.servers = (data.servers || []).filter((s) => !(s.remote && deadServerIds.has(s.id)));
-    if (window.CG_REMOTE) {
-      // удалённый режим управляет ОДНИМ сервером — открываем его сразу, без экрана выбора;
-      // нет серверов → сервер удалён/офлайн: плашка вместо экрана создания
-      if (state.servers.length) {
-        hidePlaque();
-        if (state.screen !== 'server') openServer(state.servers[0].id);
-      } else {
-        showPlaque('Сервер офлайн', 'Этот сервер сейчас недоступен. Управление откроется, когда панель снова выйдет на связь.');
-      }
-      return;
-    }
+    const data = await API.servers();
+    state.servers = data.servers || [];
     renderList();
   }
 
@@ -830,339 +822,7 @@
     chip('users', 'Игроков онлайн: <b>' + players + '</b>');
   }
 
-  // ---------- экран «Подключить удалённый сервер» (аккаунт центра) ----------
-  let rcBound = false;
-  function rcTab(login) {
-    $('#rc-tab-login').classList.toggle('primary', login);
-    $('#rc-tab-reg').classList.toggle('primary', !login);
-    $('#rc-login-form').classList.toggle('hidden', !login);
-    $('#rc-reg-form').classList.toggle('hidden', login);
-  }
-  async function refreshRemoteScreen() {
-    let st = null;
-    try { st = await API.centralState(); } catch (e) { /* старая сборка */ }
-    const on = !!(st && st.loggedIn);
-    $('#rc-auth').classList.toggle('hidden', on);
-    $('#rc-linked').classList.toggle('hidden', !on);
-    if (on) $('#rc-username').textContent = st.username || '';
-  }
-  function openRemoteScreen() {
-    showScreen('remote');
-    if (!rcBound) {
-      rcBound = true;
-      $('#rc-tab-login').addEventListener('click', () => rcTab(true));
-      $('#rc-tab-reg').addEventListener('click', () => rcTab(false));
-      $('#rc-login-btn').addEventListener('click', async () => {
-        $('#rc-li-err').textContent = '';
-        try { await API.centralLogin($('#rc-li-user').value.trim(), $('#rc-li-pass').value); $('#rc-li-pass').value = ''; await syncCentralUser(); await refreshRemoteScreen(); guard(loadServers); showToast('Вход выполнен.', 'ok'); }
-        catch (e) { $('#rc-li-err').textContent = e.message; }
-      });
-      $('#rc-reg-btn').addEventListener('click', async () => {
-        $('#rc-rg-err').textContent = '';
-        try { await API.centralRegister($('#rc-rg-user').value.trim(), $('#rc-rg-pass').value); $('#rc-rg-pass').value = ''; await syncCentralUser(); await refreshRemoteScreen(); guard(loadServers); showToast('Аккаунт создан, вход выполнен.', 'ok'); }
-        catch (e) { $('#rc-rg-err').className = 'err'; $('#rc-rg-err').textContent = e.message; }
-      });
-      $('#rc-logout-btn').addEventListener('click', async () => { await API.centralLogout(); cgCentralUser = null; updateCentralLabel(); await refreshRemoteScreen(); guard(loadServers); });
-      $('#rc-link-btn').addEventListener('click', async () => {
-        $('#rc-link-err').textContent = '';
-        const code = $('#rc-code').value.trim();
-        if (!code) return;
-        try { await API.centralLink(code); $('#rc-code').value = ''; $('#rc-link-err').className = 'err ok'; $('#rc-link-err').textContent = 'Сервер привязан! Он появится в списке «Серверы».'; setTimeout(() => guard(loadServers), 600); }
-        catch (e) { $('#rc-link-err').className = 'err'; $('#rc-link-err').textContent = e.message; }
-      });
-      $('#rc-goto-servers').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
-      rcTab(true);
-    }
-    refreshRemoteScreen();
-  }
-
-  // ---------- аккаунт центра в десктопе: гейт первого запуска + профиль ----------
-  let cgCentralUser = null;
-  let gateResolve = null, gateBound = false, profileBound = false, discordPollTimer = null, discordPollLeft = 0;
-
-  function updateCentralLabel() {
-    const el = $('#menu-account-name'); if (el) el.textContent = accountLabel();
-    const chev = $('#menu-account-chev'); if (chev) chev.classList.toggle('hidden', !!window.CG_REMOTE || !cgCentralUser);
-  }
-  /* Подтянуть профиль аккаунта центра (ник/Discord) и обновить лейбл. Возвращает ответ centralMe. */
-  async function syncCentralUser() {
-    if (window.CG_REMOTE) return null;
-    let res = null;
-    try { res = await API.centralMe(); } catch (e) { return null; }
-    if (res && res.user) cgCentralUser = res.user;
-    else if (res && res.loggedIn) { if (!cgCentralUser) cgCentralUser = { username: res.username }; }
-    else cgCentralUser = null;
-    updateCentralLabel();
-    return res;
-  }
-  let centralSessionPrompting = false;
-  async function validateCentralSession() {
-    const res = await syncCentralUser();
-    if (!res) return;
-    // сессия истекла ИЛИ пользователь не в аккаунте — блокирующий гейт «войдите/создайте»
-    if (res.expired || res.loggedIn === false) {
-      if (centralSessionPrompting) return;
-      const g = $('#account-gate');
-      if (g && !g.classList.contains('hidden')) return; // гейт уже открыт
-      centralSessionPrompting = true;
-      cgCentralUser = null; updateCentralLabel();
-      if (state.screen === 'profile') { showScreen('list'); }
-      showToast('Сессия аккаунта истекла — войдите заново.');
-      // в окне рабочего стола гейт показывает только выделенное окно входа
-      if (EMBED && EMBED !== 'gate' && window.parent !== window) {
-        window.parent.postMessage({ cg: 'need-login' }, location.origin);
-        centralSessionPrompting = false;
-        return;
-      }
-      try { await showAccountGate(); await syncCentralUser(); guard(loadServers); }
-      finally { centralSessionPrompting = false; }
-    } else if (res.offline) {
-      showToast('Нет связи с сервером CONTROLGUI — удалённые серверы офлайн.');
-    }
-  }
-
-  // --- гейт ---
-  function gateTab(login) {
-    $('#gate-tab-login').classList.toggle('primary', login);
-    $('#gate-tab-reg').classList.toggle('primary', !login);
-    $('#gate-login-form').classList.toggle('hidden', !login);
-    $('#gate-reg-form').classList.toggle('hidden', login);
-  }
-  function setupGate() {
-    if (gateBound || !$('#account-gate')) return;
-    gateBound = true;
-    $('#gate-tab-login').addEventListener('click', () => gateTab(true));
-    $('#gate-tab-reg').addEventListener('click', () => gateTab(false));
-    $('#gate-login-btn').addEventListener('click', gateDoLogin);
-    $('#gate-reg-btn').addEventListener('click', gateDoReg);
-    $('#gate-li-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') gateDoLogin(); });
-    $('#gate-rg-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') gateDoReg(); });
-    const dr = $('#gate-discord-reset');
-    if (dr) dr.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const err = $('#gate-li-err'); err.className = 'err'; err.textContent = '';
-      try {
-        const st = await API.centralState();
-        const base = (st && st.central) || '';
-        if (!base) { err.textContent = 'Адрес сервера CONTROLGUI неизвестен.'; return; }
-        openExternal(base + '/api/account/discord/reset-start');
-        err.className = 'err ok';
-        err.textContent = 'Откройте окно браузера, подтвердите Discord и задайте новый пароль, затем войдите.';
-      } catch (e2) { err.textContent = 'Не удалось открыть сброс пароля.'; }
-    });
-    const dl = $('#gate-discord-login');
-    if (dl) dl.addEventListener('click', () => gateDiscordLogin());
-  }
-  /* Открывает ссылку в новом окне. Внутри игры (Minecraft-мод, встроенный
-     Chromium) window.open гасится — просим панель открыть системный браузер. */
-  function openExternal(url) {
-    const abs = new URL(url, location.href).href;
-    if (document.documentElement.classList.contains('ingame')) {
-      API.openUrl(abs).catch(() => showToast('Не удалось открыть браузер'));
-    } else {
-      window.open(abs, '_blank', 'noopener');
-    }
-  }
-
-  let gateDiscordPoll = null;
-  async function gateDiscordLogin() {
-    const err = $('#gate-li-err'); err.className = 'err'; err.textContent = '';
-    const btn = $('#gate-discord-login');
-    let init;
-    try { init = await API.centralDiscordLoginInit(); } catch (e) { err.textContent = e.message; return; }
-    if (!init || !init.url || !init.loginToken) { err.textContent = (init && init.error) || 'Discord недоступен.'; return; }
-    openExternal(init.url);
-    err.className = 'err ok';
-    err.textContent = 'Подтвердите вход в открывшемся окне Discord…';
-    if (btn) btn.disabled = true;
-    // опрашиваем центр, пока вход не подтвердится (до ~2 минут)
-    let left = 48;
-    if (gateDiscordPoll) clearInterval(gateDiscordPoll);
-    gateDiscordPoll = setInterval(async () => {
-      left--;
-      let r = null;
-      try { r = await API.centralDiscordLoginPoll(init.loginToken); } catch (e) { /* ждём */ }
-      if (r && r.ok) {
-        clearInterval(gateDiscordPoll); gateDiscordPoll = null;
-        if (btn) btn.disabled = false;
-        await syncCentralUser(); hideAccountGate(); showToast('Вход через Discord выполнен.', 'ok'); guard(loadServers);
-      } else if (left <= 0) {
-        clearInterval(gateDiscordPoll); gateDiscordPoll = null;
-        if (btn) btn.disabled = false;
-        err.className = 'err'; err.textContent = 'Время ожидания истекло. Попробуйте ещё раз.';
-      }
-    }, 2500);
-  }
-  function showAccountGate() {
-    return new Promise((resolve) => {
-      gateResolve = resolve;
-      const g = $('#account-gate'); if (g) g.classList.remove('hidden');
-      setTimeout(() => { const u = $('#gate-li-user'); if (u) u.focus(); }, 60);
-    });
-  }
-  function hideAccountGate() {
-    const g = $('#account-gate'); if (g) g.classList.add('hidden');
-    if (gateResolve) { const r = gateResolve; gateResolve = null; r(); }
-    // окно входа на рабочем столе сообщает родителю об успехе
-    if (EMBED && window.parent !== window) window.parent.postMessage({ cg: 'logged-in' }, location.origin);
-  }
-  async function gateDoLogin() {
-    const err = $('#gate-li-err'); err.textContent = '';
-    const u = $('#gate-li-user').value.trim(); const p = $('#gate-li-pass').value;
-    if (!u || !p) { err.textContent = 'Введите логин и пароль.'; return; }
-    const btn = $('#gate-login-btn'); btn.disabled = true;
-    try { await API.centralLogin(u, p); $('#gate-li-pass').value = ''; await syncCentralUser(); hideAccountGate(); showToast('Вход выполнен.', 'ok'); }
-    catch (e) { err.textContent = e.message; }
-    finally { btn.disabled = false; }
-  }
-  async function gateDoReg() {
-    const err = $('#gate-rg-err'); err.textContent = '';
-    const u = $('#gate-rg-user').value.trim(); const p = $('#gate-rg-pass').value;
-    if (!u || p.length < 6) { err.textContent = 'Логин и пароль минимум 6 символов.'; return; }
-    const btn = $('#gate-reg-btn'); btn.disabled = true;
-    try { await API.centralRegister(u, p); $('#gate-rg-pass').value = ''; await syncCentralUser(); hideAccountGate(); showToast('Аккаунт создан.', 'ok'); }
-    catch (e) { err.textContent = e.message; }
-    finally { btn.disabled = false; }
-  }
-
-  // --- профиль ---
-  function openProfileScreen() {
-    if (window.CG_REMOTE) return;
-    showScreen('profile');
-    refreshProfileScreen();
-  }
-  async function refreshProfileScreen() {
-    let res = null;
-    try { res = await API.centralMe(); } catch (e) { /* офлайн */ }
-    if (res && res.user) { cgCentralUser = res.user; updateCentralLabel(); }
-    const u = (res && res.user) || cgCentralUser || null;
-    $('#pf-username').textContent = u ? u.username : '—';
-    const inp = $('#pf-rename-input');
-    // не затираем ввод, пока пользователь редактирует ник (поле не readonly)
-    if (inp && inp.hasAttribute('readonly')) inp.value = u ? u.username : '';
-    const ep = res && res.endpoint;
-    $('#pf-server').textContent = ep ? ('Сервер: ' + ep.host + (ep.port && ep.port !== 443 ? ':' + ep.port : '')) : '';
-    const enabled = !!(res && res.discordEnabled);
-    const linked = !!(u && u.discord);
-    $('#pf-discord-linked').classList.toggle('hidden', !linked);
-    $('#pf-discord-unlinked').classList.toggle('hidden', linked || !enabled);
-    $('#pf-discord-off').classList.toggle('hidden', linked || enabled);
-    if (linked) $('#pf-discord-name').textContent = u.discord.name || u.discord.id;
-    const av = $('#pf-avatar');
-    // аватар Discord, если привязан (CSS прячет img без src)
-    if (av) { const url = u && u.discord && u.discord.avatar; if (url) av.src = url; else av.removeAttribute('src'); }
-    setRenameEditing(false); // при открытии/обновлении профиля — режим просмотра
-  }
-  // переключение поля ника: просмотр (readonly + карандаш) ↔ редактирование (ввод + галочка)
-  function setRenameEditing(on) {
-    const inp = $('#pf-rename-input'); const btn = $('#pf-rename-btn');
-    if (!inp || !btn) return;
-    const ic = btn.querySelector('.pi');
-    if (on) {
-      inp.removeAttribute('readonly'); inp.focus(); inp.select();
-      if (ic) ic.dataset.ic = 'check'; applyIcons(btn);
-      btn.title = 'Сохранить ник';
-    } else {
-      inp.setAttribute('readonly', '');
-      if (ic) ic.dataset.ic = 'edit'; applyIcons(btn);
-      btn.title = 'Изменить ник';
-    }
-  }
-  function setupProfile() {
-    if (profileBound || !$('#screen-profile')) return;
-    profileBound = true;
-    // смена пароля — в отдельной модалке (кнопка «Сбросить пароль»)
-    $('#pf-pw-open').addEventListener('click', () => {
-      $('#pwm-cur').value = ''; $('#pwm-new').value = ''; $('#pwm-err').textContent = '';
-      $('#pw-modal').classList.remove('hidden'); setTimeout(() => $('#pwm-cur').focus(), 40);
-    });
-    const pwReset = $('#pwm-discord-reset');
-    if (pwReset) pwReset.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const err = $('#pwm-err'); err.className = 'err'; err.textContent = '';
-      try {
-        const st = await API.centralState();
-        const base = (st && st.central) || '';
-        if (!base) { err.textContent = 'Адрес сервера CONTROLGUI неизвестен.'; return; }
-        openExternal(base + '/api/account/discord/reset-start');
-        err.className = 'err ok';
-        err.textContent = 'Подтвердите Discord в открывшемся окне и задайте новый пароль.';
-      } catch (e2) { err.textContent = 'Не удалось открыть сброс пароля.'; }
-    });
-    $('#pw-close').addEventListener('click', () => $('#pw-modal').classList.add('hidden'));
-    $('#pw-modal').addEventListener('click', (e) => { if (e.target.id === 'pw-modal') $('#pw-modal').classList.add('hidden'); });
-    $('#pwm-save').addEventListener('click', async () => {
-      const err = $('#pwm-err'); err.className = 'err'; err.textContent = '';
-      const cur = $('#pwm-cur').value; const nw = $('#pwm-new').value;
-      if (!cur || nw.length < 6) { err.textContent = 'Текущий пароль и новый (минимум 6 символов).'; return; }
-      try { await API.centralChangePassword(cur, nw); $('#pw-modal').classList.add('hidden'); showToast('Пароль изменён.', 'ok'); }
-      catch (e) { err.className = 'err'; err.textContent = e.message; }
-    });
-    async function doRename() {
-      const err = $('#pf-rename-err'); err.className = 'err'; err.textContent = '';
-      const nn = $('#pf-rename-input').value.trim();
-      if (!nn) { err.textContent = 'Введите ник.'; return; }
-      if (cgCentralUser && nn === cgCentralUser.username) { setRenameEditing(false); return; } // без изменений
-      if (!await confirmDialog('Сменить ник на «' + nn + '»? Он обновится во всех ваших серверах.', { title: 'Смена ника', yesText: 'Сменить', danger: false })) return;
-      try {
-        const r = await API.centralRename(nn);
-        cgCentralUser = r.user || { username: nn }; updateCentralLabel();
-        $('#pf-username').textContent = cgCentralUser.username;
-        err.textContent = ''; setRenameEditing(false);
-        showToast('Ник изменён на «' + cgCentralUser.username + '».', 'ok');
-      } catch (e) { err.className = 'err'; err.textContent = e.message; showToast(e.message); }
-    }
-    // карандаш → редактирование, галочка → сохранить
-    $('#pf-rename-btn').addEventListener('click', () => {
-      if ($('#pf-rename-input').hasAttribute('readonly')) setRenameEditing(true);
-      else doRename();
-    });
-    $('#pf-rename-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doRename(); } });
-    $('#pf-discord-link').addEventListener('click', async () => {
-      const err = $('#pf-discord-err'); err.className = 'err'; err.textContent = '';
-      try {
-        const r = await API.centralDiscordLink();
-        if (r && r.url) {
-          openExternal(r.url);
-          $('#pf-discord-refresh').classList.remove('hidden');
-          err.className = 'err ok'; err.textContent = 'Подтвердите привязку в открывшемся окне, затем вернитесь сюда.';
-          startDiscordPoll();
-        }
-      } catch (e) { err.className = 'err'; err.textContent = e.message; }
-    });
-    $('#pf-discord-refresh').addEventListener('click', () => refreshProfileScreen());
-    $('#pf-discord-unlink').addEventListener('click', async () => {
-      if (!await confirmDialog('Отвязать Discord?', { title: 'Discord', yesText: 'Отвязать' })) return;
-      try { const r = await API.centralDiscordUnlink(); cgCentralUser = r.user || cgCentralUser; await refreshProfileScreen(); showToast('Discord отвязан.', 'ok'); }
-      catch (e) { $('#pf-discord-err').className = 'err'; $('#pf-discord-err').textContent = e.message; }
-    });
-    $('#pf-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
-    $('#pf-logout').addEventListener('click', doProfileLogout);
-  }
-  function startDiscordPoll() {
-    stopDiscordPoll(); discordPollLeft = 20;
-    discordPollTimer = setInterval(async () => {
-      discordPollLeft--;
-      let res = null; try { res = await API.centralMe(); } catch (e) { /* */ }
-      if (res && res.user && res.user.discord) { cgCentralUser = res.user; stopDiscordPoll(); refreshProfileScreen(); showToast('Discord привязан.', 'ok'); }
-      else if (discordPollLeft <= 0) stopDiscordPoll();
-    }, 3000);
-  }
-  function stopDiscordPoll() { if (discordPollTimer) { clearInterval(discordPollTimer); discordPollTimer = null; } }
-  async function doProfileLogout() {
-    if (!await confirmDialog('Выйти из аккаунта CONTROLGUI? Удалённые серверы станут недоступны.', { title: 'Выход', yesText: 'Выйти' })) return;
-    try { await API.centralLogout(); } catch (e) { /* */ }
-    cgCentralUser = null; updateCentralLabel();
-    if (EMBED && window.parent !== window) {
-      window.parent.postMessage({ cg: 'need-login' }, location.origin);
-      return;
-    }
-    showScreen('list');
-    await showAccountGate();
-    await syncCentralUser(); guard(loadServers);
-  }
-
-  /* Загрузка приложения: в десктопе сперва требуем аккаунт центра (гейт), затем обычный старт. */
+  /* Загрузка приложения. */
   async function bootApp() {
     // окно-редактор: минимальный запуск — только сам редактор, без опросов
     // окно-проводник: файловый менеджер сервера без шапки и вкладок
@@ -1191,19 +851,10 @@
       }
       return;
     }
-    if (!window.CG_REMOTE) {
-      let cs = null;
-      try { cs = await API.centralState(); } catch (e) { /* старая сборка без центра */ }
-      if (cs && cs.loggedIn) cgCentralUser = { username: cs.username };
-      // на рабочем столе гейт показывает только окно входа (go=gate);
-      // прочие окна просто ждут — рабочий стол сам откроет вход
-      else if (cs && (!EMBED || EMBED === 'gate')) await showAccountGate();
-    }
     loadMe();
     loadStatus();
     guard(loadServers);
     startPolling();
-    if (!window.CG_REMOTE) { updateCentralLabel(); validateCentralSession(); }
     routeInitialHash();
     if (EMBED === 'settings') openAppSettings(); // окно настроек панели
   }
@@ -1212,10 +863,6 @@
       showScreen('create'); loadVersions(); guard(loadServers).then(suggestPort);
     } else if (location.hash === '#proxy') {
       showScreen('proxy'); guard(loadServers).then(() => renderProxyViz());
-    } else if (location.hash === '#remote') {
-      openRemoteScreen();
-    } else if (location.hash === '#profile') {
-      openProfileScreen();
     } else if (location.hash.startsWith('#server=')) {
       const rest = location.hash.slice(8);
       const playerSplit = rest.split('/player/');
@@ -1257,10 +904,6 @@
       const subEl = document.createElement('div');
       subEl.className = 'srv-card-sub';
       subEl.textContent = (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server);
-      if (server.remote) {
-        const rb = document.createElement('span'); rb.className = 'srv-remote-badge'; rb.textContent = 'удалённый';
-        nameEl.appendChild(document.createTextNode(' ')); nameEl.appendChild(rb);
-      }
       id.appendChild(nameEl);
       id.appendChild(subEl);
       top.appendChild(icon);
@@ -1270,7 +913,7 @@
       const addrRow = document.createElement('div');
       addrRow.className = 'srv-card-addr';
       const host = (state.lanIps && state.lanIps.length ? state.lanIps[0] : 'localhost');
-      const address = server.remote ? 'CONTROLGUI Remote' : (host + ':' + server.port);
+      const address = host + ':' + server.port;
       const code = document.createElement('code');
       code.textContent = address;
       addrRow.appendChild(code);
@@ -1521,38 +1164,17 @@
     loadSettings();
   }
 
-  // плашка по центру (удалённый режим): «панель офлайн» / «не найдено» вместо спама тостами
-  function showPlaque(title, msg) {
-    const p = $('#cg-plaque'); if (!p) return;
-    $('#cg-plaque-title').textContent = title;
-    $('#cg-plaque-msg').textContent = msg || '';
-    const back = $('#cg-plaque-back'); if (back) back.onclick = () => { location.href = '/'; };
-    p.classList.remove('hidden');
-  }
-  function hidePlaque() { const p = $('#cg-plaque'); if (p) p.classList.add('hidden'); }
-
   async function refreshServer() {
     if (state.screen !== 'server' || !state.currentId) return;
     try {
       state.current = await API.server(state.currentId);
-      if (window.CG_REMOTE) hidePlaque();
       renderServerHead();
       if (state.currentTab === 'console') loadStats();
       // перерисовываем вкладку игроков — иначе OP/бан/вайтлист показывают старое состояние после действия
       if (state.currentTab === 'players') renderPlayers(state.current);
     } catch (e) {
-      if (window.CG_REMOTE) {
-        // удалённое управление: плашка по центру вместо спама тостами снизу
-        if (e.status === 502 || /офлайн|offline|недоступн/i.test(e.message || '')) showPlaque('Панель офлайн', 'Удалённая панель сейчас недоступна. Управление вернётся, когда она снова выйдет на связь.');
-        else if (e.status === 404) showPlaque('Не найдено', 'Сервер недоступен или был удалён.');
-        else showPlaque('Ошибка связи', e.message);
-        return;
-      }
-      // фантомный сервер (строго 404 «не найден») — убираем из списка, чтобы не висел.
-      // 502 (панель удалёнки офлайн) НЕ роняет сервер — он вернётся, когда панель проснётся.
-      // В чёрный список заносим ТОЛЬКО удалённый сервер — локальный 404-ить не должен.
+      // сервер удалён (строго 404) — убираем из списка, чтобы не висел
       if (e.status === 404) {
-        if (state.current && state.current.remote) deadServerIds.add(state.currentId);
         state.servers = (state.servers || []).filter((s) => s.id !== state.currentId);
       }
       showScreen('list');
@@ -2774,7 +2396,6 @@
       renderIconCard();
       loadRpCard();
       renderCoreCard();
-      renderRemoteCard();
       renderProxyCard();
     } catch (e) {
       showToast(e.message);
@@ -2786,8 +2407,8 @@
     const card = $('#proxy-card');
     if (!card) return;
     const srv = state.current || {};
-    // прокси/удалённый/без прав — карточку прячем
-    if (window.CG_REMOTE || PROXY_TYPES.includes(srv.type) || !can('settings.edit')) { card.classList.add('hidden'); return; }
+    // прокси/без прав — карточку прячем
+    if (PROXY_TYPES.includes(srv.type) || !can('settings.edit')) { card.classList.add('hidden'); return; }
     const forId = state.currentId;
     let info;
     try { info = await API.proxyLinkGet(forId); } catch (e) { card.classList.add('hidden'); return; }
@@ -2835,119 +2456,6 @@
       showToast(r.attachedTo ? 'Сервер подключён к прокси. Перезапустите сервер и прокси.' : 'Сервер отключён от прокси. Перезапустите сервер.', 'ok');
       renderProxyCard();
     } catch (e) { err.className = 'err'; err.textContent = e.message; showToast(e.message); }
-  }
-
-  // ---------- удалённое управление (туннель к CONTROLGUI Remote) ----------
-
-  // право на удалённое управление = полный набор силовых прав (как на сервере)
-  function canRemote() { return can('server.start') && can('server.stop'); }
-  let remoteBusy = false;
-
-  let remoteRevealed = false;     // показан ли код привязки (по умолчанию скрыт)
-  let remoteUiBound = false;
-  function renderRemoteCodeDisplay() {
-    const el = $('#remote-code'); if (!el) return;
-    const code = state.remoteCode || '';
-    el.textContent = code ? (remoteRevealed ? code : '••••-••••') : '—';
-    const eye = $('#remote-code-eye');
-    if (eye) {
-      const ic = eye.querySelector('.pi');
-      if (ic) ic.style.setProperty('--i', "url('/icons/" + (remoteRevealed ? 'eye-closed' : 'eye') + ".svg')");
-      eye.title = remoteRevealed ? 'Скрыть код' : 'Показать код';
-    }
-  }
-  function setupRemoteCodeUi() {
-    if (remoteUiBound) return; remoteUiBound = true;
-    const eye = $('#remote-code-eye');
-    if (eye) eye.addEventListener('click', () => { remoteRevealed = !remoteRevealed; renderRemoteCodeDisplay(); });
-    const codeEl = $('#remote-code');
-    if (codeEl) codeEl.addEventListener('click', () => {
-      if (!state.remoteCode) return;
-      try { if (navigator.clipboard) navigator.clipboard.writeText(state.remoteCode); } catch (e) { /* */ }
-      remoteRevealed = true; renderRemoteCodeDisplay();
-      showToast('Код скопирован: ' + state.remoteCode, 'ok');
-    });
-    const regen = $('#remote-code-regen');
-    if (regen) regen.addEventListener('click', async () => {
-      if (!state.currentId) return;
-      const ok = await confirmDialog('Переиздать код привязки? Старый код перестанет работать.',
-        { title: 'Переиздать код', yesText: 'Переиздать', danger: false });
-      if (!ok) return;
-      const forId = state.currentId;
-      try {
-        const info = await API.remoteRegenerate(forId);
-        paintRemote(info, forId);
-        remoteRevealed = true; renderRemoteCodeDisplay();
-        showToast('Новый код выпущен.', 'ok');
-      } catch (e) { showToast(e.message); }
-    });
-  }
-
-  function paintRemote(info, forId) {
-    const card = $('#remote-card');
-    if (!card) return;
-    if (forId && forId !== state.currentId) return; // поздний ответ для другого сервера — игнор
-    const on = !!(info && info.enabled);
-    // ссылка на сайт видна ВСЕГДА (даже до включения) — кликабельная, с полной схемой
-    const site = $('#remote-site');
-    if (site && info && info.central) { site.href = info.central; site.textContent = info.central; }
-    $('#remote-toggle').classList.toggle('on', on);
-    $('#remote-status').classList.toggle('hidden', !on);
-    if (!on) return;
-    $('#remote-gid').textContent = info.globalId || '—';
-    $('#remote-online').textContent = info.online ? 'на связи' : 'подключение…';
-    const claimed = !!info.claimed;
-    $('#remote-claimed-block').style.display = claimed ? '' : 'none';
-    $('#remote-code-block').style.display = claimed ? 'none' : '';
-    if (!claimed) { state.remoteCode = info.linkCode || ''; renderRemoteCodeDisplay(); }
-  }
-
-  function renderRemoteCard() {
-    const card = $('#remote-card');
-    if (!card) return;
-    if (window.CG_REMOTE) { card.classList.add('hidden'); return; } // рекурсивно включать удалёнку из удалёнки незачем
-    card.classList.toggle('hidden', !canRemote());
-    if (!canRemote() || !state.currentId) return;
-    setupRemoteCodeUi();
-    remoteRevealed = false; // код скрыт по умолчанию при заходе в настройки
-    const forId = state.currentId;
-    API.remoteGet(forId).then((i) => paintRemote(i, forId)).catch(() => {});
-  }
-
-  // после включения туннель поднимается асинхронно — несколько раз опрашиваем статус,
-  // чтобы метка сменилась «подключение…» -> «на связи» без выхода из настроек
-  function pollRemoteStatus(forId, tries) {
-    if (tries <= 0 || forId !== state.currentId) return;
-    setTimeout(() => {
-      if (forId !== state.currentId) return;
-      API.remoteGet(forId).then((i) => {
-        paintRemote(i, forId);
-        if (i && i.enabled && !i.online) pollRemoteStatus(forId, tries - 1);
-      }).catch(() => {});
-    }, 1200);
-  }
-
-  async function toggleRemote() {
-    if (!state.currentId || remoteBusy) return; // guard от двойного клика / гонки токена
-    const turnOn = !$('#remote-toggle').classList.contains('on');
-    if (!turnOn) {
-      const ok = await confirmDialog('Выключить удалённое управление этим сервером? Он перестанет отображаться на сайте.',
-        { title: 'Удалённое управление', yesText: 'Выключить', danger: true });
-      if (!ok) return;
-    }
-    remoteBusy = true;
-    const forId = state.currentId;
-    try {
-      await guard(async () => {
-        if (turnOn) showToast('Подключаюсь к центральному серверу…', 'ok');
-        const info = await API.remoteSet(forId, turnOn);
-        paintRemote(info, forId);
-        showToast(turnOn ? 'Удалённое управление включено.' : 'Удалённое управление выключено.', 'ok');
-        if (turnOn) pollRemoteStatus(forId, 6);
-      });
-    } finally {
-      remoteBusy = false;
-    }
   }
 
   // ---------- ядро сервера (повторное скачивание / своё ядро) ----------
@@ -3129,11 +2637,10 @@
         installed: '#pl-installed', info: '#pl-info', body: '#pl-body', collapse: '#pl-collapse',
         collapseHint: '#pl-collapse-hint' },
       collapseKey: 'cg-collapse-plugins',
-      provEl: '#pl-provider',
       api: {
         search: (id, opts) => API.pluginsSearch(id, opts),
-        install: (id, pid, prov) => API.pluginInstall(id, pid, prov),
-        details: (id, pid, prov) => API.pluginDetails(id, pid, prov),
+        install: (id, pid) => API.pluginInstall(id, pid),
+        details: (id, pid) => API.pluginDetails(id, pid),
         list: (id) => API.pluginsList(id),
         del: (id, f) => API.pluginDelete(id, f),
         toggle: (id, f) => API.pluginToggle(id, f),
@@ -3146,11 +2653,10 @@
         installed: '#md-installed', info: '#md-info', body: '#md-body', collapse: '#md-collapse',
         collapseHint: '#md-collapse-hint' },
       collapseKey: 'cg-collapse-mods',
-      provEl: '#md-provider',
       api: {
         search: (id, opts) => API.modsSearch(id, opts),
-        install: (id, pid, prov) => API.modInstall(id, pid, prov),
-        details: (id, pid, prov) => API.modDetails(id, pid, prov),
+        install: (id, pid) => API.modInstall(id, pid),
+        details: (id, pid) => API.modDetails(id, pid),
         list: (id) => API.modsList(id),
         del: (id, f) => API.modDelete(id, f),
         toggle: (id, f) => API.modToggle(id, f),
@@ -3171,34 +2677,14 @@
     try { return localStorage.getItem(CONTENT[kind].collapseKey) === '1'; } catch (e) { return false; }
   }
 
-  // выбранный провайдер каталога (modrinth по умолчанию)
-  function contentProvider(kind) {
-    const el = $(CONTENT[kind].provEl);
-    return el && el.value === 'curseforge' ? 'curseforge' : 'modrinth';
-  }
-  // у CurseForge нет фильтра по категориям Modrinth — прячем его для этого провайдера
-  function applyProviderUi(kind) {
-    const cfg = CONTENT[kind];
-    const cat = $(cfg.els.cat);
-    if (cat) {
-      const cf = contentProvider(kind) === 'curseforge';
-      const lbl = cat.closest('label') || cat;
-      lbl.classList.toggle('hidden', cf);
-      if (cf) cat.value = '';
-    }
-  }
-
   function loadContent(kind) {
     const cfg = CONTENT[kind];
     const srv = state.current || {};
-    const prov = contentProvider(kind);
     const info = $(cfg.els.info);
     if (info) {
       info.textContent = 'Листайте каталог или ищите ' + cfg.wordGen + ' под ' + (CORE_NAMES[srv.type] || srv.type) +
-        ' ' + (srv.version || '–') + ' — файл скачивается с ' + (prov === 'curseforge' ? 'CurseForge' : 'Modrinth') +
-        ' прямо в папку ' + cfg.folder + '/. Применяется после перезапуска.';
+        ' ' + (srv.version || '–') + ' — файл скачивается с Modrinth прямо в папку ' + cfg.folder + '/. Применяется после перезапуска.';
     }
-    applyProviderUi(kind);
     setContentCollapsed(kind, isContentCollapsed(kind));
     contentNav[kind].offset = 0;
     // установленные грузим первыми (нужны их имена, чтобы помечать «Установлена» в каталоге)
@@ -3210,9 +2696,8 @@
     const cfg = CONTENT[kind];
     const nav = contentNav[kind];
     if (reset) nav.offset = 0;
-    const provider = contentProvider(kind);
     const box = $(cfg.els.results);
-    box.innerHTML = '<div class="inv-loading"><div class="mc-loader"></div><div class="load-note">Загрузка ' + cfg.wordGen + ' с ' + (provider === 'curseforge' ? 'CurseForge' : 'Modrinth') + '…</div></div>';
+    box.innerHTML = '<div class="inv-loading"><div class="mc-loader"></div><div class="load-note">Загрузка ' + cfg.wordGen + ' с Modrinth…</div></div>';
     $(cfg.els.pager).classList.add('hidden');
     const seq = ++nav.seq;
     try {
@@ -3221,12 +2706,8 @@
         category: $(cfg.els.cat).value,
         sort: $(cfg.els.sort).value,
         offset: nav.offset || 0,
-        provider,
       });
       if (seq !== nav.seq) return;
-      // каждый хит помечаем провайдером — он нужен для установки/описания
-      const prov = data.provider || provider;
-      for (const h of (data.hits || [])) h.provider = h.provider || prov;
       renderContentResults(kind, data.hits || []);
       updateContentPager(kind, data);
     } catch (e) {
@@ -3401,7 +2882,7 @@
     $('#cm-body').innerHTML = '<div class="muted">Загрузка…</div>';
     $('#content-modal').classList.remove('hidden');
     let d = null;
-    try { d = await cfg.api.details(state.currentId, hit.projectId, hit.provider); } catch (e) { /* */ }
+    try { d = await cfg.api.details(state.currentId, hit.projectId); } catch (e) { /* */ }
     if (!d) { $('#cm-body').innerHTML = '<div class="muted">Не удалось загрузить описание.</div>'; return; }
     const wrap = document.createElement('div');
     if (d.iconUrl) { const ic = document.createElement('img'); ic.src = d.iconUrl; ic.alt = ''; ic.style.cssText = 'width:56px;height:56px;border-radius:8px;float:left;margin:0 12px 8px 0'; wrap.appendChild(ic); }
@@ -3411,7 +2892,7 @@
       const gal = document.createElement('div'); gal.style.cssText = 'display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin:0 0 12px';
       for (const g of d.gallery.slice(0, 12)) {
         const im = document.createElement('img'); im.src = g.url; im.alt = g.title || ''; im.loading = 'lazy';
-        im.style.cssText = 'height:150px;border-radius:6px;border:1px solid #3a3a3a;cursor:zoom-in'; im.onclick = () => openExternal(g.url);
+        im.style.cssText = 'height:150px;border-radius:6px;border:1px solid #3a3a3a;cursor:zoom-in'; im.onclick = () => window.open(g.url, '_blank', 'noopener');
         gal.appendChild(im);
       }
       wrap.appendChild(gal);
@@ -3426,7 +2907,7 @@
       ib.appendChild(picon('download')); ib.appendChild(document.createTextNode(' Установить'));
       ib.addEventListener('click', async () => {
         ib.disabled = true; ib.textContent = 'Скачиваю…';
-        try { await cfg.api.install(state.currentId, hit.projectId, hit.provider); showToast(cap(cfg.word) + ' установлен. Перезапустите сервер.', 'ok'); $('#content-modal').classList.add('hidden'); loadInstalledContent(kind); }
+        try { await cfg.api.install(state.currentId, hit.projectId); showToast(cap(cfg.word) + ' установлен. Перезапустите сервер.', 'ok'); $('#content-modal').classList.add('hidden'); loadInstalledContent(kind); }
         catch (e) { showToast(e.message); ib.disabled = false; ib.textContent = 'Установить'; }
       });
       wrap.appendChild(ib);
@@ -3439,7 +2920,7 @@
     btn.disabled = true;
     btn.textContent = 'Скачиваю…';
     try {
-      const r = await cfg.api.install(state.currentId, hit.projectId, hit.provider);
+      const r = await cfg.api.install(state.currentId, hit.projectId);
       showToast(cap(cfg.word) + ' «' + hit.title + '» установлен (' + r.version + '). Перезапустите сервер.', 'ok');
       loadInstalledContent(kind);
     } catch (e) {
@@ -4337,15 +3818,12 @@
       meta.textContent = fmtBytes(b.size) + ' · ' + new Date(b.mtime).toLocaleString('ru-RU');
       const actions = document.createElement('span');
       actions.className = 'file-actions';
-      // удалённо скачивание бэкапа недоступно (тяжёлое/в денилисте) — не показываем кнопку
-      if (!window.CG_REMOTE) {
-        const dl = document.createElement('a');
-        dl.className = 'mc-btn sm';
-        dl.href = API.backupDownloadUrl(state.currentId, b.name);
-        dl.title = 'Скачать';
-        dl.appendChild(picon('download'));
-        actions.appendChild(dl);
-      }
+      const dl = document.createElement('a');
+      dl.className = 'mc-btn sm';
+      dl.href = API.backupDownloadUrl(state.currentId, b.name);
+      dl.title = 'Скачать';
+      dl.appendChild(picon('download'));
+      actions.appendChild(dl);
       if (can('backups.restore')) {
         const rest = document.createElement('button');
         rest.className = 'mc-btn sm accent';
@@ -4420,237 +3898,8 @@
     });
   }
 
-  // ---------- пользователи ----------
-
-  function buildPermsForm() {
-    const box = $('#u-perms');
-    box.innerHTML = '';
-    let currentGroup = null;
-    let grid = null;
-    for (const p of state.permissions) {
-      if (p.group !== currentGroup) {
-        currentGroup = p.group;
-        const head = document.createElement('div');
-        head.className = 'perm-group';
-        head.textContent = p.group || 'Права';
-        box.appendChild(head);
-        grid = document.createElement('div');
-        grid.className = 'perms-grid';
-        box.appendChild(grid);
-      }
-      const row = document.createElement('label');
-      row.className = 'perm-row';
-      const chk = document.createElement('span');
-      chk.className = 'mc-check';
-      chk.dataset.perm = p.key;
-      const tick = document.createElement('span');
-      tick.className = 'tick';
-      chk.appendChild(tick);
-      chk.addEventListener('click', () => chk.classList.toggle('on'));
-      const lbl = document.createElement('span');
-      lbl.textContent = p.label;
-      row.appendChild(chk);
-      row.appendChild(lbl);
-      grid.appendChild(row);
-    }
-  }
-
-  function collectPerms() {
-    const perms = {};
-    for (const chk of $$('#u-perms .mc-check')) perms[chk.dataset.perm] = chk.classList.contains('on');
-    return perms;
-  }
-
-  function buildServersForm(allowed) {
-    const box = $('#u-servers');
-    box.innerHTML = '';
-    const list = state.servers || [];
-    if (!list.length) {
-      const e = document.createElement('span');
-      e.className = 'label-dim';
-      e.textContent = 'Серверов пока нет.';
-      box.appendChild(e);
-      return;
-    }
-    for (const s of list) {
-      const row = document.createElement('label');
-      row.className = 'perm-row';
-      const chk = document.createElement('span');
-      chk.className = 'mc-check';
-      chk.dataset.sid = s.id;
-      if (allowed && allowed.indexOf(s.id) >= 0) chk.classList.add('on');
-      const tick = document.createElement('span');
-      tick.className = 'tick';
-      chk.appendChild(tick);
-      chk.addEventListener('click', () => chk.classList.toggle('on'));
-      const lbl = document.createElement('span');
-      lbl.textContent = s.name + ' (' + (CORE_NAMES[s.type] || s.type) + ', порт ' + s.port + ')';
-      row.appendChild(chk);
-      row.appendChild(lbl);
-      box.appendChild(row);
-    }
-  }
-
-  function collectServers() {
-    if ($('#u-all-servers').classList.contains('on')) return null; // все
-    return $$('#u-servers .mc-check').filter((c) => c.classList.contains('on')).map((c) => c.dataset.sid);
-  }
-
-  async function openUsers() {
-    if (window.CG_REMOTE) { location.hash = ''; showScreen('list'); return; } // управление юзерами панели — не удалённо
-    showScreen('users');
-    $('#users-open-note').classList.toggle('hidden', !state.openMode);
-    await guard(loadServers); // для списка серверов в «Доступ к серверам»
-    resetUserForm();
-    if (state.openMode) { $('#u-admin').classList.add('on'); $('#u-perms').classList.add('hidden'); $('#u-access').classList.add('hidden'); }
-    loadUsers();
-  }
-
-  async function loadUsers() {
-    if (state.openMode) { $('#users-list').innerHTML = ''; return; }
-    await guard(async () => {
-      const data = await API.usersList();
-      renderUsers(data.users || []);
-    });
-  }
-
-  function renderUsers(list) {
-    const box = $('#users-list');
-    box.innerHTML = '';
-    if (!list.length) {
-      const e = document.createElement('div');
-      e.className = 'files-empty';
-      e.textContent = 'Пользователей нет.';
-      box.appendChild(e);
-      return;
-    }
-    for (const u of list) {
-      const row = document.createElement('div');
-      row.className = 'mc-row user-row';
-      const main = document.createElement('div');
-      main.className = 'user-main';
-      const name = document.createElement('div');
-      name.className = 'user-name';
-      name.appendChild(document.createTextNode(u.username));
-      if (u.admin) {
-        const crown = picon('crown', '#ffd24a'); // жёлтая пиксельная корона оператора
-        crown.classList.add('op-crown');
-        crown.title = 'Администратор (оператор)';
-        name.appendChild(crown);
-      }
-      const sub = document.createElement('div');
-      sub.className = 'user-sub';
-      const access = u.admin ? 'все серверы' : (u.servers == null ? 'все серверы' : 'серверов: ' + u.servers.length);
-      sub.textContent = (u.admin ? 'Все права' : (state.permissions.filter((p) => u.perms[p.key]).map((p) => p.label).join(', ') || 'Без прав')) + ' · ' + access;
-      main.appendChild(name);
-      main.appendChild(sub);
-      const actions = document.createElement('div');
-      actions.className = 'file-actions';
-
-      const edit = document.createElement('button');
-      edit.className = 'mc-btn sm';
-      edit.appendChild(picon('edit'));
-      edit.appendChild(document.createTextNode(' Права'));
-      edit.title = 'Изменить права и пароль';
-      edit.addEventListener('click', () => startEditUser(u));
-      actions.appendChild(edit);
-
-      const del = document.createElement('button');
-      del.className = 'mc-btn sm danger';
-      del.appendChild(picon('trash'));
-      del.title = 'Удалить';
-      const self = state.me && state.me.username && state.me.username.toLowerCase() === u.username.toLowerCase();
-      del.disabled = self;
-      del.addEventListener('click', async () => {
-        if (await confirmDialog('Удалить пользователя «' + u.username + '»?', { title: 'Удаление пользователя' })) {
-          await guard(async () => { await API.userDelete(u.username); showToast('Удалён.', 'ok'); loadUsers(); });
-        }
-      });
-      actions.appendChild(del);
-      row.appendChild(main);
-      row.appendChild(actions);
-      box.appendChild(row);
-    }
-  }
-
-  function startEditUser(u) {
-    state.editUser = u.username;
-    $('#users-form-title').textContent = 'Изменение прав: ' + u.username;
-    $('#u-name').value = u.username;
-    $('#u-name').disabled = true;
-    $('#u-pass').value = '';
-    $('#u-pass').placeholder = 'оставьте пустым — пароль не меняется';
-    $('#u-admin').classList.toggle('on', !!u.admin);
-    $('#u-perms').classList.toggle('hidden', !!u.admin);
-    $('#u-access').classList.toggle('hidden', !!u.admin);
-    buildPermsForm();
-    for (const chk of $$('#u-perms .mc-check')) {
-      chk.classList.toggle('on', !!(u.perms && u.perms[chk.dataset.perm]));
-    }
-    // доступ к серверам: null/'all' — все; массив — выбранные
-    const allServers = u.servers == null;
-    $('#u-all-servers').classList.toggle('on', allServers);
-    $('#u-servers').classList.toggle('hidden', allServers);
-    buildServersForm(Array.isArray(u.servers) ? u.servers : null);
-    $('#u-create').innerHTML = '';
-    $('#u-create').appendChild(picon('save'));
-    $('#u-create').appendChild(document.createTextNode(' Сохранить изменения'));
-    $('#u-cancel-edit').classList.remove('hidden');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  function resetUserForm() {
-    state.editUser = null;
-    $('#users-form-title').textContent = 'Новый пользователь';
-    $('#u-name').value = '';
-    $('#u-name').disabled = false;
-    $('#u-pass').value = '';
-    $('#u-pass').placeholder = 'минимум 4 символа';
-    $('#u-admin').classList.remove('on');
-    $('#u-perms').classList.remove('hidden');
-    $('#u-access').classList.remove('hidden');
-    $('#u-all-servers').classList.add('on');
-    $('#u-servers').classList.add('hidden');
-    buildPermsForm();
-    buildServersForm(null);
-    $('#u-create').innerHTML = '';
-    $('#u-create').appendChild(picon('check'));
-    $('#u-create').appendChild(document.createTextNode(' Создать пользователя'));
-    $('#u-cancel-edit').classList.add('hidden');
-  }
-
-  async function submitUserForm() {
-    const password = $('#u-pass').value;
-    const admin = $('#u-admin').classList.contains('on');
-    const perms = collectPerms();
-    const servers = collectServers();
-    if (state.editUser) {
-      // редактирование: пароль необязателен
-      await guard(async () => {
-        await API.userUpdate(state.editUser, { password: password || undefined, admin, perms, servers });
-        showToast('Права пользователя «' + state.editUser + '» обновлены.', 'ok');
-        resetUserForm();
-        loadUsers();
-      });
-      return;
-    }
-    const username = $('#u-name').value.trim();
-    if (!username || !password) { showToast('Введите логин и пароль'); return; }
-    await guard(async () => {
-      const res = await API.userCreate({ username, password, admin, perms, servers });
-      showToast('Пользователь «' + username + '» создан.', 'ok');
-      if (res && res.loggedIn) {
-        await loadMe();
-        state.openMode = false;
-      }
-      resetUserForm();
-      openUsers();
-    });
-  }
-
   async function doLogout() {
-    // в удалённом режиме «выход» = назад к списку серверов центрального сайта
-    if (window.CG_REMOTE) { location.href = '/'; return; }
+    // выход имеет смысл только в удалённой HTTPS-сессии (локально входа нет)
     if (!(await confirmDialog('Выйти из панели?', { title: 'Выход', yesText: 'Выйти' }))) return;
     try { await API.logout(); } catch (e) { /* всё равно уходим */ }
     location.href = '/login';
@@ -5235,12 +4484,9 @@
 
   // ---------- опрос ----------
 
-  let pollCount = 0;
   function pollOnce() {
     if (state.screen === 'list') guard(loadServers);
     else if (state.screen === 'server') refreshServer();
-    // раз в ~30 c проверяем, не истекла ли сессия аккаунта центра (иначе «выкинуло» без гейта)
-    if (!window.CG_REMOTE && (++pollCount % 12 === 0)) validateCentralSession();
   }
 
   function startPolling() {
@@ -5291,40 +4537,14 @@
         if (state.memCreateSlider) state.memCreateSlider.refresh();
       }
       if (action === 'proxy') { showScreen('proxy'); guard(loadServers).then(() => renderProxyViz()); }
-      if (action === 'remote') openRemoteScreen();
       if (action === 'settings') openAppSettings();
       if (action === 'about') $('#about-root').classList.remove('hidden');
-      if (action === 'users') openUsers();
       if (action === 'logout') doLogout();
     }));
-    // клик по имени пользователя в бургер-меню -> профиль аккаунта центра
-    const acctBtn = $('#menu-account');
-    if (acctBtn) acctBtn.addEventListener('click', () => { menuToggle(false); if (!window.CG_REMOTE) openProfileScreen(); });
-    setupGate();
-    setupProfile();
     $('#proxy-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
     $('#proxy-refresh').addEventListener('click', () => guard(loadServers).then(() => renderProxyViz()));
     Array.from(document.querySelectorAll('#app-menu a.menu-item')).forEach((a) =>
       a.addEventListener('click', () => menuToggle(false)));
-
-    // экран пользователей
-    $('#users-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
-    $('#u-admin').addEventListener('click', () => {
-      const adminOn = $('#u-admin').classList.contains('on');
-      $('#u-perms').classList.toggle('hidden', adminOn);
-      $('#u-access').classList.toggle('hidden', adminOn);
-    });
-    $('#u-all-servers').addEventListener('click', () => {
-      $('#u-servers').classList.toggle('hidden', $('#u-all-servers').classList.contains('on'));
-    });
-    $('#u-create').addEventListener('click', submitUserForm);
-    $('#u-cancel-edit').addEventListener('click', resetUserForm);
-    // глаз пароля в форме пользователя
-    $('#u-eye').addEventListener('click', () => {
-      const p = $('#u-pass');
-      p.type = p.type === 'password' ? 'text' : 'password';
-      $('#u-eye').style.setProperty('--i', "url('/icons/" + (p.type === 'text' ? 'eye-closed' : 'eye') + ".svg')");
-    });
 
     // иконка сервера (настройки)
     $('#icon-upload-btn').addEventListener('click', () => $('#icon-file').click());
@@ -5339,8 +4559,6 @@
     $('#core-redownload').addEventListener('click', redownloadCore);
     $('#core-upload-btn').addEventListener('click', () => $('#core-file').click());
 
-    // удалённое управление — клик по тогглу вкл/выкл через API (флаг ставится по факту)
-    $('#remote-toggle-row').addEventListener('click', (e) => { e.preventDefault(); toggleRemote(); });
     // подключение/отключение прокси (Velocity/BungeeCord) из настроек backend-сервера
     $('#proxy-attach').addEventListener('click', () => proxyLink('attach'));
     $('#proxy-detach').addEventListener('click', () => proxyLink('detach'));
@@ -5374,14 +4592,13 @@
       if (f) uploadResourcePack(f);
     });
 
-    // вынос консоли в отдельное окно (в удалённом режиме /console.html недоступен — скрываем)
+    // вынос консоли в отдельное окно
     const pop = $('#console-pop');
-    if (pop && window.CG_REMOTE) pop.classList.add('hidden');
-    else if (pop) pop.addEventListener('click', () => {
+    if (pop) pop.addEventListener('click', () => {
       if (!state.currentId) return;
       // в браузере '_blank' без параметров окна → новая вкладка; в десктоп-обёртке
       // WebView2 перехватывает window.open и открывает отдельное окно приложения
-      openExternal('/console.html?server=' + encodeURIComponent(state.currentId));
+      window.open('/console.html?server=' + encodeURIComponent(state.currentId), '_blank', 'noopener');
     });
 
     // плагины и моды (Modrinth) — поиск, фильтры, листание
@@ -5393,8 +4610,6 @@
       });
       $(e.cat).addEventListener('change', () => doContentSearch(kind, true));
       $(e.sort).addEventListener('change', () => doContentSearch(kind, true));
-      const prov = $(CONTENT[kind].provEl);
-      if (prov) prov.addEventListener('change', () => { applyProviderUi(kind); doContentSearch(kind, true); });
       $(e.prev).addEventListener('click', () => contentPage(kind, -1));
       $(e.next).addEventListener('click', () => contentPage(kind, 1));
       $(e.installed.replace('-installed', '-refresh')).addEventListener('click', () => loadInstalledContent(kind));
@@ -5481,8 +4696,6 @@
     });
 
     $('#btn-back').addEventListener('click', async () => {
-      // на сайте (удалённое управление) — к списку серверов центра, а не назад к тому же серверу
-      if (window.CG_REMOTE) { location.href = '/'; return; }
       // предупреждение о несохранённых изменениях настроек при выходе к списку
       if (state.currentTab === 'settings' && isSettingsDirty()) {
         const leave = await confirmDialog(
@@ -5625,11 +4838,8 @@
       const on = $('#set-tray').classList.contains('on');
       API.setTrayMinimize(on).catch((e) => { $('#set-tray').classList.toggle('on', !on); showToast(e.message); });
     });
-    // размытие фона игры (только в моде): клиентская настройка (localStorage),
-    // окну рабочего стола сообщаем сообщением — оно правит URL, мод читает его
-    mkToggle($('#set-ingame-blur'), ingameBlurOn());
-    $('#set-ingame-blur').addEventListener('click', () =>
-      setIngameBlurPref($('#set-ingame-blur').classList.contains('on')));
+    // карточка удалённого доступа в настройках панели
+    bindRemoteAccessCard();
 
     // при изменении размера окна перерисовываем графики и черту вкладок
     let resizeTimer = null;

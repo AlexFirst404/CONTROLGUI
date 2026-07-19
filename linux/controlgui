@@ -1,12 +1,13 @@
 #!/bin/sh
-# CONTROLGUI — единый лаунчер локальной панели. Режим открытия (приложение или
-# браузер) выбирается при первом запуске и хранится в файле; меняется в
-# настройках панели. Данные — в домашнем каталоге пользователя, не в /opt.
+# CONTROLGUI — единый лаунчер: GUI-панель (окно/браузер) и CLI-команды.
+#   controlgui                — открыть панель (GUI, запустив её при необходимости)
+#   controlgui <команда>      — CLI: serve/start/stop/status/remote/service/tui/connect
+# Режим открытия (приложение или браузер) хранится в файле; меняется в настройках
+# панели. Данные — в домашнем каталоге пользователя, не в /opt.
 set -u
 
 APP_DIR=/opt/controlgui
 PORT="${CONTROLGUI_PORT:-8400}"
-URL="http://127.0.0.1:${PORT}"
 export CONTROLGUI_DATA="${CONTROLGUI_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/controlgui}"
 mkdir -p "$CONTROLGUI_DATA"
 
@@ -15,8 +16,30 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+# CLI-команды делегируем в cli.js (тот же экземпляр Node, без GUI)
+case "${1:-}" in
+  serve|start|stop|status|remote|service|tui|connect|help|--help|-h)
+    exec node "$APP_DIR/cli.js" "$@"
+    ;;
+esac
+
+# ---------- GUI-режим ----------
+URL="http://127.0.0.1:${PORT}"
+REMOTE_URL_FILE="$CONTROLGUI_DATA/remote-connect"
+CLIENT_MODE=0
+
+# клиент-режим: приложение подключается к удалённой панели (controlgui connect <url>)
+if [ "${1:-}" = "--connect" ] && [ -n "${2:-}" ]; then
+  URL="$2"; CLIENT_MODE=1
+elif [ "${1:-}" = "--local" ]; then
+  CLIENT_MODE=0
+elif [ -s "$REMOTE_URL_FILE" ]; then
+  URL="$(head -n1 "$REMOTE_URL_FILE" | tr -d '[:space:]')"
+  CLIENT_MODE=1
+fi
+
 # режим открытия (тот же файл, что пишет панель)
-MODE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/controlgui/launch-mode"
+MODE_FILE="$CONTROLGUI_DATA/launch-mode"
 MODE="$(cat "$MODE_FILE" 2>/dev/null || echo)"
 if [ "$MODE" != "app" ] && [ "$MODE" != "browser" ]; then
   if command -v zenity >/dev/null 2>&1 && zenity --question --title="CONTROLGUI" \
@@ -35,7 +58,8 @@ fi
 ping_panel() {
   node -e "require('http').get('${URL}/',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" 2>/dev/null
 }
-if ! ping_panel; then
+# локальный режим: поднимаем панель, если не отвечает. Клиент-режим: панель чужая.
+if [ "$CLIENT_MODE" = "0" ] && ! ping_panel; then
   ( cd "$APP_DIR" && PORT="$PORT" CONTROLGUI_DATA="$CONTROLGUI_DATA" node server.js >"$CONTROLGUI_DATA/panel.log" 2>&1 & )
   i=0
   while [ "$i" -lt 60 ]; do ping_panel && break; sleep 0.25; i=$((i + 1)); done
@@ -65,7 +89,7 @@ open_browser() {
 
 ICON=/usr/share/icons/hicolor/256x256/apps/controlgui.png
 if [ "$MODE" = "app" ] && command -v python3 >/dev/null 2>&1 && webkit_ok; then
-  if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$ICON" python3 "$APP_DIR/controlgui-window.py"; then
+  if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$ICON" CONTROLGUI_REMOTE="$CLIENT_MODE" python3 "$APP_DIR/controlgui-window.py"; then
     exit 0
   fi
   echo "CONTROLGUI: окно WebKitGTK не запустилось — открываю в браузере" >&2

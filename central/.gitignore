@@ -1,6 +1,0 @@
-# секреты и рантайм центрального сервера — генерируются при деплое, в git не идут
-cert/
-data/
-node_modules/
-*.log
-ADMIN-CREDENTIALS.txt

@@ -2,11 +2,30 @@
 // Поднимает встроенную node-панель и показывает её в НАСТОЯЩЕМ окне приложения,
 // а не во вкладке браузера. Компилируется на macOS: swiftc -O AppMain.swift
 // -framework Cocoa -framework WebKit. Доп. зависимостей у пользователя нет.
+//
+// Клиент-режим: если в данных лежит файл remote-connect (его пишет
+// «controlgui connect <url>» или настройки панели), окно открывает УДАЛЁННУЮ
+// панель (https://ip:8433, самоподписанный серт с TOFU-пином) и локальный node
+// не запускается.
 import Cocoa
+import CryptoKit
 import WebKit
 
 let PORT = ProcessInfo.processInfo.environment["CONTROLGUI_PORT"] ?? "8400"
-let URL_STR = "http://127.0.0.1:\(PORT)"
+let DATA_DIR = ProcessInfo.processInfo.environment["CONTROLGUI_DATA"]
+    ?? (NSHomeDirectory() + "/Library/Application Support/CONTROLGUI")
+
+// адрес удалённой панели (клиент-режим) — общий файл с CLI: <данные>/data/remote-connect
+func remoteUrl() -> String? {
+    let p = DATA_DIR + "/data/remote-connect"
+    guard let raw = try? String(contentsOfFile: p, encoding: .utf8) else { return nil }
+    let url = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    return (url.hasPrefix("http://") || url.hasPrefix("https://")) ? url : nil
+}
+
+let REMOTE = remoteUrl()
+let CLIENT_MODE = REMOTE != nil
+let URL_STR = REMOTE ?? "http://127.0.0.1:\(PORT)"
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
     var window: NSWindow!
@@ -16,8 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func applicationDidFinishLaunching(_ note: Notification) {
         buildWindow()
-        startPanelIfNeeded()
-        waitForPanelThenLoad()
+        if CLIENT_MODE {
+            if let u = URL(string: URL_STR) { webView.load(URLRequest(url: u)) }
+        } else {
+            startPanelIfNeeded()
+            waitForPanelThenLoad()
+        }
     }
 
     // .../Contents/MacOS/controlgui  ->  .../Contents/Resources
@@ -36,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let nodeBin = res + "/bin/node"
         let appSrc = res + "/opt/controlgui"
         let env0 = ProcessInfo.processInfo.environment
-        let data = env0["CONTROLGUI_DATA"] ?? (NSHomeDirectory() + "/Library/Application Support/CONTROLGUI")
+        let data = env0["CONTROLGUI_DATA"] ?? DATA_DIR
         try? FileManager.default.createDirectory(atPath: data, withIntermediateDirectories: true)
 
         let p = Process()
@@ -73,13 +96,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1380, height: 900),
                           styleMask: style, backing: .buffered, defer: false)
-        window.title = "CONTROLGUI"
+        window.title = CLIENT_MODE ? "CONTROLGUI — удалённая панель" : "CONTROLGUI"
         window.minSize = NSSize(width: 900, height: 600)
         window.center()
         window.contentView = webView
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        showMessage(title: "CONTROLGUI", text: "Запуск панели…")
+        showMessage(title: "CONTROLGUI", text: CLIENT_MODE ? "Подключение к удалённой панели…" : "Запуск панели…")
     }
 
     func showMessage(title: String, text: String) {
@@ -117,15 +140,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
     }
 
-    // 127.0.0.1 грузим в окне; внешние ссылки (GitHub, EULA, adoptium…) открываем в браузере
-    func isLocal(_ url: URL?) -> Bool {
+    // наши адреса (локальная панель или удалённая) грузим в окне; внешние ссылки — в браузер
+    func isOurs(_ url: URL?) -> Bool {
         let h = url?.host ?? ""
-        return h == "127.0.0.1" || h == "localhost" || h == "" // "" = about:blank/data: (наш сплеш)
+        if h == "" { return true } // about:blank/data: (наш сплеш)
+        if h == "127.0.0.1" || h == "localhost" { return true }
+        if CLIENT_MODE, let remoteHost = URL(string: URL_STR)?.host, h == remoteHost { return true }
+        return false
     }
 
     func webView(_ wv: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let u = action.request.url
-        if action.navigationType == .linkActivated && !isLocal(u), let url = u {
+        if action.navigationType == .linkActivated && !isOurs(u), let url = u {
             NSWorkspace.shared.open(url) // внешняя ссылка -> системный браузер
             decisionHandler(.cancel)
             return
@@ -133,13 +159,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         decisionHandler(.allow)
     }
 
-    // window.open / target=_blank: внешние — в браузер, локальные — в той же вьюхе
+    // window.open / target=_blank: внешние — в браузер, наши — в той же вьюхе
     func webView(_ wv: WKWebView, createWebViewWith cfg: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let u = action.request.url {
-            if isLocal(u) { wv.load(URLRequest(url: u)) } else { NSWorkspace.shared.open(u) }
+            if isOurs(u) { wv.load(URLRequest(url: u)) } else { NSWorkspace.shared.open(u) }
         }
         return nil
+    }
+
+    // ---- самоподписанный серт удалённой панели: TOFU-пин отпечатка (SHA-256 DER) ----
+
+    func pinsPath() -> String { return DATA_DIR + "/data/gui-known-hosts.json" }
+    func loadPins() -> [String: String] {
+        guard let d = FileManager.default.contents(atPath: pinsPath()),
+              let j = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { return [:] }
+        return j
+    }
+    func savePin(_ key: String, _ fp: String) {
+        var pins = loadPins()
+        pins[key] = fp
+        try? FileManager.default.createDirectory(atPath: (pinsPath() as NSString).deletingLastPathComponent,
+                                                 withIntermediateDirectories: true)
+        if let d = try? JSONSerialization.data(withJSONObject: pins, options: [.prettyPrinted]) {
+            try? d.write(to: URL(fileURLWithPath: pinsPath()))
+        }
+    }
+
+    func webView(_ wv: WKWebView, didReceive challenge: URLAuthenticationChallenge,
+                 completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard CLIENT_MODE,
+              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        // отпечаток листового серта (macOS 12+ — новый API, старее — прежний)
+        var leafOpt: SecCertificate?
+        if #available(macOS 12.0, *) {
+            leafOpt = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first
+        } else {
+            leafOpt = SecTrustGetCertificateAtIndex(trust, 0)
+        }
+        guard let leaf = leafOpt else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        let der = SecCertificateCopyData(leaf) as Data
+        let fp = SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
+        let key = challenge.protectionSpace.host + ":" + String(challenge.protectionSpace.port)
+        let known = loadPins()[key]
+        if known == fp {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+        if known == nil {
+            // первый раз: подтверждение отпечатка пользователем
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Первое подключение к \(key)"
+                alert.informativeText = "Отпечаток сертификата (SHA-256):\n\(fp)\n\nСверьте с показанным в панели (Настройки → Удалённый доступ)."
+                alert.addButton(withTitle: "Доверять")
+                alert.addButton(withTitle: "Отмена")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    self.savePin(key, fp)
+                    completionHandler(.useCredential, URLCredential(trust: trust))
+                } else {
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                }
+            }
+            return
+        }
+        // отпечаток изменился — блокируем и объясняем
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "ОТПЕЧАТОК СЕРТИФИКАТА ИЗМЕНИЛСЯ"
+            alert.informativeText = "Сертификат \(key) не совпадает с сохранённым. Если вы перевыпускали серт — удалите запись в\n\(self.pinsPath())\nИначе это может быть перехват трафика."
+            alert.addButton(withTitle: "Понятно")
+            alert.runModal()
+            completionHandler(.cancelAuthenticationChallenge, nil)
+        }
     }
 
     func webView(_ wv: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

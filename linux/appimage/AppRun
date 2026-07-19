@@ -66,6 +66,23 @@ if [ ! -f "$APP/server.js" ] || [ "$(cat "$APP/.build" 2>/dev/null || echo)" != 
   printf '%s' "$BUILD" > "$APP/.build"
 fi
 
+# CLI-команды: ./CONTROLGUI-*.AppImage serve|start|stop|status|remote|service|tui|connect …
+case "${1:-}" in
+  serve|start|stop|status|remote|service|tui|connect|help|--help|-h)
+    exec "$NODE" "$APP/cli.js" "$@"
+    ;;
+esac
+
+# клиент-режим: подключение к удалённой панели (файл пишет controlgui connect <url>)
+CLIENT_MODE=0
+REMOTE_URL_FILE="$CONTROLGUI_DATA/remote-connect"
+if [ "${1:-}" = "--connect" ] && [ -n "${2:-}" ]; then
+  URL="$2"; CLIENT_MODE=1
+elif [ "${1:-}" != "--local" ] && [ -s "$REMOTE_URL_FILE" ]; then
+  URL="$(head -n1 "$REMOTE_URL_FILE" | tr -d '[:space:]')"
+  CLIENT_MODE=1
+fi
+
 # режим открытия (тот же файл, что пишет панель: ~/.local/share/controlgui/launch-mode)
 MODE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/controlgui/launch-mode"
 MODE="$(cat "$MODE_FILE" 2>/dev/null || echo)"
@@ -86,7 +103,8 @@ fi
 panel_up() {
   "$NODE" -e "require('http').get('$URL/',function(r){process.exit(0)}).on('error',function(){process.exit(1)})" >/dev/null 2>&1
 }
-if ! panel_up; then
+# локальный режим: поднимаем панель при необходимости; клиент-режим — панель удалённая
+if [ "$CLIENT_MODE" = "0" ] && ! panel_up; then
   ( cd "$APP" && PORT="$PORT" CONTROLGUI_DATA="$CONTROLGUI_DATA" "$NODE" server.js >"$CONTROLGUI_DATA/panel.log" 2>&1 & )
   i=0
   while [ "$i" -lt 80 ]; do panel_up && break; sleep 0.25; i=$((i + 1)); done
@@ -116,7 +134,7 @@ open_browser() {
 }
 
 if [ "$MODE" = "app" ] && command -v python3 >/dev/null 2>&1 && webkit_ok; then
-  if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$HERE/controlgui.png" python3 "$APP/controlgui-window.py"; then
+  if CONTROLGUI_URL="$URL" CONTROLGUI_ICON="$HERE/controlgui.png" CONTROLGUI_REMOTE="$CLIENT_MODE" python3 "$APP/controlgui-window.py"; then
     exit 0
   fi
   echo "CONTROLGUI: окно WebKitGTK не запустилось — открываю в браузере" >&2

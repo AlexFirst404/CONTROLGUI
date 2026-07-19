@@ -2,8 +2,6 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<!-- режим внутри игры (мод): класс до первой отрисовки, чтобы не мигал чёрный фон -->
-<script>(function(){try{if(location.search.indexOf("ingame=1")!==-1)sessionStorage.setItem("cgIngame","1");if(sessionStorage.getItem("cgIngame")==="1")document.documentElement.classList.add("ingame");}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CONTROLGUI — Панель Minecraft-серверов</title>
 <link rel="icon" type="image/png" href="/assets/controlgui.png">
@@ -27,69 +25,13 @@
   </button>
   <div id="app-scrim" class="app-scrim"></div>
   <nav id="app-menu" class="app-menu">
-    <div class="menu-account" id="menu-account" title="Профиль аккаунта">
-      <i class="pi" data-ic="user"></i>
-      <span id="menu-account-name">…</span>
-      <span class="menu-account-chev hidden" id="menu-account-chev">›</span>
-    </div>
-    <div class="menu-sep"></div>
     <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
     <div class="menu-item" data-menu="create"><i class="pi" data-ic="plus"></i> Создать сервер</div>
-    <div class="menu-item" data-menu="remote" id="menu-remote"><i class="pi" data-ic="open"></i> Подключить сервер</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="settings"><i class="pi" data-ic="sliders"></i> Настройки панели</div>
-    <div class="menu-item hidden" id="menu-users" data-menu="users"><i class="pi" data-ic="users"></i> Пользователи</div>
     <div class="menu-item" data-menu="about"><i class="pi" data-ic="info-box"></i> О панели</div>
     <div class="menu-item danger hidden" id="menu-logout" data-menu="logout"><i class="pi" data-ic="close"></i> Выйти</div>
   </nav>
-
-  <!-- ГЕЙТ АККАУНТА: первый запуск — нужно войти/создать аккаунт CONTROLGUI -->
-  <style>
-    .gate-overlay{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(12,12,12,.93);padding:20px}
-    .gate-overlay.hidden{display:none}
-    .gate-box{width:100%;max-width:420px;padding:28px}
-    .gate-brand{font-family:'Minecraft Ten','Minecraft',sans-serif;font-size:30px;letter-spacing:2px;text-align:center;color:#e6e6e6}
-    .gate-brand b{color:#80da5b}
-    .gate-sub{text-align:center;color:#9a9a9a;font-size:13px;margin-top:6px}
-    .gate-foot{text-align:center;color:#7a7a7a;font-size:12px;margin-top:16px}
-    #menu-account{cursor:pointer}
-    #menu-account:hover{background:rgba(255,255,255,.06)}
-    .menu-account-chev{margin-left:auto;color:#7a7a7a;font-size:18px;line-height:1}
-  </style>
-  <div id="account-gate" class="gate-overlay hidden">
-    <div class="gate-box mc-card">
-      <div class="gate-brand">CONTROL<b>GUI</b></div>
-      <div class="gate-sub">Войдите в аккаунт или создайте новый, чтобы продолжить.</div>
-      <div class="props-modebar" style="margin:18px 0 14px">
-        <button type="button" class="mc-btn sm props-mode-btn primary" id="gate-tab-login">Вход</button>
-        <button type="button" class="mc-btn sm props-mode-btn" id="gate-tab-reg">Регистрация</button>
-      </div>
-      <div id="gate-login-form">
-        <label class="mc-label">Логин<input class="fld" id="gate-li-user" autocomplete="username"></label>
-        <label class="mc-label" style="margin-top:12px">Пароль<input class="fld" id="gate-li-pass" type="password" autocomplete="current-password"></label>
-        <div class="err" id="gate-li-err"></div>
-        <button class="mc-btn primary" id="gate-login-btn" style="margin-top:14px;width:100%"><i class="pi" data-ic="open"></i> Войти</button>
-        <button class="mc-btn" id="gate-discord-login" style="margin-top:8px;width:100%;background:#5865F2;border-color:#7984f5;color:#fff"><i class="pi" data-ic="open"></i> Войти через Discord</button>
-        <div class="hint" style="margin:12px 0 0;text-align:center">Забыли пароль? <a href="#" id="gate-discord-reset">Сбросить через Discord</a></div>
-      </div>
-      <div id="gate-reg-form" class="hidden">
-        <label class="mc-label">Придумайте логин<input class="fld" id="gate-rg-user" autocomplete="off"></label>
-        <label class="mc-label" style="margin-top:12px">Пароль (мин. 6)<input class="fld" id="gate-rg-pass" type="password" autocomplete="new-password"></label>
-        <div class="err" id="gate-rg-err"></div>
-        <button class="mc-btn primary" id="gate-reg-btn" style="margin-top:14px;width:100%"><i class="pi" data-ic="check"></i> Создать аккаунт</button>
-      </div>
-      <div class="gate-foot">Аккаунт привязан к общему серверу CONTROLGUI.</div>
-    </div>
-  </div>
-
-  <!-- ПЛАШКА: панель офлайн / не найдено (вместо спама тостами в удалённом режиме) -->
-  <div id="cg-plaque" class="gate-overlay hidden">
-    <div class="gate-box mc-card" style="text-align:center">
-      <div class="gate-brand" id="cg-plaque-title" style="font-size:24px">Панель офлайн</div>
-      <div class="gate-sub" id="cg-plaque-msg" style="margin:12px 0 20px;font-size:14px"></div>
-      <button class="mc-btn primary" id="cg-plaque-back" style="width:100%"><i class="pi" data-ic="server"></i> Назад к серверам</button>
-    </div>
-  </div>
 
   <!-- О ПАНЕЛИ -->
   <div id="about-root" class="modal-wrap hidden">
@@ -106,8 +48,9 @@
           Vanilla, Paper, Purpur, Folia, Mohist, Forge, а также прокси BungeeCord и Velocity.
           Консоль в реальном времени, мониторинг ресурсов, файловый менеджер с редактором,
           игроки с инвентарём и модерацией.</p>
-        <a class="mc-btn sm" href="https://89.125.169.61/" target="_blank" rel="noopener"
-           style="margin-top:6px"><i class="pi" data-ic="server"></i> Наш сайт</a>
+        <p class="about-text dim">Открытый исходный код · лицензия GPL-3.0</p>
+        <a class="mc-btn sm" href="https://github.com/AlexFirst404/CONTROLGUI" target="_blank" rel="noopener"
+           style="margin-top:6px"><i class="pi" data-ic="code"></i> Репозиторий на GitHub</a>
       </div>
     </div>
   </div>
@@ -141,13 +84,38 @@
           </span>
           <div class="mc-toggle" id="set-tray"></div>
         </div>
-        <div class="opt-card toggle-row" style="margin-top:14px" id="set-blur-row">
-          <span class="toggle-label">Размытие фона игры
-            <span class="hint" style="display:block;margin:2px 0 0">Размывает мир за панелью внутри Minecraft (нижняя панель задач не меняется). Выключено — за панелью видна резкая игра.</span>
-          </span>
-          <div class="mc-toggle" id="set-ingame-blur"></div>
-        </div>
         <div class="hint" style="margin-bottom:0">Применяется сразу и сохраняется в этом браузере/приложении.</div>
+
+        <!-- УДАЛЁННЫЙ ДОСТУП: HTTPS + пароль, прямое подключение через проброс порта -->
+        <div class="opt-card" style="margin-top:18px" id="ra-card">
+          <div class="section-title" style="margin:0 0 8px"><i class="pi" data-ic="lock"></i> Удалённый доступ</div>
+          <span class="hint" style="display:block;margin:0 0 10px">Управляйте панелью с других устройств и через интернет: включите доступ, задайте пароль и пробросьте порт на роутере. Подключение — по HTTPS с самоподписанным сертификатом (браузер один раз предупредит — это нормально).</span>
+          <div class="toggle-row" style="padding:0">
+            <span class="toggle-label">Включить удалённый доступ</span>
+            <div class="mc-toggle" id="ra-toggle"></div>
+          </div>
+          <div id="ra-body" class="hidden" style="margin-top:12px">
+            <div class="label-dim" id="ra-state" style="font-size:12px;margin:0 0 10px"></div>
+            <label class="mc-label">Пароль удалённого доступа (мин. 6)
+              <div style="display:flex;gap:8px;align-items:stretch;margin-top:4px">
+                <span class="pass-wrap" style="flex:1">
+                  <input class="fld" id="ra-pass" type="password" autocomplete="new-password" placeholder="задайте или смените пароль">
+                  <button type="button" class="pass-eye" id="ra-eye" title="Показать пароль"></button>
+                </span>
+                <button class="mc-btn sm" id="ra-pass-save" style="margin:0;white-space:nowrap"><i class="pi" data-ic="check"></i> Сохранить</button>
+              </div>
+            </label>
+            <label class="mc-label" style="margin-top:10px">Порт HTTPS (пробросьте его на роутере)
+              <div style="display:flex;gap:8px;align-items:stretch;margin-top:4px">
+                <input class="fld" id="ra-port" type="number" min="1" max="65535" style="max-width:140px">
+                <button class="mc-btn sm" id="ra-port-save" style="margin:0;white-space:nowrap"><i class="pi" data-ic="check"></i> Применить</button>
+              </div>
+            </label>
+            <div class="hint" id="ra-addr" style="margin:10px 0 0"></div>
+            <div class="hint" id="ra-fp" style="margin:8px 0 0;word-break:break-all"></div>
+            <div class="err" id="ra-err"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -178,8 +146,7 @@
   <section id="screen-list" class="screen">
     <div class="home-hero">
       <h1 class="hero-title">CONTROL<span class="hero-accent">GUI</span></h1>
-      <div class="hero-sub">Локальная панель управления Minecraft-серверами</div>
-      <div class="home-account" id="home-account"></div>
+      <div class="hero-sub">Панель управления Minecraft-серверами</div>
       <div class="hero-stats" id="home-stats"></div>
     </div>
     <div class="srv-grid" id="server-list">
@@ -328,109 +295,6 @@
     </form>
   </section>
 
-  <!-- ЭКРАН: ПОДКЛЮЧИТЬ УДАЛЁННЫЙ СЕРВЕР -->
-  <section id="screen-remote" class="screen hidden">
-    <h1 class="mc-title">Подключить удалённый сервер</h1>
-    <p class="hint" style="text-align:center;margin:-6px 0 18px">Войдите в аккаунт CONTROLGUI Remote — и серверы с других компьютеров появятся в общем списке «Серверы».</p>
-
-    <div class="mc-card form-panel" id="rc-auth" style="max-width:460px;margin:0 auto">
-      <div class="props-modebar" style="margin-bottom:16px">
-        <button type="button" class="mc-btn sm props-mode-btn primary" id="rc-tab-login">Вход</button>
-        <button type="button" class="mc-btn sm props-mode-btn" id="rc-tab-reg">Регистрация</button>
-      </div>
-      <div id="rc-login-form">
-        <label class="mc-label">Логин аккаунта<input class="fld" id="rc-li-user" autocomplete="off"></label>
-        <label class="mc-label" style="margin-top:12px">Пароль<input class="fld" id="rc-li-pass" type="password" autocomplete="off"></label>
-        <div class="err" id="rc-li-err"></div>
-        <button class="mc-btn primary" id="rc-login-btn" style="margin-top:14px;width:100%"><i class="pi" data-ic="open"></i> Войти</button>
-      </div>
-      <div id="rc-reg-form" class="hidden">
-        <label class="mc-label">Логин (ник)<input class="fld" id="rc-rg-user" autocomplete="off"></label>
-        <label class="mc-label" style="margin-top:12px">Пароль (мин. 6)<input class="fld" id="rc-rg-pass" type="password" autocomplete="off"></label>
-        <div class="hint" style="margin-top:8px">Аккаунт создаётся сразу — после регистрации вход выполнится автоматически.</div>
-        <div class="err" id="rc-rg-err"></div>
-        <button class="mc-btn primary" id="rc-reg-btn" style="margin-top:10px;width:100%"><i class="pi" data-ic="check"></i> Зарегистрироваться</button>
-      </div>
-    </div>
-
-    <div class="mc-card form-panel hidden" id="rc-linked" style="max-width:520px;margin:0 auto">
-      <div class="section-title">Аккаунт: <b id="rc-username"></b></div>
-      <div class="hint" style="margin:0 0 12px">Удалённые серверы появляются в общем списке «Серверы» с пометкой «удалённый». Привяжите новый по коду из настроек удалённого управления нужной панели.</div>
-      <label class="mc-label">Код привязки сервера
-        <div style="display:flex;gap:10px;align-items:stretch;margin-top:4px">
-          <input class="fld" id="rc-code" placeholder="AB12-CD34" maxlength="9" style="max-width:220px;text-transform:uppercase" autocomplete="off">
-          <button class="mc-btn sm primary" id="rc-link-btn" style="margin:0;white-space:nowrap"><i class="pi" data-ic="plus"></i> Привязать</button>
-        </div>
-      </label>
-      <div class="err" id="rc-link-err"></div>
-      <div class="btn-row btn-row-left" style="margin-top:18px">
-        <button class="mc-btn" id="rc-goto-servers"><i class="pi" data-ic="server"></i> К серверам</button>
-        <button class="mc-btn danger" id="rc-logout-btn"><i class="pi" data-ic="close"></i> Выйти из аккаунта</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ЭКРАН: ПРОФИЛЬ АККАУНТА (ник + Discord) -->
-  <section id="screen-profile" class="screen hidden">
-    <h1 class="mc-title">Профиль аккаунта</h1>
-    <p class="hint" style="text-align:center;margin:-6px 0 18px">Аккаунт CONTROLGUI привязан к общему серверу. Здесь можно сменить ник и привязать Discord.</p>
-
-    <!-- крупная заметная кнопка «назад» слева, в одну колонку с табличками -->
-    <div style="max-width:520px;margin:0 auto 14px">
-      <button class="mc-btn pf-back-btn" id="pf-back" title="К серверам"><i class="pi" data-ic="chevron-left"></i> Назад к серверам</button>
-    </div>
-
-    <div class="mc-card form-panel" style="max-width:520px;margin:0 auto">
-      <div class="section-title" style="display:flex;align-items:center;gap:12px">
-        <img id="pf-avatar" class="pf-avatar" alt="">
-        <span>Аккаунт: <b id="pf-username">…</b></span>
-      </div>
-      <div class="hint" id="pf-server" style="margin:0 0 14px"></div>
-      <label class="mc-label">Ник
-        <div style="display:flex;gap:10px;align-items:stretch;margin-top:4px">
-          <input class="fld" id="pf-rename-input" maxlength="32" autocomplete="off" readonly style="flex:1">
-          <button class="mc-btn sm sq" id="pf-rename-btn" title="Изменить ник"><i class="pi" data-ic="edit"></i></button>
-        </div>
-      </label>
-      <div class="err" id="pf-rename-err"></div>
-    </div>
-
-    <div class="mc-card form-panel" style="max-width:520px;margin:16px auto 0">
-      <div class="section-title">Discord</div>
-      <div id="pf-discord-linked" class="hidden">
-        <div class="hint" style="margin:0 0 12px">Привязан: <b id="pf-discord-name"></b></div>
-        <button class="mc-btn sm danger" id="pf-discord-unlink"><i class="pi" data-ic="close"></i> Отвязать Discord</button>
-      </div>
-      <div id="pf-discord-unlinked" class="hidden">
-        <div class="hint" style="margin:0 0 12px">Привяжите свой Discord к аккаунту CONTROLGUI.</div>
-        <button class="mc-btn sm primary" id="pf-discord-link"><i class="pi" data-ic="open"></i> Привязать Discord</button>
-        <button class="mc-btn sm hidden" id="pf-discord-refresh" style="margin-left:8px">Я подтвердил — обновить</button>
-      </div>
-      <div id="pf-discord-off" class="hint hidden" style="margin:0">Привязка Discord скоро — администратор центра ещё не подключил Discord.</div>
-      <div class="err" id="pf-discord-err"></div>
-    </div>
-
-    <!-- сброс пароля на всю ширину верхней таблички, выход — под ней -->
-    <div class="pf-actions" style="max-width:520px;margin:18px auto 0">
-      <button class="mc-btn accent" id="pf-pw-open"><i class="pi" data-ic="lock"></i> Сбросить пароль</button>
-      <button class="mc-btn danger" id="pf-logout"><i class="pi" data-ic="close"></i> Выйти из аккаунта</button>
-    </div>
-  </section>
-
-  <!-- МОДАЛКА: смена пароля -->
-  <div id="pw-modal" class="modal-wrap hidden">
-    <div class="modal">
-      <div class="modal-head"><span>Смена пароля</span><button class="mc-btn sm" id="pw-close"><i class="pi" data-ic="close"></i></button></div>
-      <div class="modal-body">
-        <label class="mc-label">Текущий пароль<input class="fld" id="pwm-cur" type="password" autocomplete="current-password"></label>
-        <label class="mc-label" style="margin-top:10px">Новый пароль (мин. 6)<input class="fld" id="pwm-new" type="password" autocomplete="new-password"></label>
-        <div class="err" id="pwm-err"></div>
-        <button class="mc-btn primary" id="pwm-save" style="margin-top:14px;width:100%"><i class="pi" data-ic="check"></i> Сменить пароль</button>
-        <div class="hint" style="margin:12px 0 0;text-align:center">Не помните текущий? <a href="#" id="pwm-discord-reset">Сбросить через Discord</a></div>
-      </div>
-    </div>
-  </div>
-
   <!-- МОДАЛКА: описание плагина/мода из каталога (Modrinth) -->
   <div id="content-modal" class="modal-wrap hidden">
     <div class="modal" style="max-width:700px;width:94%">
@@ -438,51 +302,6 @@
       <div class="modal-body" id="cm-body"></div>
     </div>
   </div>
-
-  <!-- ЭКРАН: ПОЛЬЗОВАТЕЛИ -->
-  <section id="screen-users" class="screen hidden">
-    <div class="server-head" style="background:none;border:0;padding:0">
-      <button class="mc-btn sm" id="users-back"><i class="pi" data-ic="chevron-left"></i> Назад</button>
-      <h1 class="mc-title" style="flex:1;text-align:left;margin:0">Пользователи и права</h1>
-    </div>
-    <div id="users-open-note" class="hint hidden">
-      Сейчас панель открыта без входа (локальный режим). Создайте первого пользователя — он станет
-      администратором, и дальше для входа потребуются логин и пароль.
-    </div>
-    <div class="mc-card form-panel">
-      <div class="section-title" id="users-form-title">Новый пользователь</div>
-      <div class="form-grid">
-        <label class="mc-label">Логин
-          <input class="fld" id="u-name" maxlength="24" placeholder="например stas" autocomplete="off">
-        </label>
-        <label class="mc-label">Пароль
-          <span class="pass-wrap">
-            <input class="fld" id="u-pass" type="password" maxlength="64" placeholder="минимум 4 символа" autocomplete="off">
-            <button type="button" class="pass-eye" id="u-eye" title="Показать пароль"></button>
-          </span>
-        </label>
-      </div>
-      <div class="opt-card toggle-row" style="margin-top:14px">
-        <span class="toggle-label">Администратор (все права + все серверы)</span>
-        <div class="mc-toggle" id="u-admin"></div>
-      </div>
-      <div id="u-perms" class="perms-wrap"></div>
-      <div id="u-access" class="perms-wrap">
-        <div class="perm-group">Доступ к серверам</div>
-        <div class="opt-card toggle-row">
-          <span class="toggle-label">Все серверы (в т.ч. будущие)</span>
-          <div class="mc-toggle on" id="u-all-servers"></div>
-        </div>
-        <div id="u-servers" class="perms-grid hidden"></div>
-      </div>
-      <div class="btn-row btn-row-left" style="margin-top:16px">
-        <button class="mc-btn primary" id="u-create"><i class="pi" data-ic="check"></i> Создать пользователя</button>
-        <button class="mc-btn hidden" id="u-cancel-edit">Отмена</button>
-      </div>
-    </div>
-    <div class="section-title" style="margin-top:24px">Существующие пользователи</div>
-    <div class="mc-card inset" id="users-list"></div>
-  </section>
 
   <!-- ЭКРАН: СЕРВЕР -->
   <section id="screen-server" class="screen hidden">
@@ -591,28 +410,6 @@
 
     <!-- Вкладка: настройки -->
     <div class="tab-pane hidden" id="tab-settings">
-      <div class="mc-card form-panel" id="remote-card">
-        <div class="section-title"><i class="pi" data-ic="globe"></i> Удалённое управление</div>
-        <div class="hint" style="margin:0 0 10px">Способ управлять серверами, находясь вдали от вашего компьютера.
-          Сайт: <a id="remote-site" href="#" target="_blank" rel="noopener">—</a></div>
-        <label class="check-row" id="remote-toggle-row" style="margin:0">
-          <span class="mc-check" id="remote-toggle"><span class="tick"></span></span>
-          <span>Включить удалённое управление</span>
-        </label>
-        <div id="remote-status" class="hidden" style="margin-top:12px">
-          <div class="hint" id="remote-code-block" style="margin:0 0 8px">
-            Код привязки (введите его на сайте, чтобы привязать сервер к аккаунту):
-            <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-              <code id="remote-code" title="Нажмите, чтобы скопировать" style="font-family:ui-monospace,Consolas,monospace;font-size:24px;letter-spacing:4px;color:var(--mc-accent-bright,#80da5b);cursor:pointer;user-select:none">••••-••••</code>
-              <button type="button" class="mc-btn sm" id="remote-code-eye" title="Показать код" style="margin:0"><i class="pi" data-ic="eye"></i></button>
-              <button type="button" class="mc-btn sm" id="remote-code-regen" title="Переиздать код" style="margin:0"><i class="pi" data-ic="reload"></i></button>
-            </div>
-          </div>
-          <div class="hint" id="remote-claimed-block" style="margin:0 0 8px;display:none">✓ Сервер привязан к аккаунту владельца.</div>
-          <div class="label-dim" style="font-size:12px">ID сервера: <span id="remote-gid">—</span> · туннель: <span id="remote-online">—</span></div>
-        </div>
-      </div>
-
       <div class="mc-card form-panel hidden" id="proxy-card">
         <div class="section-title"><i class="pi" data-ic="cellular-signal-3"></i> Подключение к прокси (Velocity / BungeeCord)</div>
         <div class="hint" id="proxy-info" style="margin:0 0 10px"></div>
@@ -755,12 +552,6 @@
             <button class="mc-btn sm primary" id="pl-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
           </div>
           <div class="pl-filters">
-            <label class="pl-fl">Источник
-              <select class="fld" id="pl-provider">
-                <option value="modrinth">Modrinth</option>
-                <option value="curseforge">CurseForge</option>
-              </select>
-            </label>
             <label class="pl-fl">Категория
               <select class="fld" id="pl-category">
                 <option value="">Все категории</option>
@@ -827,12 +618,6 @@
             <button class="mc-btn sm primary" id="md-search-btn"><i class="pi" data-ic="search"></i> Искать</button>
           </div>
           <div class="pl-filters">
-            <label class="pl-fl">Источник
-              <select class="fld" id="md-provider">
-                <option value="modrinth">Modrinth</option>
-                <option value="curseforge">CurseForge</option>
-              </select>
-            </label>
             <label class="pl-fl">Категория
               <select class="fld" id="md-category">
                 <option value="">Все категории</option>

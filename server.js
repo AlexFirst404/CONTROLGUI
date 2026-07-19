@@ -7,13 +7,15 @@ const { serveStatic } = require('./lib/static');
 const { serverDir } = require('./lib/paths');
 const manager = require('./lib/manager');
 const users = require('./lib/users');
-const store = require('./lib/store');
+const remoteaccess = require('./lib/remoteaccess');
 
 const PORT = parseInt(process.env.PORT, 10) || 8400;
-// Сокет слушаем на всех интерфейсах (как раньше): ресурспак (/rp/) игровые клиенты
-// тянут по LAN-адресу хоста. НО админку (UI+API) отдаём ТОЛЬКО с loopback — локальная
-// панель = полный доступ владельца без пароля, поэтому LAN-доступ к управлению — дыра.
-// Кто осознанно хочет открыть всю панель в сеть — ставит CONTROLGUI_ALLOW_LAN=1.
+// HTTP-сокет слушаем на всех интерфейсах: ресурспак (/rp/) игровые клиенты тянут
+// по LAN-адресу хоста. НО админку (UI+API) по HTTP отдаём ТОЛЬКО с loopback —
+// локальная панель = полный доступ владельца без пароля, поэтому LAN-доступ к
+// управлению — дыра. Доступ по сети — через HTTPS-листенер удалённого доступа
+// (пароль + самоподписанный серт), включается в настройках. Кто осознанно хочет
+// открыть HTTP-панель в сеть — ставит CONTROLGUI_ALLOW_LAN=1.
 const ALLOW_LAN = process.env.CONTROLGUI_ALLOW_LAN === '1';
 function isLoopbackReq(req) {
   const ra = (req.socket && req.socket.remoteAddress) || '';
@@ -37,102 +39,16 @@ if (PARENT_PID) {
   if (wd.unref) wd.unref();
 }
 
-function readJsonBody(req) {
-  return new Promise((resolve) => {
-    let data = '';
-    req.on('data', (chunk) => { data += chunk; if (data.length > 8192) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(data || '{}')); } catch (e) { resolve({}); } });
-    req.on('error', () => resolve({}));
-  });
-}
-
 function sendJson(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)); }
 
-/* Аккаунт центрального сервера в десктопе: вход/выход/статус + привязка по коду. */
-async function handleCentralRoutes(req, res, urlPath, cc) {
-  if (urlPath === '/api/central' && req.method === 'GET') return sendJson(res, 200, cc.state());
-  if (urlPath === '/api/central/login' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.login(b.username || '', b.password || ''); return sendJson(res, r.error ? 400 : 200, r); }
-  if (urlPath === '/api/central/register' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.register(b.username || '', b.password || ''); return sendJson(res, r.error ? 400 : 200, r); }
-  if (urlPath === '/api/central/logout' && req.method === 'POST') return sendJson(res, 200, cc.logout());
-  if (urlPath === '/api/central/link' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.linkByCode(String(b.code || '')); return sendJson(res, r.error ? 400 : 200, r); }
-  if (urlPath === '/api/central/me' && req.method === 'GET') return sendJson(res, 200, await cc.me());
-  if (urlPath === '/api/central/rename' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.rename(String(b.newName || '')); return sendJson(res, r.error ? 400 : 200, r); }
-  if (urlPath === '/api/central/password' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.changePassword(String(b.current || ''), String(b.next || '')); return sendJson(res, r.error ? 400 : 200, r); }
-  if (urlPath === '/api/central/discord/link' && req.method === 'POST') { const r = await cc.discordLinkInit(); return sendJson(res, r.error ? 400 : 200, r); }
-  if (urlPath === '/api/central/discord/login-init' && req.method === 'POST') { const r = await cc.discordLoginInit(); return sendJson(res, r.error ? 400 : 200, r); }
-  if (urlPath === '/api/central/discord/login-poll' && req.method === 'POST') { const b = await readJsonBody(req); const r = await cc.discordLoginPoll(String(b.loginToken || '')); return sendJson(res, r.error ? 400 : 200, r); }
-  if (urlPath === '/api/central/discord/unlink' && req.method === 'POST') { const r = await cc.discordUnlink(); return sendJson(res, r.error ? 400 : 200, r); }
-  return sendJson(res, 404, { error: 'Не найдено' });
-}
-
-/* Анти-брутфорс входа: 5 неверных попыток с одного IP -> блок на 5 минут. */
-const LOGIN_MAX_FAILS = 5;
-const LOGIN_LOCK_MS = 5 * 60 * 1000;
-const loginAttempts = new Map(); // ip -> { fails, lockedUntil }
-
-function clientIp(req) {
-  // за реверс-прокси (рекомендуемый удалённый доступ) — X-Forwarded-For; иначе сокет
-  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return xff || req.socket.remoteAddress || 'unknown';
-}
-function loginLockMs(ip) {
-  const a = loginAttempts.get(ip);
-  return a && a.lockedUntil > Date.now() ? a.lockedUntil - Date.now() : 0;
-}
-function noteLoginFail(ip) {
-  const a = loginAttempts.get(ip) || { fails: 0, lockedUntil: 0 };
-  a.fails += 1;
-  if (a.fails >= LOGIN_MAX_FAILS) { a.lockedUntil = Date.now() + LOGIN_LOCK_MS; a.fails = 0; }
-  loginAttempts.set(ip, a);
-  return a;
-}
-
-/* Логин/логаут пользователей — доступны без сессии. */
-async function handleAuthRoutes(req, res, urlPath) {
-  if (urlPath === '/api/auth/login' && req.method === 'POST') {
-    const ip = clientIp(req);
-    const locked = loginLockMs(ip);
-    if (locked > 0) {
-      const sec = Math.ceil(locked / 1000);
-      res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': String(sec) });
-      res.end(JSON.stringify({ error: 'Слишком много попыток. Вход заблокирован, подождите ' + Math.ceil(sec / 60) + ' мин.', lockedSec: sec }));
-      return true;
-    }
-    const body = await readJsonBody(req);
-    const user = users.verify(body.username || '', body.password || '');
-    if (user) {
-      loginAttempts.delete(ip); // успех — сбрасываем счётчик
-      res.writeHead(200, {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Set-Cookie': users.sessionCookie(users.createSession(user.username)),
-      });
-      res.end(JSON.stringify({ ok: true, user }));
-    } else {
-      const a = noteLoginFail(ip);
-      const lockMs = loginLockMs(ip);
-      if (lockMs > 0) {
-        res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': String(Math.ceil(lockMs / 1000)) });
-        res.end(JSON.stringify({ error: 'Слишком много неверных попыток. Вход заблокирован на 5 минут.', lockedSec: Math.ceil(lockMs / 1000) }));
-      } else {
-        res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'Неверный логин или пароль. Осталось попыток: ' + (LOGIN_MAX_FAILS - a.fails) }));
-      }
-    }
-    return true;
-  }
-  if (urlPath === '/api/auth/logout' && req.method === 'POST') {
-    users.destroySession(users.parseCookies(req)[users.COOKIE]);
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Set-Cookie': users.clearCookie() });
-    res.end(JSON.stringify({ ok: true }));
-    return true;
-  }
-  return false;
-}
-
-const server = http.createServer(async (req, res) => {
+/* Единый обработчик запросов для ОБОИХ листенеров: HTTP (локальный, 8400) и
+   HTTPS (удалённый доступ, включается в настройках). Различаем по req.socket.encrypted. */
+async function handleRequest(req, res) {
   const urlPath = (req.url || '/').split('?')[0];
+  const viaRemote = !!req.socket.encrypted; // запрос пришёл на HTTPS-листенер удалёнки
 
   // ресурспак сервера — без авторизации: его скачивают игровые клиенты Minecraft
+  // (обязан оставаться на plain-HTTP листенере: клиент MC не умеет куки и самоподписанный TLS)
   if (urlPath.startsWith('/rp/')) {
     const m = urlPath.match(/^\/rp\/([a-f0-9]+)\.zip$/i);
     if (m) {
@@ -149,97 +65,55 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // всё, кроме публичного ресурспака выше — только с loopback (или явный CONTROLGUI_ALLOW_LAN=1).
-  // Закрывает неаутентифицированный доступ к админке из LAN, не ломая раздачу ресурспака.
-  if (!ALLOW_LAN && !isLoopbackReq(req)) {
-    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('403: панель доступна только локально. Для доступа по сети запустите с CONTROLGUI_ALLOW_LAN=1');
-    return;
-  }
+  if (viaRemote) {
+    // -------- HTTPS-листенер: парольная сессия --------
+    if (await remoteaccess.handleAuthRoutes(req, res, urlPath)) return;
 
-  // внутренний loopback-принципал полного удалённого управления (тот же процесс, 127.0.0.1 + секрет):
-  // проксированный с центрального сервера запрос исполняется с проброшенными правами по ОДНОМУ серверу.
-  if (urlPath.startsWith('/api/')) {
-    const internal = require('./lib/remote').internalUserFor(req);
-    if (internal) { req.cgUser = internal; return handleApi(req, res); }
-  }
+    // ресурсы страницы входа — без сессии
+    const isPublicAsset = urlPath === '/login' || urlPath === '/login.html' ||
+      urlPath.startsWith('/css/') || urlPath.startsWith('/fonts/') ||
+      urlPath.startsWith('/assets/') || urlPath.startsWith('/icons/') ||
+      urlPath === '/js/api.js' || urlPath === '/logo.png' || urlPath === '/favicon.ico';
 
-  if (await handleAuthRoutes(req, res, urlPath)) return;
-
-  // ресурсы страницы входа — без сессии
-  const isPublicAsset = urlPath === '/login' || urlPath === '/login.html' ||
-    urlPath.startsWith('/css/') || urlPath.startsWith('/fonts/') ||
-    urlPath.startsWith('/assets/') || urlPath.startsWith('/icons/') ||
-    urlPath === '/js/api.js' || urlPath === '/logo.png';
-
-  const user = users.currentUser(req); // null если вход нужен и не выполнен
-
-  if (users.anyUsers() && !user && !isPublicAsset) {
-    if (urlPath.startsWith('/api/')) {
-      res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: 'Требуется вход', login: true }));
-    } else {
-      res.writeHead(302, { Location: '/login?next=' + encodeURIComponent(req.url || '/') });
-      res.end();
+    const authed = remoteaccess.sessionFromReq(req);
+    if (!authed && !isPublicAsset) {
+      if (urlPath.startsWith('/api/')) return sendJson(res, 401, { error: 'Требуется вход', login: true });
+      res.writeHead(302, { Location: '/login' });
+      return res.end();
     }
-    return;
+    if (urlPath === '/login' || urlPath === '/login.html') {
+      if (authed) { res.writeHead(302, { Location: '/' }); return res.end(); }
+      req.url = '/login.html';
+      return serveStatic(req, res);
+    }
+  } else {
+    // -------- HTTP-листенер: только loopback (или явный CONTROLGUI_ALLOW_LAN=1) --------
+    if (!ALLOW_LAN && !isLoopbackReq(req)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('403: панель доступна только локально. Удалённый доступ включается в настройках панели (HTTPS + пароль).');
+      return;
+    }
+    if (urlPath === '/login' || urlPath === '/login.html') {
+      // локально вход не нужен — на главную
+      res.writeHead(302, { Location: '/' });
+      return res.end();
+    }
   }
 
-  if (urlPath === '/login' || urlPath === '/login.html') {
-    // локальный вход убран: личность = аккаунт центра. Любой заход на /login — на главную.
-    res.writeHead(302, { Location: '/' });
-    return res.end();
-  }
   if (req.url.startsWith('/api/')) {
-    req.cgUser = user; // для проверки прав в api.js
-    const cc = require('./lib/centralclient');
-    // удалённый сервер (добавлен по коду) -> прозрачный прокси к центру (ДО чтения тела — нужен поток).
-    // ВАЖНО: свой ЛОКАЛЬНЫЙ сервер всегда обслуживаем локально, даже если у него включена
-    // удалёнка (его remoteLocalId == локальному id). Иначе запрос ушёл бы на центр, и при
-    // удалении сервера из админки центр отдал бы 404 → панель убирала бы и локальный сервер.
-    const m = urlPath.match(/^\/api\/servers\/([^/]+)(?:\/|$)/);
-    if (m && !store.get(m[1])) { const gid = cc.gidForLocal(m[1]); if (gid) return cc.proxy(req, res, gid); }
-    // управление аккаунтом центра в десктопе
-    if (urlPath === '/api/central' || urlPath.startsWith('/api/central/')) return handleCentralRoutes(req, res, urlPath, cc);
-    // открыть ссылку в системном браузере пользователя: нужно панели внутри
-    // игры (Minecraft-мод) — там window.open во встроенном Chromium гасится,
-    // а вход через Discord должен идти через обычный браузер. Маршрут только
-    // локальный: удалённые запросы уходят веткой internalUserFor выше.
-    if (urlPath === '/api/openurl' && req.method === 'POST') {
-      const b = await readJsonBody(req);
-      const u = String(b.url || '');
-      if (!/^https?:\/\/\S+$/.test(u)) return sendJson(res, 400, { error: 'Некорректная ссылка' });
-      const { spawn } = require('child_process');
-      try {
-        // rundll32/open/xdg-open с массивом аргументов — без shell, инъекции невозможны
-        const child = process.platform === 'win32'
-          ? spawn('rundll32', ['url.dll,FileProtocolHandler', u], { windowsHide: true, detached: true, stdio: 'ignore' })
-          : (process.platform === 'darwin'
-            ? spawn('open', [u], { detached: true, stdio: 'ignore' })
-            : spawn('xdg-open', [u], { detached: true, stdio: 'ignore' }));
-        // сбой запуска (ENOENT и т.п.) приходит АСИНХРОННЫМ событием 'error' —
-        // без обработчика оно уронило бы весь процесс панели
-        child.on('error', (e) => console.error('[openurl] не удалось открыть браузер: ' + e.message));
-        child.unref();
-      } catch (e) {
-        return sendJson(res, 500, { error: 'Не удалось открыть браузер: ' + e.message });
-      }
-      return sendJson(res, 200, { ok: true });
-    }
-    // тихое самозавершение панели: нужно Minecraft-моду, чтобы заменить
-    // устаревшую панель прошлой версии на свою свежую. Строго локально
-    // (loopback), с кастомным заголовком (браузер не пошлёт его cross-origin
-    // без CORS-преflight) и ТОЛЬКО когда не запущен ни один сервер.
+    req.cgUser = users.currentUser(req); // полный доступ (локально или после пароля удалёнки)
+    req.cgRemote = viaRemote;            // для локально-only операций (quit, системный проводник)
+
+    // тихое самозавершение панели (использует деинсталлятор/обновление): строго локально
+    // (loopback), с кастомным заголовком (браузер не пошлёт его cross-origin без
+    // CORS-preflight) и ТОЛЬКО когда не запущен ни один сервер.
     if (urlPath === '/api/quit' && req.method === 'POST') {
-      const ra = req.socket.remoteAddress || '';
-      const loopback = ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1';
-      if (!loopback || req.headers['x-cg-local'] !== '1') {
+      if (viaRemote || !isLoopbackReq(req) || req.headers['x-cg-local'] !== '1') {
         return sendJson(res, 403, { error: 'Только локально' });
       }
-      const mgr = require('./lib/manager');
       // anyActive: живые процессы + автоустановка Java (proc ещё null) +
       // переходные статусы + живые «осиротевшие» серверы
-      if (mgr.anyActive()) return sendJson(res, 409, { error: 'Есть работающие серверы' });
+      if (manager.anyActive()) return sendJson(res, 409, { error: 'Есть работающие серверы' });
       sendJson(res, 200, { ok: true });
       // даём ответу уйти клиенту, затем выходим штатно
       setTimeout(() => process.exit(0), 300);
@@ -248,7 +122,9 @@ const server = http.createServer(async (req, res) => {
     return handleApi(req, res);
   }
   serveStatic(req, res);
-});
+}
+
+const server = http.createServer(handleRequest);
 
 server.listen(PORT, () => {
   console.log('');
@@ -259,8 +135,9 @@ server.listen(PORT, () => {
   console.log('');
   // найти java-процессы серверов, запущенные прошлым экземпляром панели
   try { manager.adoptOrphans(); } catch (e) { console.error('Поиск осиротевших процессов:', e.message); }
-  // переподключить туннели удалённого управления (серверы с включённой функцией)
-  try { require('./lib/remote').initAll(); } catch (e) { console.error('Удалённое управление:', e.message); }
+  // поднять HTTPS-листенер удалённого доступа, если он включён в настройках,
+  // и следить за конфигом (правки из CLI подхватываются без рестарта панели)
+  try { remoteaccess.init(handleRequest); } catch (e) { console.error('Удалённый доступ:', e.message); }
 });
 
 server.on('error', (err) => {

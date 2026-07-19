@@ -2,14 +2,9 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<!-- режим внутри игры (мод): класс до первой отрисовки, чтобы не мигал чёрный фон -->
-<script>(function(){try{if(location.search.indexOf("ingame=1")!==-1)sessionStorage.setItem("cgIngame","1");if(sessionStorage.getItem("cgIngame")==="1")document.documentElement.classList.add("ingame");}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Вход — CONTROLGUI</title>
 <link rel="icon" type="image/png" href="/assets/controlgui.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/minecraft.css">
 </head>
 <body class="theme-lime">
@@ -19,15 +14,12 @@
 <div class="login-wrap">
   <div class="mc-card login-card">
     <h1 class="login-title">CONTROL<span class="hero-accent">GUI</span></h1>
-    <div class="login-sub">Вход в панель управления</div>
+    <div class="login-sub">Удалённый доступ к панели</div>
 
     <form id="login-form" autocomplete="off">
-      <label class="mc-label">Логин
-        <input class="fld" id="login-user" autocomplete="username" autofocus required>
-      </label>
-      <label class="mc-label" style="margin-top:14px">Пароль
+      <label class="mc-label">Пароль удалённого доступа
         <span class="pass-wrap">
-          <input class="fld" id="login-pass" type="password" autocomplete="current-password" required>
+          <input class="fld" id="login-pass" type="password" autocomplete="current-password" autofocus required>
           <button type="button" class="pass-eye" id="login-eye" title="Показать пароль" aria-label="Показать пароль"></button>
         </span>
       </label>
@@ -67,20 +59,15 @@
       var res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: document.getElementById('login-user').value,
-          password: document.getElementById('login-pass').value,
-        }),
+        body: JSON.stringify({ password: document.getElementById('login-pass').value }),
       });
       if (res.ok) {
-        var next = new URLSearchParams(location.search).get('next') || '/';
-        if (next.charAt(0) !== '/') next = '/';
-        location.href = next;
+        location.href = '/';
         return;
       }
       var data = {};
       try { data = await res.json(); } catch (e) {}
-      err.textContent = data.error || 'Неверный логин или пароль';
+      err.textContent = data.error || 'Неверный пароль';
       err.classList.remove('hidden');
     } catch (e) {
       err.textContent = 'Нет связи с панелью';
