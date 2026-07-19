@@ -164,18 +164,19 @@ async function ensureAccess() {
       pinnedPem = known.pem || cur.pem; // старый формат без pem — берём из probe (fp уже сверен)
     }
   }
-  // проверяем доступ; на https без сессии получим 401 → просим пароль
+  // проверяем доступ; на https без сессии получим 401 → просим логин и пароль
   let r = await request('GET', '/api/servers');
   if (r.code === 401) {
     for (let tryN = 0; tryN < 3; tryN++) {
-      const pw = await ask('Пароль удалённого доступа: ', true);
-      const lr = await request('POST', '/api/auth/login', { password: pw });
+      const user = await ask('Логин: ');
+      const pw = await ask('Пароль: ', true);
+      const lr = await request('POST', '/api/auth/login', { username: user, password: pw });
       if (lr.code === 200) {
         cookie = String((lr.headers['set-cookie'] || [])[0] || '').split(';')[0];
         r = await request('GET', '/api/servers');
         break;
       }
-      console.log(C.red + ((lr.json && lr.json.error) || 'Неверный пароль') + C.reset);
+      console.log(C.red + ((lr.json && lr.json.error) || 'Неверный логин или пароль') + C.reset);
       if (lr.code === 429) process.exit(1);
     }
   }

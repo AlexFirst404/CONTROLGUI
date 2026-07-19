@@ -608,22 +608,22 @@
 
   // ---------- удалённый доступ (HTTPS + пароль) ----------
 
+  // ---------- удалённый доступ: статус, пользователи, права по серверам ----------
   let raStatus = null;
+  const RA_PRESET_OPTS = [['none', 'Нет доступа'], ['full', 'Полный'], ['manage', 'Управление + консоль'], ['view', 'Только просмотр'], ['custom', 'Настроить…']];
+
   async function refreshRemoteAccessCard() {
     const card = $('#ra-card');
     if (!card) return;
     try { raStatus = await API.remoteAccess(); } catch (e) { card.classList.add('hidden'); return; }
     card.classList.remove('hidden');
-    const t = $('#ra-toggle');
-    t.classList.toggle('on', !!raStatus.enabled);
+    $('#ra-toggle').classList.toggle('on', !!raStatus.enabled);
     const portEl = $('#ra-port');
     if (portEl && document.activeElement !== portEl) portEl.value = raStatus.port;
-    // блок состояния (адрес/отпечаток) виден только когда доступ включён
     $('#ra-info').classList.toggle('hidden', !raStatus.enabled);
     $('#ra-state').textContent = raStatus.enabled
       ? (raStatus.running ? 'Работает: HTTPS-порт ' + raStatus.port + ' открыт для подключений.' : 'Включён, но листенер не запущен (порт занят?) — смотрите консоль панели.')
       : '';
-    // IP из raStatus.lanIps сервер уже отфильтровал по /^\d+\.\d+\.\d+\.\d+$/ — метасимволов нет
     const ips = (raStatus.lanIps || []).filter((ip) => /^\d+\.\d+\.\d+\.\d+$/.test(ip));
     $('#ra-addr').innerHTML = ips.length
       ? 'В локальной сети: <code>https://' + ips[0] + ':' + raStatus.port + '</code>. Из интернета — пробросьте порт <b>' + raStatus.port + '</b> на роутере на этот компьютер и используйте внешний IP.'
@@ -631,10 +631,38 @@
     $('#ra-fp').textContent = raStatus.fingerprint
       ? 'Отпечаток сертификата (SHA-256): ' + raStatus.fingerprint.replace(/(..)(?=.)/g, '$1:').toUpperCase()
       : '';
-    // удалённая сессия: настройки удалёнки менять нельзя — блокируем карточку
-    card.classList.toggle('ra-locked', !!state.remoteSession);
-    $('#ra-err').textContent = state.remoteSession ? 'Менять настройки удалённого доступа можно только с локальной панели.' : '';
+    renderRemoteUsers();
   }
+
+  function renderRemoteUsers() {
+    const box = $('#ra-users');
+    if (!box) return;
+    box.innerHTML = '';
+    const list = (raStatus && raStatus.users) || [];
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'ra-users-empty';
+      e.textContent = 'Пользователей нет. Добавьте первого — тогда можно включить доступ.';
+      box.appendChild(e);
+      return;
+    }
+    for (const u of list) {
+      const keys = Object.keys(u.access || {});
+      const summary = keys.indexOf('*') >= 0 ? 'все серверы' : ('серверов: ' + keys.length);
+      const row = document.createElement('div'); row.className = 'ra-user';
+      const nm = document.createElement('span'); nm.className = 'ra-user-name'; nm.textContent = u.username;
+      const sub = document.createElement('span'); sub.className = 'ra-user-sub'; sub.textContent = '· ' + summary;
+      const acts = document.createElement('span'); acts.className = 'ra-user-acts';
+      const edit = document.createElement('button'); edit.className = 'mc-btn sm'; edit.title = 'Изменить';
+      edit.appendChild(picon('edit')); edit.addEventListener('click', () => openRemoteUserEditor(u));
+      const del = document.createElement('button'); del.className = 'mc-btn sm danger'; del.title = 'Удалить';
+      del.appendChild(picon('trash')); del.addEventListener('click', () => deleteRemoteUser(u.username));
+      acts.appendChild(edit); acts.appendChild(del);
+      row.appendChild(nm); row.appendChild(sub); row.appendChild(acts);
+      box.appendChild(row);
+    }
+  }
+
   async function raAction(action, extra, okMsg) {
     $('#ra-err').textContent = '';
     try {
@@ -644,43 +672,159 @@
       return true;
     } catch (e) { $('#ra-err').textContent = e.message; await refreshRemoteAccessCard(); return false; }
   }
+
+  // --- редактор пользователя (права по каждому серверу) ---
+  function raPresetPerms(name) { const out = {}; for (const k of ((raStatus.presets || {})[name] || [])) out[k] = true; return out; }
+  function raPresetOf(perms) {
+    const keys = (raStatus.permissions || []).map((p) => p.key);
+    const on = keys.filter((k) => perms && perms[k]);
+    if (!on.length) return 'none';
+    for (const name of ['full', 'manage', 'view']) {
+      const set = (raStatus.presets || {})[name] || [];
+      if (set.length === on.length && set.every((k) => perms[k])) return name;
+    }
+    return 'custom';
+  }
+  function buildPermGrid(grid, perms) {
+    grid.innerHTML = '';
+    const groups = [];
+    const byGroup = {};
+    for (const p of (raStatus.permissions || [])) {
+      if (!byGroup[p.group]) { byGroup[p.group] = []; groups.push(p.group); }
+      byGroup[p.group].push(p);
+    }
+    for (const g of groups) {
+      const gd = document.createElement('div'); gd.className = 'ruser-perm-grp';
+      const t = document.createElement('div'); t.className = 'ruser-perm-grp-title'; t.textContent = g; gd.appendChild(t);
+      for (const p of byGroup[g]) {
+        const lab = document.createElement('label'); lab.className = 'ruser-perm';
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = p.key; cb.checked = !!(perms && perms[p.key]);
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(' ' + p.label));
+        gd.appendChild(lab);
+      }
+      grid.appendChild(gd);
+    }
+  }
+  function setGrid(grid, perms) { Array.from(grid.querySelectorAll('input[type=checkbox]')).forEach((cb) => { cb.checked = !!(perms && perms[cb.value]); }); }
+  function makeSrvRow(sid, label, wildcard, perms) {
+    const row = document.createElement('div'); row.className = 'ruser-srv'; row.dataset.sid = sid;
+    const head = document.createElement('div'); head.className = 'ruser-srv-head';
+    const name = document.createElement('div'); name.className = 'ruser-srv-name'; name.textContent = label;
+    if (wildcard) { const d = document.createElement('span'); d.className = 'dim'; d.textContent = ' — для серверов без своей настройки'; name.appendChild(d); }
+    const sel = document.createElement('select'); sel.className = 'fld ruser-preset';
+    for (const [v, t] of RA_PRESET_OPTS) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); }
+    sel.value = perms ? raPresetOf(perms) : 'none';
+    head.appendChild(name); head.appendChild(sel);
+    row.appendChild(head);
+    const grid = document.createElement('div'); grid.className = 'ruser-perms' + (sel.value === 'custom' ? '' : ' hidden');
+    buildPermGrid(grid, perms || {});
+    row.appendChild(grid);
+    sel.addEventListener('change', () => {
+      if (sel.value === 'custom') { grid.classList.remove('hidden'); }
+      else { grid.classList.add('hidden'); setGrid(grid, sel.value === 'none' ? {} : raPresetPerms(sel.value)); }
+    });
+    grid.addEventListener('change', () => { sel.value = 'custom'; }); // ручная галочка → «Настроить»
+    return row;
+  }
+  async function openRemoteUserEditor(user) {
+    if (!raStatus) return;
+    const isEdit = !!user;
+    // свежий список серверов для матрицы прав; без него редактор собирал бы неполную
+    // матрицу и молча срезал доступ к серверам, которых нет в списке — тогда не открываем
+    try { const d = await API.servers(); state.servers = d.servers || []; }
+    catch (e) { if (!(state.servers && state.servers.length)) { showToast('Не удалось получить список серверов: ' + e.message); return; } }
+    state.ruserEditing = isEdit ? user.username : null;
+    $('#ruser-title').textContent = isEdit ? 'Пользователь «' + user.username + '»' : 'Новый пользователь';
+    const nameEl = $('#ruser-name');
+    nameEl.value = isEdit ? user.username : '';
+    nameEl.disabled = isEdit; // ник менять нельзя (иначе создастся новый) — удалите и создайте заново
+    $('#ruser-pass').value = '';
+    $('#ruser-pass').type = 'password';
+    $('#ruser-pass').placeholder = isEdit ? 'оставьте пустым — пароль не меняется' : 'минимум 6 символов';
+    $('#ruser-pass-eye').style.setProperty('--i', "url('/icons/eye.svg')"); // сброс «глаза» при повторном открытии
+    $('#ruser-pass-eye').title = 'Показать пароль';
+    $('#ruser-err').textContent = '';
+    const box = $('#ruser-servers'); box.innerHTML = '';
+    const access = (user && user.access) || {};
+    box.appendChild(makeSrvRow('*', 'Все серверы (включая будущие)', true, access['*']));
+    for (const s of (state.servers || [])) box.appendChild(makeSrvRow(s.id, s.name, false, access[s.id]));
+    $('#ruser-modal').classList.remove('hidden');
+    setTimeout(() => { if (!isEdit) nameEl.focus(); }, 40);
+  }
+  function collectRuserAccess() {
+    const access = {};
+    Array.from($('#ruser-servers').querySelectorAll('.ruser-srv')).forEach((row) => {
+      const sid = row.dataset.sid;
+      const sel = row.querySelector('.ruser-preset');
+      if (sel.value === 'none') return;
+      let perms;
+      if (sel.value === 'custom') { perms = {}; Array.from(row.querySelectorAll('.ruser-perms input:checked')).forEach((cb) => { perms[cb.value] = true; }); }
+      else perms = raPresetPerms(sel.value);
+      if (Object.keys(perms).length) access[sid] = perms;
+    });
+    return access;
+  }
+  async function saveRemoteUser() {
+    const name = $('#ruser-name').value.trim();
+    const pass = $('#ruser-pass').value;
+    const access = collectRuserAccess();
+    $('#ruser-err').textContent = '';
+    if (!state.ruserEditing && !name) { $('#ruser-err').textContent = 'Введите логин.'; return; }
+    if (!state.ruserEditing && pass.length < 6) { $('#ruser-err').textContent = 'Пароль: минимум 6 символов.'; return; }
+    if (!state.ruserEditing && (raStatus.users || []).some((u) => u.username.toLowerCase() === name.toLowerCase())) {
+      $('#ruser-err').textContent = 'Пользователь с таким ником уже есть — откройте его «Изменить».'; return;
+    }
+    if (!Object.keys(access).length) { $('#ruser-err').textContent = 'Дайте доступ хотя бы к одному серверу (выберите уровень).'; return; }
+    try {
+      await API.remoteAccessAction('user-save', { username: state.ruserEditing || name, password: pass || undefined, access: access });
+      $('#ruser-modal').classList.add('hidden');
+      showToast('Пользователь сохранён.', 'ok');
+      await refreshRemoteAccessCard();
+    } catch (e) { $('#ruser-err').textContent = e.message; }
+  }
+  async function deleteRemoteUser(username) {
+    if (!await confirmDialog('Удалить пользователя «' + username + '»? Его удалённый доступ прекратится.',
+      { title: 'Удаление пользователя', yesText: 'Удалить', danger: true })) return;
+    try { await API.remoteAccessAction('user-remove', { username: username }); showToast('Пользователь удалён.', 'ok'); await refreshRemoteAccessCard(); }
+    catch (e) { showToast(e.message); }
+  }
+
   function bindRemoteAccessCard() {
     const t = $('#ra-toggle');
     if (!t) return;
-    mkToggle(t); // переключатель кита: рисует ползунок и оптимистично переворачивает .on по клику
+    mkToggle(t); // переключатель кита: ползунок + оптимистичный флип по клику
     t.addEventListener('click', async () => {
       const wantOn = t.classList.contains('on'); // mkToggle уже перевернул визуальное состояние
       if (wantOn) {
-        if (raStatus && !raStatus.hasPassword) {
-          t.classList.remove('on'); // без пароля включить нельзя — откатываем ползунок
-          $('#ra-err').textContent = 'Сначала задайте пароль и нажмите «Сохранить» — доступ включится сам.';
-          setTimeout(() => { const p = $('#ra-pass'); if (p) p.focus(); }, 40);
+        if (!raStatus || !raStatus.userCount) {
+          t.classList.remove('on');
+          $('#ra-err').textContent = 'Сначала добавьте хотя бы одного пользователя.';
           return;
         }
         if (!await raAction('enable', null, 'Удалённый доступ включён.')) t.classList.remove('on');
       } else {
         const ok = await confirmDialog('Выключить удалённый доступ? Все удалённые сессии будут разорваны.',
           { title: 'Удалённый доступ', yesText: 'Выключить', danger: true });
-        if (!ok) { t.classList.add('on'); return; } // передумали — возвращаем ползунок включённым
+        if (!ok) { t.classList.add('on'); return; }
         raAction('disable', null, 'Удалённый доступ выключен.');
       }
     });
-    $('#ra-pass-save').addEventListener('click', async () => {
-      const pw = $('#ra-pass').value;
-      if (pw.length < 6) { $('#ra-err').textContent = 'Пароль: минимум 6 символов.'; return; }
-      if (await raAction('set-password', { password: pw }, 'Пароль сохранён.')) {
-        $('#ra-pass').value = '';
-        // первый пароль — включаем доступ сразу (пользователь этого и хотел)
-        if (raStatus && !raStatus.enabled) raAction('enable', null, 'Удалённый доступ включён.');
-      }
+    $('#ra-port-save').addEventListener('click', () => raAction('set-port', { port: parseInt($('#ra-port').value, 10) }, 'Порт применён.'));
+    $('#ra-cert-regen').addEventListener('click', async () => {
+      if (!await confirmDialog('Перевыпустить сертификат? Браузеры и приложения один раз переспросят про новый сертификат.',
+        { title: 'Сертификат', yesText: 'Перевыпустить' })) return;
+      raAction('regen-cert', null, 'Сертификат перевыпущен.');
     });
-    $('#ra-port-save').addEventListener('click', () => {
-      raAction('set-port', { port: parseInt($('#ra-port').value, 10) }, 'Порт применён.');
-    });
-    $('#ra-eye').addEventListener('click', () => {
-      const p = $('#ra-pass');
+    $('#ra-user-add').addEventListener('click', () => openRemoteUserEditor(null));
+    // модалка редактора пользователя
+    $('#ruser-close').addEventListener('click', () => $('#ruser-modal').classList.add('hidden'));
+    $('#ruser-cancel').addEventListener('click', () => $('#ruser-modal').classList.add('hidden'));
+    $('#ruser-modal').addEventListener('click', (e) => { if (e.target.id === 'ruser-modal') $('#ruser-modal').classList.add('hidden'); });
+    $('#ruser-save').addEventListener('click', saveRemoteUser);
+    $('#ruser-pass-eye').addEventListener('click', () => {
+      const p = $('#ruser-pass');
       p.type = p.type === 'password' ? 'text' : 'password';
-      $('#ra-eye').style.setProperty('--i', "url('/icons/" + (p.type === 'text' ? 'eye-closed' : 'eye') + ".svg')");
+      $('#ruser-pass-eye').style.setProperty('--i', "url('/icons/" + (p.type === 'text' ? 'eye-closed' : 'eye') + ".svg')");
     });
   }
 

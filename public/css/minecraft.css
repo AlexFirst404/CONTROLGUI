@@ -671,6 +671,28 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 #ra-card .ra-state { color: var(--accent-bright); font-size: 13px; line-height: 1.5; }
 #ra-card .ra-fp { word-break: break-all; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
 #ra-card.ra-locked .opt-card { opacity: .55; pointer-events: none; } /* удалённая сессия — только чтение */
+#ra-card .ra-users-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#ra-card .ra-users-empty { color: #9a9a9a; font-size: 13px; padding: 4px 0; }
+#ra-card .ra-user { display: flex; align-items: center; gap: 8px; padding: 9px 11px; background: #2a2b2c;
+  border: 1px solid var(--bd); margin-bottom: 8px; flex-wrap: wrap; }
+#ra-card .ra-user .ra-user-name { color: #fff; font-size: 14px; }
+#ra-card .ra-user .ra-user-sub { color: #9a9a9a; font-size: 12px; }
+#ra-card .ra-user .ra-user-acts { margin-left: auto; display: flex; gap: 6px; }
+
+/* редактор пользователя удалённого доступа */
+.ruser-modal { max-width: 640px; }
+.ruser-modal .modal-body { white-space: normal; }
+.ruser-srv { background: var(--card-inset); border: 1px solid var(--bd); padding: 10px 12px; margin-bottom: 8px; }
+.ruser-srv-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ruser-srv-name { flex: 1 1 170px; min-width: 0; color: #e6e6e6; font-size: 14px; }
+.ruser-srv-name .dim { color: #8f8f8f; font-size: 12px; }
+.ruser-preset { flex: 0 1 210px; max-width: 210px; }
+.ruser-perms { margin-top: 10px; column-count: 2; column-gap: 18px; }
+.ruser-perm-grp { break-inside: avoid; margin-bottom: 9px; }
+.ruser-perm-grp-title { color: var(--accent-bright); font-size: 11px; font-family: var(--font-head); letter-spacing: 1px; margin-bottom: 3px; }
+.ruser-perm { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 13px; color: #d0d0d0; cursor: pointer; break-inside: avoid; }
+.ruser-perm input { width: auto; margin: 0; flex: none; }
+@media (max-width: 560px) { .ruser-perms { column-count: 1; } .ruser-preset { flex-basis: 100%; max-width: none; } }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px;
   background: #242424; border-bottom: 1px solid #3a3a3a;
   font-family: var(--font-head); font-size: 13px; letter-spacing: 1px; color: #e6e6e6; }

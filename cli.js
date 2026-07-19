@@ -50,7 +50,7 @@ function askHidden(prompt) {
     process.stdout.write(prompt);
     const stdin = process.stdin;
     if (!stdin.isTTY) { // пайп/скрипт — читаем ОДНУ строку (не до EOF, иначе второй промпт зависнет)
-      readLineNonTty().then((s) => resolve(s.trim()));
+      readLineNonTty().then((s) => { try { stdin.pause(); } catch (e) { /* */ } resolve(s.trim()); });
       return;
     }
     stdin.setRawMode(true);
@@ -157,7 +157,7 @@ function cmdStatus() {
     const ra = require('./lib/remoteaccess');
     const s = ra.status();
     out('Удалённый доступ: ' + (s.enabled ? 'ВКЛЮЧЁН (HTTPS-порт ' + s.port + ')' : 'выключен')
-      + (s.hasPassword ? '' : ' · пароль не задан'));
+      + ' · пользователей: ' + s.userCount);
     if (s.enabled && s.lanIps.length) out('  В сети: https://' + s.lanIps[0] + ':' + s.port);
     if (s.fingerprint) out('  Отпечаток серта (SHA-256): ' + s.fingerprint);
     process.exit(0);
@@ -167,26 +167,51 @@ function cmdStatus() {
 // ---------- удалённый доступ ----------
 async function cmdRemote(args) {
   const ra = require('./lib/remoteaccess');
+  const perms = require('./lib/users');
   const sub = args[0] || 'show';
   if (sub === 'show') {
     const s = ra.status();
-    out('включён: ' + (s.enabled ? 'да' : 'нет') + ' · порт: ' + s.port + ' · пароль задан: ' + (s.hasPassword ? 'да' : 'нет'));
+    out('включён: ' + (s.enabled ? 'да' : 'нет') + ' · порт: ' + s.port + ' · пользователей: ' + s.userCount);
     if (s.fingerprint) out('отпечаток серта: ' + s.fingerprint);
     if (s.lanIps.length) out('адреса в сети: ' + s.lanIps.map((ip) => 'https://' + ip + ':' + s.port).join('  '));
-    out('Панель подхватывает изменения на лету (перезапуск не нужен).');
+    for (const u of s.users) {
+      const keys = Object.keys(u.access || {});
+      out('  · ' + u.username + ' → ' + (keys.indexOf('*') >= 0 ? 'все серверы' : 'серверов: ' + keys.length));
+    }
+    out('Тонкая настройка прав по серверам — в панели (Настройки → Удалённый доступ).');
     return;
   }
-  if (sub === 'password') {
-    let pw = args[1];
-    if (!pw) {
-      pw = await askHidden('Новый пароль удалённого доступа (мин. 6): ');
+  if (sub === 'user') {
+    const op = args[1] || 'list';
+    if (op === 'list') {
+      const s = ra.status();
+      if (!s.users.length) { out('Пользователей нет. Добавьте: controlgui remote user add <ник>'); return; }
+      for (const u of s.users) {
+        const keys = Object.keys(u.access || {});
+        out(u.username + ' → ' + (keys.indexOf('*') >= 0 ? 'все серверы (полный доступ по умолчанию)' : 'серверов: ' + keys.length));
+      }
+      return;
+    }
+    if (op === 'add') {
+      const name = args[2];
+      if (!ra.validName(name)) die('Ник: 1–32 символа (буквы, цифры, _ . -). Пример: controlgui remote user add friend');
+      const pw = await askHidden('Пароль для «' + name + '» (мин. 6): ');
       const pw2 = await askHidden('Повторите пароль: ');
       if (pw !== pw2) die('Пароли не совпадают.');
+      // из CLI по умолчанию — полный доступ ко всем серверам; сузить можно в панели
+      const r = ra.saveUser({ username: name, password: pw, access: { '*': perms.presetPerms('full') } });
+      if (r.error) die(r.error);
+      out('Пользователь «' + name + '» создан (полный доступ ко всем серверам).');
+      out('Ограничить серверы/права — в панели: Настройки → Удалённый доступ.');
+      return;
     }
-    const r = ra.setPassword(pw);
-    if (r.error) die(r.error);
-    out('Пароль сохранён. Старые удалённые сессии сброшены.');
-    return;
+    if (op === 'rm' || op === 'remove' || op === 'delete') {
+      const r = ra.removeUser(args[2]);
+      if (r.error) die(r.error);
+      out('Пользователь «' + args[2] + '» удалён.');
+      return;
+    }
+    die('Доступно: remote user list | add <ник> | rm <ник>');
   }
   if (sub === 'port') {
     const r = ra.setPort(args[1]);
@@ -196,7 +221,7 @@ async function cmdRemote(args) {
   }
   if (sub === 'enable') {
     const r = ra.enable();
-    if (r.error) die(r.error + ' (controlgui remote password)');
+    if (r.error) die(r.error + ' (controlgui remote user add <ник>)');
     const s = ra.status();
     out('Удалённый доступ включён (HTTPS-порт ' + s.port + ').');
     if (s.lanIps.length) out('В сети: https://' + s.lanIps[0] + ':' + s.port);
@@ -209,7 +234,7 @@ async function cmdRemote(args) {
     out('Клиенты покажут предупреждение о новом сертификате — это ожидаемо.');
     return;
   }
-  die('Неизвестная подкоманда remote. Доступно: show, enable, disable, password [пароль], port <порт>, cert-reset');
+  die('Неизвестная подкоманда remote. Доступно: show, user (list/add/rm), enable, disable, port <порт>, cert-reset');
 }
 
 // ---------- systemd ----------
@@ -257,7 +282,7 @@ function cmdService(args) {
     run('systemctl', ['enable', '--now', 'controlgui']);
     out('Сервис controlgui установлен и запущен (пользователь ' + user + ', данные: ' + dataDir + ').');
     out('Логи:  journalctl -u controlgui -f');
-    out('Дальше: controlgui remote password && controlgui remote enable — и подключайтесь с другого ПК.');
+    out('Дальше: controlgui remote user add <ник> && controlgui remote enable — и подключайтесь с другого ПК.');
     return;
   }
   if (sub === 'uninstall') {
@@ -299,7 +324,8 @@ function help() {
   out('  controlgui serve                 запустить панель в этом терминале');
   out('  controlgui start | stop | status панель фоном / остановить / состояние');
   out('  controlgui remote show           состояние удалённого доступа');
-  out('  controlgui remote password       задать пароль удалённого доступа');
+  out('  controlgui remote user add <ник> добавить пользователя (спросит пароль)');
+  out('  controlgui remote user list|rm   список / удалить пользователя');
   out('  controlgui remote enable|disable включить/выключить HTTPS-доступ');
   out('  controlgui remote port <порт>    сменить HTTPS-порт (по умолчанию 8433)');
   out('  controlgui remote cert-reset     перевыпустить самоподписанный сертификат');

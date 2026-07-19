@@ -17,9 +17,12 @@
     <div class="login-sub">Удалённый доступ к панели</div>
 
     <form id="login-form" autocomplete="off">
-      <label class="mc-label">Пароль удалённого доступа
+      <label class="mc-label">Логин
+        <input class="fld" id="login-user" autocomplete="username" autofocus required>
+      </label>
+      <label class="mc-label" style="margin-top:14px">Пароль
         <span class="pass-wrap">
-          <input class="fld" id="login-pass" type="password" autocomplete="current-password" autofocus required>
+          <input class="fld" id="login-pass" type="password" autocomplete="current-password" required>
           <button type="button" class="pass-eye" id="login-eye" title="Показать пароль" aria-label="Показать пароль"></button>
         </span>
       </label>
@@ -59,7 +62,10 @@
       var res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: document.getElementById('login-pass').value }),
+        body: JSON.stringify({
+          username: document.getElementById('login-user').value,
+          password: document.getElementById('login-pass').value,
+        }),
       });
       if (res.ok) {
         location.href = '/';

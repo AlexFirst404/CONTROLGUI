@@ -65,8 +65,9 @@ async function handleRequest(req, res) {
     return;
   }
 
+  let remoteUser = null; // пользователь удалённой сессии (для скоупа прав)
   if (viaRemote) {
-    // -------- HTTPS-листенер: парольная сессия --------
+    // -------- HTTPS-листенер: вход по логину/паролю, права по каждому серверу --------
     if (await remoteaccess.handleAuthRoutes(req, res, urlPath)) return;
 
     // ресурсы страницы входа — без сессии
@@ -75,14 +76,14 @@ async function handleRequest(req, res) {
       urlPath.startsWith('/assets/') || urlPath.startsWith('/icons/') ||
       urlPath === '/js/api.js' || urlPath === '/logo.png' || urlPath === '/favicon.ico';
 
-    const authed = remoteaccess.sessionFromReq(req);
-    if (!authed && !isPublicAsset) {
+    remoteUser = remoteaccess.sessionUserFromReq(req);
+    if (!remoteUser && !isPublicAsset) {
       if (urlPath.startsWith('/api/')) return sendJson(res, 401, { error: 'Требуется вход', login: true });
       res.writeHead(302, { Location: '/login' });
       return res.end();
     }
     if (urlPath === '/login' || urlPath === '/login.html') {
-      if (authed) { res.writeHead(302, { Location: '/' }); return res.end(); }
+      if (remoteUser) { res.writeHead(302, { Location: '/' }); return res.end(); }
       req.url = '/login.html';
       return serveStatic(req, res);
     }
@@ -101,8 +102,18 @@ async function handleRequest(req, res) {
   }
 
   if (req.url.startsWith('/api/')) {
-    req.cgUser = users.currentUser(req); // полный доступ (локально или после пароля удалёнки)
-    req.cgRemote = viaRemote;            // для локально-only операций (quit, системный проводник)
+    req.cgRemote = viaRemote; // для локально-only операций (quit, системный проводник)
+    if (viaRemote && remoteUser) {
+      // ВАЖНО: права НЕ скоупим здесь по сырому пути — api.js резолвит целевой сервер
+      // через new URL() (нормализует «..»), и разбор тут отдельным regex давал бы РАСХОЖДЕНИЕ
+      // (/api/servers/A/../B → права A на операции над B). Скоуп делаем в api.js по
+      // каноническому id сервера (единый источник с проверкой доступа). Здесь perms пусты —
+      // не-серверные операции (server.create и пр.) удалённым закрыты.
+      req.cgUser = { remote: true, username: remoteUser.username, admin: false, access: remoteUser.access || {}, perms: {} };
+      req.cgRemoteUser = remoteUser; // сырой юзер: api.js посчитает perms под конкретный сервер
+    } else {
+      req.cgUser = users.currentUser(req); // локально — полный доступ владельцу
+    }
 
     // штатное завершение панели (CLI `controlgui stop`, деинсталлятор, обновление):
     // строго локально (loopback), с кастомным заголовком (браузер не пошлёт его
