@@ -1037,6 +1037,26 @@ input[type=password]::-ms-clear { display: none; }
 .srv-card-actions { display: flex; gap: 8px; margin-top: 14px; }
 .srv-card-actions .mc-btn { margin-bottom: 2px; flex: 1; }
 
+/* ------------------------------------- удалённые панели (главный экран) ----- */
+.rc-section { margin-top: 46px; }
+.rc-section .srv-grid { min-height: 0; }
+.rc-head { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.rc-head .mc-btn { margin-bottom: 0; }
+.rc-hint { margin: 8px auto 16px; max-width: 640px; text-align: center; }
+.rc-icon { width: 52px; height: 52px; flex: none; display: flex; align-items: center; justify-content: center;
+  background: var(--card-inset); border: 1px solid var(--bd); color: var(--accent-bright); }
+.rc-icon .pi { width: 26px; height: 26px; }
+.rc-card .srv-card-actions .mc-btn:not(:first-child) { flex: 0 0 auto; } /* ✎ и корзина — компактные */
+.rc-empty { width: 100%; color: #a9a9a9; text-align: center; padding: 20px 20px 8px; font-size: 13.5px; }
+.rc-state { display: inline-flex; align-items: center; min-width: 0; }
+#rc-modal .modal-body { white-space: normal; } /* глобальный pre-line ломал бы разметку полей */
+#rc-modal .ra-label { display: block; color: #a9b3ab; font-size: 13px; margin: 0 0 6px; }
+.rc-hostrow { display: flex; gap: 10px; }
+.rc-hostcol { flex: 1; min-width: 0; }
+.rc-portcol { width: 120px; flex: none; }
+.rc-fp { display: block; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6;
+  word-break: break-all; color: #d6e0d8; background: #161616; border: 1px solid #353535; padding: 8px 10px; }
+
 /* --------------------------- адаптация по высоте окна ---------------------
    при нехватке высоты сначала ужимаются графики, затем консоль */
 @media (max-height: 920px) {

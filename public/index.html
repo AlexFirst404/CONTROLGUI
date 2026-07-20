@@ -151,6 +151,48 @@
     </div>
   </div>
 
+  <!-- МОДАЛКА: ПОДКЛЮЧЕНИЕ К УДАЛЁННОЙ ПАНЕЛИ -->
+  <div id="rc-modal" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span id="rc-title">Новое подключение</span>
+        <button class="mc-btn sm" id="rc-close"><i class="pi" data-ic="close"></i></button>
+      </div>
+      <div class="modal-body">
+        <label class="opt-label ra-label" for="rc-name">Название (как показывать в списке)</label>
+        <input class="fld" id="rc-name" maxlength="40" autocomplete="off" placeholder="например Домашний сервер">
+        <div class="rc-hostrow">
+          <div class="rc-hostcol">
+            <label class="opt-label ra-label" for="rc-host" style="margin-top:12px">Адрес (IP или домен)</label>
+            <input class="fld" id="rc-host" autocomplete="off" spellcheck="false" placeholder="192.168.1.10 или mypanel.example.com">
+          </div>
+          <div class="rc-portcol">
+            <label class="opt-label ra-label" for="rc-portf" style="margin-top:12px">Порт</label>
+            <input class="fld" id="rc-portf" type="number" min="1" max="65535" value="8433">
+          </div>
+        </div>
+        <label class="opt-label ra-label" for="rc-user" style="margin-top:12px">Логин</label>
+        <input class="fld" id="rc-user" maxlength="32" autocomplete="off" spellcheck="false" placeholder="пользователь удалённой панели">
+        <label class="opt-label ra-label" for="rc-pass" style="margin-top:12px">Пароль</label>
+        <span class="pass-wrap">
+          <input class="fld" id="rc-pass" type="password" autocomplete="new-password">
+          <button type="button" class="pass-eye" id="rc-pass-eye" title="Показать пароль"></button>
+        </span>
+        <div id="rc-fp-box" class="opt-card hidden" style="margin-top:14px">
+          <div class="opt-label" style="margin:0 0 6px"><i class="pi" data-ic="lock"></i> Отпечаток сертификата (SHA-256)</div>
+          <code class="rc-fp" id="rc-fp"></code>
+          <div class="hint" style="margin:8px 0 0">Сверьте с показанным на удалённой панели (Настройки → Удалённый доступ). Совпадает — жмите «Доверять и сохранить»: дальше любое подключение с другим сертификатом будет отклонено.</div>
+        </div>
+        <div class="err" id="rc-err" style="margin-top:8px"></div>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="mc-btn" id="rc-probe"><i class="pi" data-ic="search"></i> Проверить</button>
+          <button class="mc-btn primary hidden" id="rc-save"><i class="pi" data-ic="check"></i> Доверять и сохранить</button>
+          <button class="mc-btn" id="rc-cancel">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- МОДАЛКА: ВЫБОР ПАПКИ (импорт сервера) -->
   <div id="browse-root" class="modal-wrap hidden">
     <div class="modal browse-modal">
@@ -188,6 +230,16 @@
     <div class="btn-row">
       <button class="mc-btn primary" id="btn-goto-create"><i class="pi" data-ic="plus"></i> Создать сервер</button>
       <button class="mc-btn" id="btn-refresh"><i class="pi" data-ic="reload"></i> Обновить</button>
+    </div>
+
+    <!-- УДАЛЁННЫЕ ПАНЕЛИ: CONTROLGUI на других машинах, открываются прямо в этом окне -->
+    <div id="rc-section" class="rc-section hidden">
+      <div class="rc-head">
+        <div class="section-title" style="margin:0"><i class="pi" data-ic="monitor"></i> Удалённые панели</div>
+        <button class="mc-btn sm" id="rc-add"><i class="pi" data-ic="plus"></i> Добавить</button>
+      </div>
+      <div class="hint rc-hint">Панели CONTROLGUI на других компьютерах и серверах — открываются прямо здесь. На той стороне включите «Удалённый доступ» (Настройки панели) и создайте пользователя.</div>
+      <div class="srv-grid" id="rc-list"></div>
     </div>
   </section>
 

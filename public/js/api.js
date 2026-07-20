@@ -91,6 +91,10 @@ window.API = (function () {
     remoteAccess: () => call('GET', '/api/remote-access'),
     remoteAccessAction: (action, extra) => call('POST', '/api/remote-access', Object.assign({ action: action }, extra || {})),
 
+    // удалённые панели (подключения к CONTROLGUI на других машинах)
+    remoteConns: () => call('GET', '/api/remote-connections'),
+    remoteConnAction: (action, extra) => call('POST', '/api/remote-connections', Object.assign({ action: action }, extra || {})),
+
     backups: (id) => call('GET', '/api/servers/' + id + '/backups'),
     backupCreate: (id, label) => call('POST', '/api/servers/' + id + '/backups', { label: label }),
     backupDelete: (id, name) => call('DELETE', '/api/servers/' + id + '/backup?name=' + encodeURIComponent(name)),

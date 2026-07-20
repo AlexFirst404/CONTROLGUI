@@ -828,6 +828,232 @@
     });
   }
 
+  // ---------- удалённые панели (подключения к CONTROLGUI на других машинах) ----------
+  let rcConns = [];      // список подключений (без паролей)
+  const rcChecks = {};   // id -> { online, certChanged, reason } | undefined (идёт проверка)
+  let rcEditing = null;  // id редактируемого подключения | null (новое)
+  let rcProbedFp = null; // отпечаток, подтверждённый кнопкой «Проверить»
+
+  function fmtFingerprint(fp) { return String(fp || '').replace(/(..)(?=.)/g, '$1:').toUpperCase(); }
+
+  async function loadRemoteConns() {
+    const sec = $('#rc-section');
+    if (!sec) return;
+    if (state.remoteSession) { sec.classList.add('hidden'); return; } // у удалённого гостя подключений нет
+    try { const d = await API.remoteConns(); rcConns = d.connections || []; }
+    catch (e) { sec.classList.add('hidden'); return; } // удалённая сессия (403) — секцию не показываем
+    sec.classList.remove('hidden');
+    renderRemoteConns();
+    for (const c of rcConns) {
+      rcChecks[c.id] = undefined;
+      API.remoteConnAction('check', { id: c.id })
+        .then((r) => { rcChecks[c.id] = r; updateRcState(c.id); })
+        .catch(() => { rcChecks[c.id] = { online: false, reason: 'нет ответа' }; updateRcState(c.id); });
+    }
+  }
+
+  function rcStateView(id) {
+    const st = rcChecks[id];
+    if (st === undefined) return { dot: '', text: 'Проверка…' };
+    if (!st.online) return { dot: '', text: 'Не в сети', title: st.reason || '' };
+    if (st.certChanged) return { dot: ' err', text: 'Сертификат изменился — проверьте заново' };
+    return { dot: ' on', text: 'В сети' };
+  }
+  function fillRcState(stEl, id) {
+    const v = rcStateView(id);
+    stEl.innerHTML = '';
+    const dot = document.createElement('span');
+    dot.className = 'status-dot' + v.dot;
+    stEl.appendChild(dot);
+    stEl.appendChild(document.createTextNode(v.text));
+    stEl.title = v.title || '';
+  }
+  function updateRcState(id) {
+    const stEl = document.querySelector('.rc-card[data-rcid="' + id + '"] .rc-state');
+    if (stEl) fillRcState(stEl, id);
+  }
+
+  function renderRemoteConns() {
+    const box = $('#rc-list');
+    if (!box) return;
+    box.innerHTML = '';
+    box.classList.toggle('cols3', rcConns.length > 3);
+    if (!rcConns.length) {
+      const e = document.createElement('div');
+      e.className = 'rc-empty';
+      e.textContent = 'Подключений пока нет — нажмите «Добавить».';
+      box.appendChild(e);
+      return;
+    }
+    for (const c of rcConns) box.appendChild(makeRcCard(c));
+  }
+
+  function makeRcCard(c) {
+    const card = document.createElement('div');
+    card.className = 'srv-card rc-card';
+    card.dataset.rcid = c.id;
+
+    const top = document.createElement('div');
+    top.className = 'srv-card-top';
+    const icon = document.createElement('div');
+    icon.className = 'rc-icon';
+    icon.appendChild(picon('monitor'));
+    const id = document.createElement('div');
+    id.className = 'srv-card-id';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'srv-card-name';
+    nameEl.textContent = c.name;
+    const subEl = document.createElement('div');
+    subEl.className = 'srv-card-sub';
+    subEl.textContent = c.host + ':' + c.port + ' · ' + c.username;
+    id.appendChild(nameEl);
+    id.appendChild(subEl);
+    top.appendChild(icon);
+    top.appendChild(id);
+
+    const line = document.createElement('div');
+    line.className = 'srv-card-line';
+    const stEl = document.createElement('span');
+    stEl.className = 'rc-state';
+    fillRcState(stEl, c.id);
+    line.appendChild(stEl);
+
+    const actions = document.createElement('div');
+    actions.className = 'srv-card-actions';
+    const openBtn = document.createElement('button');
+    openBtn.className = 'mc-btn sm primary';
+    openBtn.appendChild(picon('arrow-right'));
+    openBtn.appendChild(document.createTextNode(' Открыть'));
+    openBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openRemoteConn(c.id, openBtn); });
+    const edit = document.createElement('button');
+    edit.className = 'mc-btn sm';
+    edit.title = 'Изменить';
+    edit.appendChild(picon('edit'));
+    edit.addEventListener('click', (ev) => { ev.stopPropagation(); openRcEditor(c); });
+    const del = document.createElement('button');
+    del.className = 'mc-btn sm danger';
+    del.title = 'Удалить';
+    del.appendChild(picon('trash'));
+    del.addEventListener('click', (ev) => { ev.stopPropagation(); deleteRemoteConn(c); });
+    actions.appendChild(openBtn);
+    actions.appendChild(edit);
+    actions.appendChild(del);
+
+    card.appendChild(top);
+    card.appendChild(line);
+    card.appendChild(actions);
+    card.addEventListener('click', () => openRemoteConn(c.id, openBtn));
+    return card;
+  }
+
+  async function openRemoteConn(id, btn) {
+    const st = rcChecks[id];
+    if (st && st.certChanged) {
+      showToast('Сертификат удалённой панели изменился — нажмите «Проверить» и сверьте новый отпечаток.');
+      const c = rcConns.find((x) => x.id === id);
+      if (c) openRcEditor(c);
+      return;
+    }
+    const prev = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Подключение…'; }
+    try {
+      const r = await API.remoteConnAction('open', { id: id });
+      if (r && r.url) { location.href = r.url; return; } // прокси уже проверил вход
+      showToast('Не удалось открыть подключение.');
+    } catch (e) { showToast(e.message); }
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+  }
+
+  async function deleteRemoteConn(c) {
+    if (!await confirmDialog('Удалить подключение «' + c.name + '»?\nСама удалённая панель и её серверы не пострадают.',
+      { title: 'Удаление подключения', yesText: 'Удалить', danger: true })) return;
+    try {
+      await API.remoteConnAction('remove', { id: c.id });
+      showToast('Подключение удалено.', 'ok');
+      await loadRemoteConns();
+    } catch (e) { showToast(e.message); }
+  }
+
+  // --- модалка подключения: «Проверить» (отпечаток) → «Доверять и сохранить» ---
+  function rcInvalidateProbe() {
+    rcProbedFp = null;
+    $('#rc-fp-box').classList.add('hidden');
+    $('#rc-save').classList.add('hidden');
+  }
+  function openRcEditor(conn) {
+    rcEditing = conn ? conn.id : null;
+    $('#rc-title').textContent = conn ? 'Подключение «' + conn.name + '»' : 'Новое подключение';
+    $('#rc-name').value = conn ? conn.name : '';
+    $('#rc-host').value = conn ? conn.host : '';
+    $('#rc-portf').value = conn ? conn.port : 8433;
+    $('#rc-user').value = conn ? conn.username : '';
+    const pass = $('#rc-pass');
+    pass.value = '';
+    pass.type = 'password';
+    pass.placeholder = conn ? 'оставьте пустым — пароль не меняется' : 'пароль пользователя удалённой панели';
+    $('#rc-pass-eye').style.setProperty('--i', "url('/icons/eye.svg')");
+    $('#rc-pass-eye').title = 'Показать пароль';
+    $('#rc-err').textContent = '';
+    rcInvalidateProbe();
+    $('#rc-modal').classList.remove('hidden');
+    setTimeout(() => { if (!conn) $('#rc-name').focus(); }, 40);
+  }
+  async function rcProbe() {
+    $('#rc-err').textContent = '';
+    const btn = $('#rc-probe');
+    btn.disabled = true;
+    try {
+      const r = await API.remoteConnAction('probe', {
+        host: $('#rc-host').value.trim(),
+        port: parseInt($('#rc-portf').value, 10),
+      });
+      rcProbedFp = r.fingerprint;
+      $('#rc-fp').textContent = fmtFingerprint(r.fingerprint);
+      $('#rc-fp-box').classList.remove('hidden');
+      $('#rc-save').classList.remove('hidden');
+    } catch (e) { rcInvalidateProbe(); $('#rc-err').textContent = e.message; }
+    finally { btn.disabled = false; }
+  }
+  async function rcSave() {
+    $('#rc-err').textContent = '';
+    if (!rcProbedFp) { $('#rc-err').textContent = 'Сначала нажмите «Проверить».'; return; }
+    if (!rcEditing && !$('#rc-pass').value) { $('#rc-err').textContent = 'Введите пароль.'; return; }
+    const btn = $('#rc-save');
+    btn.disabled = true;
+    try {
+      await API.remoteConnAction('save', {
+        id: rcEditing || undefined,
+        name: $('#rc-name').value.trim(),
+        host: $('#rc-host').value.trim(),
+        port: parseInt($('#rc-portf').value, 10),
+        username: $('#rc-user').value.trim(),
+        password: $('#rc-pass').value || undefined,
+        fingerprint: rcProbedFp,
+      });
+      $('#rc-modal').classList.add('hidden');
+      showToast('Подключение сохранено.', 'ok');
+      await loadRemoteConns();
+    } catch (e) { $('#rc-err').textContent = e.message; }
+    finally { btn.disabled = false; }
+  }
+  function bindRemoteConns() {
+    if (!$('#rc-section')) return;
+    $('#rc-add').addEventListener('click', () => openRcEditor(null));
+    $('#rc-close').addEventListener('click', () => $('#rc-modal').classList.add('hidden'));
+    $('#rc-cancel').addEventListener('click', () => $('#rc-modal').classList.add('hidden'));
+    $('#rc-modal').addEventListener('click', (e) => { if (e.target.id === 'rc-modal') $('#rc-modal').classList.add('hidden'); });
+    $('#rc-probe').addEventListener('click', rcProbe);
+    $('#rc-save').addEventListener('click', rcSave);
+    // смена адреса/порта обнуляет проверку — пин ставится только по свежесверенному отпечатку
+    $('#rc-host').addEventListener('input', rcInvalidateProbe);
+    $('#rc-portf').addEventListener('input', rcInvalidateProbe);
+    $('#rc-pass-eye').addEventListener('click', () => {
+      const p = $('#rc-pass');
+      p.type = p.type === 'password' ? 'text' : 'password';
+      $('#rc-pass-eye').style.setProperty('--i', "url('/icons/" + (p.type === 'text' ? 'eye-closed' : 'eye') + ".svg')");
+    });
+  }
+
   // ---------- экраны ----------
 
   /* Добавляем запись в историю браузера, чтобы кнопка «назад» переключала
@@ -1004,6 +1230,7 @@
     loadMe();
     loadStatus();
     guard(loadServers);
+    loadRemoteConns();
     startPolling();
     routeInitialHash();
     if (EMBED === 'settings') openAppSettings(); // окно настроек панели
@@ -1011,6 +1238,8 @@
   function routeInitialHash() {
     if (location.hash === '#create') {
       showScreen('create'); loadVersions(); guard(loadServers).then(suggestPort);
+    } else if (location.hash === '#rc-add') {
+      openRcEditor(null); // диплинк «добавить удалённую панель»
     } else if (location.hash === '#proxy') {
       showScreen('proxy'); guard(loadServers).then(() => renderProxyViz());
     } else if (location.hash.startsWith('#server=')) {
@@ -4662,7 +4891,7 @@
       loadVersions();
       if (state.memCreateSlider) state.memCreateSlider.refresh();
     });
-    $('#btn-refresh').addEventListener('click', () => guard(loadServers));
+    $('#btn-refresh').addEventListener('click', () => { guard(loadServers); loadRemoteConns(); });
 
     // бургер-меню
     const menuToggle = (open) => {
@@ -4990,6 +5219,8 @@
     });
     // карточка удалённого доступа в настройках панели
     bindRemoteAccessCard();
+    // удалённые панели на главном экране
+    bindRemoteConns();
 
     // при изменении размера окна перерисовываем графики и черту вкладок
     let resizeTimer = null;

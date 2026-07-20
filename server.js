@@ -41,6 +41,24 @@ if (PARENT_PID) {
 
 function sendJson(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)); }
 
+/* Anti-CSRF: изменяющий запрос принимаем, только если его источник — сама панель.
+   Локальная HTTP-панель доверяет любому loopback как владельцу (без пароля), поэтому
+   БЕЗ этой проверки JS сторонней страницы в браузере владельца (в т.ч. контент удалённой
+   панели, открытой через прокси «Удалённых панелей» под origin 127.0.0.1:<эфемерный>)
+   мог бы слепо (no-cors) слать POST/PUT/DELETE на 127.0.0.1:8400 и управлять машиной.
+   Браузер на любом cross-origin fetch обязан слать Origin; сверяем host:port с адресом,
+   по которому открыта сама панель (Host). Не-браузерные клиенты (CLI, нативный лаунчер)
+   Origin не шлют — им доступ по прежним гейтам (loopback + x-cg-local у /api/quit). */
+function sameOriginRequest(req) {
+  const m = req.method;
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return true; // читающие/preflight — не мутируют
+  const origin = req.headers.origin;
+  if (!origin) return true; // не-браузер: Origin отсутствует (браузер на fetch его всегда ставит)
+  let u;
+  try { u = new URL(origin); } catch (e) { return false; } // 'null' и мусор — отвергаем
+  return u.host === String(req.headers.host || ''); // host включает порт → прокси-origin (другой порт) не пройдёт
+}
+
 /* Единый обработчик запросов для ОБОИХ листенеров: HTTP (локальный, 8400) и
    HTTPS (удалённый доступ, включается в настройках). Различаем по req.socket.encrypted. */
 async function handleRequest(req, res) {
@@ -102,6 +120,10 @@ async function handleRequest(req, res) {
   }
 
   if (req.url.startsWith('/api/')) {
+    // anti-CSRF: изменяющий запрос — только со своего origin (см. sameOriginRequest)
+    if (!sameOriginRequest(req)) {
+      return sendJson(res, 403, { error: 'Запрос отклонён: чужой источник (cross-origin)' });
+    }
     req.cgRemote = viaRemote; // для локально-only операций (quit, системный проводник)
     if (viaRemote && remoteUser) {
       // ВАЖНО: права НЕ скоупим здесь по сырому пути — api.js резолвит целевой сервер
