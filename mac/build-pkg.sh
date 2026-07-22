@@ -34,7 +34,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/opt/controlgui" "$APP/Co
 # панель (как в .deb/AppImage): server.js + cli/tui + lib + public
 cp "$ROOT/server.js" "$ROOT/cli.js" "$ROOT/tui.js" "$APP/Contents/Resources/opt/controlgui/"
 cp -R "$ROOT/lib" "$ROOT/public" "$APP/Contents/Resources/opt/controlgui/"
-for extra in package.json LICENSE README.md README.ru.md; do
+for extra in package.json LICENSE README.md README.en.md; do
   [ -f "$ROOT/$extra" ] && cp "$ROOT/$extra" "$APP/Contents/Resources/opt/controlgui/" || true
 done
 

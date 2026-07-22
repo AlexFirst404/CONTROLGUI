@@ -76,7 +76,7 @@ addFile('controlgui/server.js', fs.readFileSync(path.join(ROOT, 'server.js')), 0
 addFile('controlgui/cli.js', fs.readFileSync(path.join(ROOT, 'cli.js')), 0o755);
 addFile('controlgui/tui.js', fs.readFileSync(path.join(ROOT, 'tui.js')), 0o755);
 addFile('controlgui/install.sh', INSTALL_SH, 0o755);
-for (const extra of ['LICENSE', 'README.md', 'README.ru.md']) {
+for (const extra of ['LICENSE', 'README.md', 'README.en.md']) {
   const p = path.join(ROOT, extra);
   if (fs.existsSync(p)) addFile('controlgui/' + extra, fs.readFileSync(p), 0o644);
 }

@@ -105,7 +105,7 @@ function panel(t) {
   t.addTree(path.join(ROOT, 'public'), 'opt/controlgui/public');
   // окно WebKitGTK для режима «приложение» (общее с AppImage)
   t.addFile('opt/controlgui/controlgui-window.py', path.join(__dirname, 'appimage', 'controlgui-window.py'), 0o644);
-  for (const extra of ['package.json', 'LICENSE', 'README.md', 'README.ru.md']) {
+  for (const extra of ['package.json', 'LICENSE', 'README.md', 'README.en.md']) {
     const p = path.join(ROOT, extra);
     if (fs.existsSync(p)) t.addFile('opt/controlgui/' + extra, p, 0o644);
   }

@@ -1,88 +1,199 @@
+<div align="center">
+
+<img src="public/assets/controlgui.png" width="120" alt="CONTROLGUI">
+
 # CONTROLGUI
 
-**A real Minecraft server admin panel that runs on your own computer.** No cloud, no accounts, no npm dependencies — one Node.js process, a Minecraft-styled web UI, and full control over your servers.
+### Настоящая панель управления Minecraft-серверами — на вашем компьютере
 
-[Русская версия / Russian version → README.ru.md](README.ru.md)
+Без облаков, без аккаунтов, без npm-зависимостей. Один процесс Node.js, интерфейс в стиле Minecraft и полный контроль над серверами.
 
-## Features
+<br>
 
-- **Create real servers in two clicks** — Vanilla, Paper, Purpur, Folia, Mohist, Forge, plus Velocity / BungeeCord proxies. Cores are downloaded from official sources; the right Java is installed automatically on all three OSes.
-- **Live console** with command input and autocomplete, log search, per-server CPU / RAM / disk graphs.
-- **File manager** with a built-in code editor, uploads (files and whole folders), zip/jar extraction.
-- **Players** — online list, inventory and stats viewer/editor (own NBT parser), kick / ban / OP / whitelist.
-- **Mods & plugins** — built-in [Modrinth](https://modrinth.com) catalog: search, one-click install with dependencies, enable/disable.
-- **Backups** — create, restore, download.
-- **Resource packs** — upload a pack and the panel serves it to game clients over LAN.
-- **Remote access** — flip a switch, set a password, forward one port on your router: manage your servers from anywhere over HTTPS (self-signed certificate generated locally in pure JS). No third-party servers involved — your machine is the only server.
-- **Headless / CLI mode** — install on a Linux VPS and manage it from another computer via browser or the built-in terminal UI (TUI).
+[![Лицензия](https://img.shields.io/badge/license-GPL--3.0-3b8526?style=flat-square)](LICENSE)
+![Версия](https://img.shields.io/badge/release-2.2.0-6cc04a?style=flat-square)
+![Платформы](https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux-2b2b2b?style=flat-square)
+![Зависимости](https://img.shields.io/badge/npm--зависимостей-0-3b8526?style=flat-square)
+![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-2b2b2b?style=flat-square)
 
-## Install
+**English version → [README.en.md](README.en.md)**
 
-Grab an installer from [Releases](https://github.com/AlexFirst404/CONTROLGUI/releases):
+</div>
 
-| Platform | File | Notes |
+<br>
+
+<div align="center">
+<img src="docs/screenshots/home.png" width="880" alt="Главный экран CONTROLGUI">
+</div>
+
+<br>
+
+CONTROLGUI поднимает и обслуживает **настоящие** серверы Minecraft — Vanilla, Paper, Purpur, Folia, Mohist, Forge и прокси Velocity / BungeeCord. Ядро и нужная Java скачиваются автоматически, а всё управление — консоль, файлы, игроки, моды, бэкапы — живёт в аккуратном веб-интерфейсе, который можно открыть как приложение или в браузере. Сервером является **только ваша машина** — никаких посредников.
+
+---
+
+## ✨ Возможности
+
+- 🚀 **Сервер в два клика** — Vanilla, Paper, Purpur, Folia, Mohist, Forge + прокси Velocity / BungeeCord. Ядра качаются с официальных источников, нужная Java ставится сама на всех трёх ОС.
+- 🖥️ **Живая консоль** с вводом команд и автоподсказками, графики CPU / RAM / диска и поиск по логам.
+- 📂 **Файловый менеджер** со встроенным редактором кода, загрузкой файлов и целых папок, распаковкой zip/jar.
+- 👥 **Игроки** — кто онлайн, просмотр и правка инвентаря и статов (свой NBT-парсер), кик / бан / OP / вайтлист.
+- 🧩 **Моды и плагины** — встроенный каталог [Modrinth](https://modrinth.com): поиск, установка в один клик вместе с зависимостями, вкл/выкл.
+- 💾 **Бэкапы** — создание, восстановление, скачивание.
+- 🎨 **Ресурспаки** — загрузите пак, и панель сама раздаст его игрокам по локальной сети.
+- 🌐 **Удалённый доступ** — несколько пользователей, у каждого свои серверы и права. HTTPS + пароль, порт на роутере — и управляйте откуда угодно.
+- 🪟 **Удалённые панели** *(новое в 2.2.0)* — подключайтесь к CONTROLGUI на других машинах прямо из приложения.
+- ⌨️ **Режим без GUI** — поставьте на Linux-VPS и рулите через браузер или текстовый интерфейс (TUI) прямо в SSH.
+
+---
+
+## 🚀 Создавайте серверы
+
+Заполните форму — ядро и Java подтянутся сами. Память и лимит CPU настраиваются ползунками, режим игры и сложность — одной кнопкой. Есть импорт готовой папки сервера «на месте».
+
+<div align="center">
+<img src="docs/screenshots/create.png" width="820" alt="Создание сервера">
+</div>
+
+---
+
+## 🖥️ Консоль, логи и графики
+
+Живая консоль с вводом команд и автодополнением, графики нагрузки по каждому серверу и полноценный просмотр логов с подсветкой и поиском — в том числе сразу по всем файлам.
+
+<div align="center">
+<img src="docs/screenshots/logs.png" width="820" alt="Логи сервера с подсветкой">
+</div>
+
+---
+
+## 👥 Игроки и 📂 файлы
+
+Список всех, кто заходил, с головами, IP и модерацией в один клик — кик, бан, OP, вайтлист, просмотр и правка инвентаря. Рядом — файловый менеджер со встроенным редактором кода.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/players.png" alt="Игроки"></td>
+<td width="50%"><img src="docs/screenshots/files.png" alt="Файловый менеджер"></td>
+</tr>
+</table>
+
+---
+
+## 🧩 Моды и плагины из каталога
+
+Встроенный каталог [Modrinth](https://modrinth.com): ищите по названию и категории под версию и ядро вашего сервера, ставьте в один клик вместе с зависимостями прямо в `mods/` или `plugins/`.
+
+<div align="center">
+<img src="docs/screenshots/mods.png" width="820" alt="Каталог модов и плагинов">
+</div>
+
+---
+
+## 🌐 Удалённый доступ
+
+Включите переключатель, добавьте пользователей (каждому — свои серверы и права), пробросьте один порт на роутере — и управляйте серверами откуда угодно по HTTPS. Сертификат самоподписанный и генерируется локально на чистом JS; приватный ключ не покидает вашу машину.
+
+<div align="center">
+<img src="docs/screenshots/remoteacc.png" width="820" alt="Настройки удалённого доступа">
+</div>
+
+**Как включить:**
+
+1. **Меню → Настройки панели → Удалённый доступ** — добавьте пользователя, включите доступ (HTTPS-порт **8433** по умолчанию).
+2. Пробросьте этот порт на роутере на свой компьютер.
+3. Откуда угодно: `https://ваш-ip:8433` → браузер один раз предупредит о самоподписанном сертификате (сверьте показанный в панели SHA-256-отпечаток) → введите логин и пароль.
+
+---
+
+## 🪟 Удалённые панели *(новое в 2.2.0)*
+
+Подключайтесь к панелям CONTROLGUI на **других компьютерах и серверах прямо из приложения** — без браузера. Добавьте адрес, порт, логин и пароль, сверьте отпечаток сертификата — и удалённая панель откроется в том же окне с автоматическим входом. Соединение защищено пиннингом сертификата, пароль не попадает в браузер.
+
+<div align="center">
+<img src="docs/screenshots/rcadd.png" width="520" alt="Добавление удалённой панели">
+</div>
+
+---
+
+## 📦 Установка
+
+Скачайте инсталлятор из [Releases](https://github.com/AlexFirst404/CONTROLGUI/releases):
+
+| Платформа | Файл | Примечание |
 |---|---|---|
-| Windows | `CONTROLGUI-<v>-windows-setup.exe` | Bundles Node.js — nothing else to install |
-| Linux (Debian/Ubuntu) | `controlgui_<v>_all.deb` | Uses system `nodejs` (>= 18) |
-| Linux (any distro) | `CONTROLGUI-<v>-x86_64.AppImage` | Bundles Node.js |
-| Linux server (headless) | `controlgui-<v>-linux.tar.gz` | `tar -xzf … && sudo controlgui/install.sh` |
-| macOS (Apple Silicon) | `CONTROLGUI-<v>-macos-arm64.pkg` | Bundles Node.js |
+| 🪟 **Windows** | `CONTROLGUI-<v>-windows-setup.exe` | Node.js встроен — ничего доустанавливать не нужно |
+| 🍎 **macOS** (Apple Silicon) | `CONTROLGUI-<v>-macos-arm64.pkg` | Node.js встроен |
+| 🐧 **Linux** (Debian/Ubuntu) | `controlgui_<v>_all.deb` | Нужен системный `nodejs` (≥ 18) |
+| 🐧 **Linux** (любой дистрибутив) | `CONTROLGUI-<v>-x86_64.AppImage` | Node.js встроен |
+| 🖥️ **Linux-сервер** (без GUI) | `controlgui-<v>-linux.tar.gz` | `tar -xzf … && sudo controlgui/install.sh` |
 
-Or run from source (any OS, Node.js >= 18, zero npm dependencies):
+Либо запустите из исходников (любая ОС, Node.js ≥ 18, ноль npm-зависимостей):
 
 ```bash
 git clone https://github.com/AlexFirst404/CONTROLGUI.git
 cd CONTROLGUI
-node server.js          # open http://localhost:8400
+node server.js          # откройте http://localhost:8400
 ```
 
-## Remote access over the internet
+---
 
-1. In the panel: **Menu → Panel settings → Remote access** — set a password; access turns on (HTTPS port **8433** by default).
-2. Forward port 8433 on your router to this computer.
-3. From anywhere: `https://your-ip:8433` → the browser warns about the self-signed certificate once (expected — verify the SHA-256 fingerprint shown in the panel) → enter the password → full panel.
+<details>
+<summary><b>⌨️ CLI и Linux-сервер без GUI</b></summary>
 
-The desktop apps can also connect directly: Windows — tray menu **"Remote panel…"**; Linux/macOS — `controlgui connect https://ip:8433` (back to local: `controlgui connect --local`). Certificate fingerprints are pinned on first use (TOFU) and verified on every connection.
-
-## CLI & headless Linux server
+<br>
 
 ```bash
-controlgui serve                  # run the panel in this terminal
-controlgui start | stop | status  # run it in the background
-controlgui remote password        # set the remote-access password
-controlgui remote enable          # start the HTTPS listener (port 8433)
-sudo controlgui service install   # systemd service with autostart
-controlgui tui                    # terminal UI (works over HTTPS too: controlgui tui https://ip:8433)
+controlgui serve                    # панель в этом терминале
+controlgui start | stop | status    # панель фоном
+controlgui remote user add <ник>    # добавить пользователя удалённого доступа
+controlgui remote enable            # включить HTTPS-листенер (порт 8433)
+sudo controlgui service install     # systemd-сервис с автозапуском
+controlgui tui                      # текстовый интерфейс (работает и по HTTPS)
 ```
 
-The TUI shows your servers with status and CPU/RAM, supports start/stop/restart, and gives you a live console with command input — right in an SSH session.
+TUI показывает серверы со статусом и CPU/RAM, умеет старт/стоп/рестарт и живую консоль с вводом команд — прямо в SSH-сессии. Подключение к удалённой панели: `controlgui tui https://ip:8433` (отпечаток сертификата пинится при первом входе и сверяется дальше).
 
-## Security model
+</details>
 
-- Plain HTTP (port 8400) answers **only on localhost** — the LAN sees nothing but resource-pack downloads (`/rp/`).
-- Remote access is a separate HTTPS listener: PBKDF2-hashed password, HttpOnly session cookies, brute-force lockout (5 attempts → 5 minutes), certificate generated locally — the private key never leaves your machine.
-- Host-machine actions (quit app, native folder picker) refuse to run for remote sessions.
+<details>
+<summary><b>🔒 Модель безопасности</b></summary>
 
-## Project layout
+<br>
+
+- Обычный HTTP (порт 8400) отвечает **только на localhost** — из локальной сети доступна лишь раздача ресурспаков (`/rp/`).
+- Изменяющие запросы к локальной панели принимаются только со **своего origin** (защита от CSRF).
+- Удалённый доступ — отдельный HTTPS-листенер: пароли хешируются PBKDF2, сессии в HttpOnly-куках, защита от перебора (5 попыток → блок 5 минут), права **по каждому серверу** отдельно, сертификат генерируется локально.
+- «Удалённые панели» ходят на ту сторону через локальный прокси с **пиннингом сертификата** и держат сессию в памяти — пароль и кука не попадают в браузер.
+- Действия над самой машиной (закрыть приложение, системный выбор папки) для удалённых сессий запрещены.
+
+</details>
+
+<details>
+<summary><b>🛠️ Устройство проекта и сборка</b></summary>
+
+<br>
 
 ```
-server.js          — entry point (port 8400; override with PORT env)
-cli.js / tui.js    — CLI and terminal UI
-lib/               — backend: API, java process manager, downloader, remote access
-public/            — frontend: index.html, css/minecraft.css, js/
-linux/ mac/        — .deb / tarball / AppImage / .pkg build scripts
+server.js          — входная точка (порт 8400; сменить: переменная PORT)
+cli.js / tui.js    — CLI и текстовый интерфейс
+lib/               — бэкенд: API, менеджер java-процессов, загрузчик, удалённый доступ
+public/            — фронтенд: index.html, css/minecraft.css, js/
+linux/ mac/        — сборка .deb / тарболла / AppImage / .pkg
 ```
 
-## Building installers
+- **Windows** — `dotnet publish` WPF-обёртки (WebView2) + скрипт Inno Setup.
+- **Linux deb** — `node linux/build-deb.js` (сборщик .deb на чистом Node, без dpkg).
+- **Linux тарболл** — `node linux/build-tarball.js`.
+- **AppImage** — `linux/build-appimage.sh` (или workflow GitHub Actions).
+- **macOS pkg** — `mac/build-pkg.sh` (или workflow GitHub Actions).
 
-- **Windows** — `dotnet publish` of the WPF wrapper (WebView2) + Inno Setup script.
-- **Linux deb** — `node linux/build-deb.js` (pure-Node .deb builder, no dpkg needed).
-- **Linux tarball** — `node linux/build-tarball.js`.
-- **AppImage** — `linux/build-appimage.sh` (or the GitHub Actions workflow).
-- **macOS pkg** — `mac/build-pkg.sh` (or the GitHub Actions workflow).
+</details>
 
-## License
+---
+
+## 📄 Лицензия
 
 [GPL-3.0](LICENSE) © AlexFirst
 
-The UI uses Minecraft-style fonts, [Pixelarticons](https://pixelarticons.com/) (MIT), the [Modrinth API](https://docs.modrinth.com/) for the mod catalog, [mc-heads.net](https://mc-heads.net/) for player heads, item textures from [InventivetalentDev/minecraft-assets](https://github.com/InventivetalentDev/minecraft-assets), and [CodeMirror 5](https://codemirror.net/5/) (MIT) for the file editor.
+<sub>Интерфейс использует шрифты в стиле Minecraft, [Pixelarticons](https://pixelarticons.com/) (MIT), [Modrinth API](https://docs.modrinth.com/) для каталога модов, [mc-heads.net](https://mc-heads.net/) для голов игроков, текстуры предметов из [InventivetalentDev/minecraft-assets](https://github.com/InventivetalentDev/minecraft-assets) и [CodeMirror 5](https://codemirror.net/5/) (MIT) для редактора файлов. Скриншоты сделаны на демо-данных.</sub>
