@@ -27,6 +27,7 @@
   <nav id="app-menu" class="app-menu">
     <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
     <div class="menu-item" data-menu="create"><i class="pi" data-ic="plus"></i> Создать сервер</div>
+    <div class="menu-item" id="menu-remote" data-menu="remote"><i class="pi" data-ic="monitor"></i> Удалённые панели</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-menu="settings"><i class="pi" data-ic="sliders"></i> Настройки панели</div>
     <div class="menu-item" data-menu="about"><i class="pi" data-ic="info-box"></i> О панели</div>
@@ -151,7 +152,7 @@
     </div>
   </div>
 
-  <!-- МОДАЛКА: ПОДКЛЮЧЕНИЕ К УДАЛЁННОЙ ПАНЕЛИ -->
+  <!-- МОДАЛКА-МАСТЕР: ПОДКЛЮЧЕНИЕ К УДАЛЁННОЙ ПАНЕЛИ (шаг 1 данные → шаг 2 сверка серта) -->
   <div id="rc-modal" class="modal-wrap hidden">
     <div class="modal">
       <div class="modal-head">
@@ -159,36 +160,63 @@
         <button class="mc-btn sm" id="rc-close"><i class="pi" data-ic="close"></i></button>
       </div>
       <div class="modal-body">
-        <label class="opt-label ra-label" for="rc-name">Название (как показывать в списке)</label>
-        <input class="fld" id="rc-name" maxlength="40" autocomplete="off" placeholder="например Домашний сервер">
-        <div class="rc-hostrow">
-          <div class="rc-hostcol">
-            <label class="opt-label ra-label" for="rc-host" style="margin-top:12px">Адрес (IP или домен)</label>
-            <input class="fld" id="rc-host" autocomplete="off" spellcheck="false" placeholder="192.168.1.10 или mypanel.example.com">
+
+        <!-- индикатор шагов -->
+        <div class="rc-steps" id="rc-steps">
+          <span class="rc-step-dot sel" data-step="1"><b>1</b> Данные</span>
+          <span class="rc-step-line"></span>
+          <span class="rc-step-dot" data-step="2"><b>2</b> Сертификат</span>
+        </div>
+
+        <!-- ШАГ 1: данные подключения -->
+        <div id="rc-step1">
+          <label class="opt-label ra-label" for="rc-name">Название (как показывать в списке)</label>
+          <input class="fld" id="rc-name" maxlength="40" autocomplete="off" placeholder="например Домашний сервер">
+          <div class="rc-hostrow">
+            <div class="rc-hostcol">
+              <label class="opt-label ra-label" for="rc-host" style="margin-top:12px">Адрес (IP или домен)</label>
+              <input class="fld" id="rc-host" autocomplete="off" spellcheck="false" placeholder="192.168.1.10 или mypanel.example.com">
+            </div>
+            <div class="rc-portcol">
+              <label class="opt-label ra-label" for="rc-portf" style="margin-top:12px">Порт</label>
+              <input class="fld" id="rc-portf" type="number" min="1" max="65535" value="8433">
+            </div>
           </div>
-          <div class="rc-portcol">
-            <label class="opt-label ra-label" for="rc-portf" style="margin-top:12px">Порт</label>
-            <input class="fld" id="rc-portf" type="number" min="1" max="65535" value="8433">
+          <label class="opt-label ra-label" for="rc-user" style="margin-top:12px">Логин</label>
+          <input class="fld" id="rc-user" maxlength="32" autocomplete="off" spellcheck="false" placeholder="пользователь удалённой панели">
+          <label class="opt-label ra-label" for="rc-pass" style="margin-top:12px">Пароль</label>
+          <span class="pass-wrap">
+            <input class="fld" id="rc-pass" type="password" autocomplete="new-password">
+            <button type="button" class="pass-eye" id="rc-pass-eye" title="Показать пароль"></button>
+          </span>
+          <div class="err" id="rc-err" style="margin-top:8px"></div>
+          <div class="btn-row" style="margin-top:18px">
+            <button class="mc-btn primary" id="rc-probe"><i class="pi" data-ic="search"></i> Проверить</button>
+            <button class="mc-btn" id="rc-cancel">Отмена</button>
           </div>
         </div>
-        <label class="opt-label ra-label" for="rc-user" style="margin-top:12px">Логин</label>
-        <input class="fld" id="rc-user" maxlength="32" autocomplete="off" spellcheck="false" placeholder="пользователь удалённой панели">
-        <label class="opt-label ra-label" for="rc-pass" style="margin-top:12px">Пароль</label>
-        <span class="pass-wrap">
-          <input class="fld" id="rc-pass" type="password" autocomplete="new-password">
-          <button type="button" class="pass-eye" id="rc-pass-eye" title="Показать пароль"></button>
-        </span>
-        <div id="rc-fp-box" class="opt-card hidden" style="margin-top:14px">
-          <div class="opt-label" style="margin:0 0 6px"><i class="pi" data-ic="lock"></i> Отпечаток сертификата (SHA-256)</div>
-          <code class="rc-fp" id="rc-fp"></code>
-          <div class="hint" style="margin:8px 0 0">Сверьте с показанным на удалённой панели (Настройки → Удалённый доступ). Совпадает — жмите «Доверять и сохранить»: дальше любое подключение с другим сертификатом будет отклонено.</div>
+
+        <!-- ШАГ 2: сверка отпечатка сертификата -->
+        <div id="rc-step2" class="hidden">
+          <div class="rc-verify-top">
+            <span class="rc-verify-ic"><i class="pi" data-ic="lock"></i></span>
+            <div>
+              <div class="section-title" style="margin:0 0 5px">Подтвердите сертификат</div>
+              <div class="hint" style="margin:0">Панель <b id="rc-verify-host">—</b> предъявила самоподписанный сертификат. Сверьте его отпечаток с тем, что показывает удалённая панель в «Настройки → Удалённый доступ».</div>
+            </div>
+          </div>
+          <div class="opt-card rc-fp-card">
+            <div class="opt-label" style="margin:0 0 7px"><i class="pi" data-ic="lock"></i> Отпечаток SHA-256</div>
+            <code class="rc-fp" id="rc-fp"></code>
+          </div>
+          <div class="hint" style="margin:10px 0 0">Совпадает — жмите «Доверять и сохранить». Дальше любое подключение с другим сертификатом будет отклонено — это защита от перехвата.</div>
+          <div class="err" id="rc-err2" style="margin-top:8px"></div>
+          <div class="btn-row" style="margin-top:18px">
+            <button class="mc-btn primary" id="rc-save"><i class="pi" data-ic="check"></i> Доверять и сохранить</button>
+            <button class="mc-btn" id="rc-back-step"><i class="pi" data-ic="chevron-left"></i> Назад</button>
+          </div>
         </div>
-        <div class="err" id="rc-err" style="margin-top:8px"></div>
-        <div class="btn-row" style="margin-top:16px">
-          <button class="mc-btn" id="rc-probe"><i class="pi" data-ic="search"></i> Проверить</button>
-          <button class="mc-btn primary hidden" id="rc-save"><i class="pi" data-ic="check"></i> Доверять и сохранить</button>
-          <button class="mc-btn" id="rc-cancel">Отмена</button>
-        </div>
+
       </div>
     </div>
   </div>
@@ -232,14 +260,28 @@
       <button class="mc-btn" id="btn-refresh"><i class="pi" data-ic="reload"></i> Обновить</button>
     </div>
 
-    <!-- УДАЛЁННЫЕ ПАНЕЛИ: CONTROLGUI на других машинах, открываются прямо в этом окне -->
-    <div id="rc-section" class="rc-section hidden">
-      <div class="rc-head">
-        <div class="section-title" style="margin:0"><i class="pi" data-ic="monitor"></i> Удалённые панели</div>
-        <button class="mc-btn sm" id="rc-add"><i class="pi" data-ic="plus"></i> Добавить</button>
-      </div>
-      <div class="hint rc-hint">Панели CONTROLGUI на других компьютерах и серверах — открываются прямо здесь. На той стороне включите «Удалённый доступ» (Настройки панели) и создайте пользователя.</div>
-      <div class="srv-grid" id="rc-list"></div>
+    <!-- ВХОД В МЕНЕДЖЕР «Удалённые панели» (полноценный экран открывается по клику) -->
+    <button type="button" id="rc-home-entry" class="rc-home-entry hidden">
+      <span class="rc-home-ic"><i class="pi" data-ic="monitor"></i></span>
+      <span class="rc-home-main">
+        <span class="rc-home-title">Удалённые панели</span>
+        <span class="rc-home-sub" id="rc-home-sub">Подключения к CONTROLGUI на других машинах</span>
+      </span>
+      <span class="rc-home-go"><i class="pi" data-ic="chevron-right"></i></span>
+    </button>
+  </section>
+
+  <!-- ЭКРАН: УДАЛЁННЫЕ ПАНЕЛИ (менеджер подключений) -->
+  <section id="screen-remote" class="screen hidden">
+    <div class="rc-screen-head">
+      <button class="mc-btn sm" id="rc-goto-servers" title="К серверам"><i class="pi" data-ic="chevron-left"></i></button>
+      <h1 class="mc-title rc-screen-title">Удалённые панели</h1>
+      <button class="mc-btn sm primary" id="rc-add"><i class="pi" data-ic="plus"></i> Добавить</button>
+    </div>
+    <p class="hint rc-screen-hint">Панели CONTROLGUI на других компьютерах и серверах открываются прямо здесь, в этом окне. На той стороне включите «Удалённый доступ» (Настройки панели) и создайте пользователя.</p>
+    <div class="srv-grid" id="rc-list"></div>
+    <div class="btn-row">
+      <button class="mc-btn" id="rc-refresh"><i class="pi" data-ic="reload"></i> Обновить</button>
     </div>
   </section>
 

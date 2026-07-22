@@ -1037,25 +1037,71 @@ input[type=password]::-ms-clear { display: none; }
 .srv-card-actions { display: flex; gap: 8px; margin-top: 14px; }
 .srv-card-actions .mc-btn { margin-bottom: 2px; flex: 1; }
 
-/* ------------------------------------- удалённые панели (главный экран) ----- */
-.rc-section { margin-top: 46px; }
-.rc-section .srv-grid { min-height: 0; }
-.rc-head { display: flex; align-items: center; justify-content: center; gap: 14px; }
-.rc-head .mc-btn { margin-bottom: 0; }
-.rc-hint { margin: 8px auto 16px; max-width: 640px; text-align: center; }
+/* ======================= удалённые панели (менеджер подключений) ===========
+   Всё на кит-компонентах: .mc-card/.opt-card/.mc-btn/.status-dot/.fld/.err.
+   Классы ниже — только layout-обёртки, своих визуальных примитивов нет. */
+
+/* --- вход-карточка на главном экране (ведёт на экран-менеджер) --- */
+.rc-home-entry { display: flex; align-items: center; gap: 14px; width: min(560px, 100%);
+  margin: 36px auto 0; background: var(--card); border: 1px solid var(--bd);
+  padding: 14px 16px; text-align: left; color: inherit; font-family: var(--font-ui);
+  cursor: pointer; transition: background .1s, border-color .1s; }
+.rc-home-entry:hover { background: #333; border-color: #5a5a5a; }
+.rc-home-ic { width: 46px; height: 46px; flex: none; display: flex; align-items: center; justify-content: center;
+  background: var(--card-inset); border: 1px solid var(--bd); color: var(--accent-bright); }
+.rc-home-ic .pi { width: 23px; height: 23px; }
+.rc-home-main { flex: 1; min-width: 0; }
+.rc-home-title { display: block; color: #fff; font-size: 15px; }
+.rc-home-sub { display: block; color: #9aa39c; font-size: 12px; margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-home-go { flex: none; }
+.rc-home-go .pi { width: 20px; height: 20px; color: #8b968d; }
+.rc-home-entry:hover .rc-home-go .pi { color: var(--accent-bright); }
+
+/* --- шапка экрана «Удалённые панели» --- */
+.rc-screen-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
+.rc-screen-head .mc-btn { margin-bottom: 0; flex: none; }
+.rc-screen-title { flex: 1 1 auto; margin: 0; text-align: left; font-size: 20px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-screen-hint { text-align: center; max-width: 700px; margin: 4px auto 22px; }
+#screen-remote .srv-grid { min-height: 120px; }
+
+/* --- карточка подключения (переиспользует .srv-card) --- */
 .rc-icon { width: 52px; height: 52px; flex: none; display: flex; align-items: center; justify-content: center;
   background: var(--card-inset); border: 1px solid var(--bd); color: var(--accent-bright); }
 .rc-icon .pi { width: 26px; height: 26px; }
-.rc-card .srv-card-actions .mc-btn:not(:first-child) { flex: 0 0 auto; } /* ✎ и корзина — компактные */
-.rc-empty { width: 100%; color: #a9a9a9; text-align: center; padding: 20px 20px 8px; font-size: 13.5px; }
-.rc-state { display: inline-flex; align-items: center; min-width: 0; }
+.rc-state { display: inline-flex; align-items: center; min-width: 0; font-size: 12.5px; color: #c8c8c8; }
+/* ✎ и корзина — компактные квадратные, «Открыть» растягивается */
+.rc-card .srv-card-actions .mc-btn:not(:first-child) { flex: 0 0 auto; min-width: 0; width: 40px; padding: 6px 0; }
+.rc-empty { width: 100%; color: #a9a9a9; text-align: center; padding: 30px 20px 12px; font-size: 13.5px; line-height: 1.7; }
+/* предупреждение о смене сертификата — на стиле java-alert кита */
+.rc-warn { display: flex; align-items: center; gap: 8px; margin-top: 11px;
+  background: #241a1a; border: 1px solid #5a2a24; color: #ff9a8a; padding: 7px 10px; font-size: 12px; line-height: 1.4; }
+.rc-warn .pi { width: 15px; height: 15px; flex: none; }
+
+/* --- модалка-мастер --- */
 #rc-modal .modal-body { white-space: normal; } /* глобальный pre-line ломал бы разметку полей */
 #rc-modal .ra-label { display: block; color: #a9b3ab; font-size: 13px; margin: 0 0 6px; }
 .rc-hostrow { display: flex; gap: 10px; }
 .rc-hostcol { flex: 1; min-width: 0; }
 .rc-portcol { width: 120px; flex: none; }
-.rc-fp { display: block; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6;
-  word-break: break-all; color: #d6e0d8; background: #161616; border: 1px solid #353535; padding: 8px 10px; }
+/* индикатор шагов мастера */
+.rc-steps { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; }
+.rc-step-dot { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #8b968d; white-space: nowrap; }
+.rc-step-dot b { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+  background: #2a2b2c; border: 2px solid var(--bd); color: #c8c8c8; font-weight: normal; }
+.rc-step-dot.sel { color: #fff; }
+.rc-step-dot.sel b { background: var(--accent); border-color: var(--accent-bright); color: #0c1a07; }
+.rc-step-dot.done b { background: #22331a; border-color: var(--accent); color: var(--accent-bright); }
+.rc-step-line { flex: 1; height: 2px; background: var(--bd); }
+/* шаг 2 — сверка отпечатка */
+.rc-verify-top { display: flex; gap: 14px; align-items: flex-start; }
+.rc-verify-ic { width: 46px; height: 46px; flex: none; display: flex; align-items: center; justify-content: center;
+  background: var(--card-inset); border: 1px solid var(--bd); color: var(--accent-bright); }
+.rc-verify-ic .pi { width: 23px; height: 23px; }
+.rc-fp-card { margin-top: 16px; }
+.rc-fp { display: block; font-family: Consolas, monospace; font-size: 13px; line-height: 1.7; letter-spacing: .5px;
+  word-break: break-all; color: var(--accent-bright); background: #161616; border: 1px solid #353535; padding: 9px 11px; }
 
 /* --------------------------- адаптация по высоте окна ---------------------
    при нехватке высоты сначала ужимаются графики, затем консоль */

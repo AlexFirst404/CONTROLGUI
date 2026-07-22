@@ -828,35 +828,51 @@
     });
   }
 
-  // ---------- удалённые панели (подключения к CONTROLGUI на других машинах) ----------
+  // ---------- удалённые панели: менеджер подключений к CONTROLGUI на других машинах ----------
   let rcConns = [];      // список подключений (без паролей)
   const rcChecks = {};   // id -> { online, certChanged, reason } | undefined (идёт проверка)
   let rcEditing = null;  // id редактируемого подключения | null (новое)
-  let rcProbedFp = null; // отпечаток, подтверждённый кнопкой «Проверить»
+  let rcProbedFp = null; // отпечаток, подтверждённый шагом «Проверить»
 
   function fmtFingerprint(fp) { return String(fp || '').replace(/(..)(?=.)/g, '$1:').toUpperCase(); }
 
+  /* Загрузка списка подключений: рендер экрана-менеджера + компактного входа на главной. */
   async function loadRemoteConns() {
-    const sec = $('#rc-section');
-    if (!sec) return;
-    if (state.remoteSession) { sec.classList.add('hidden'); return; } // у удалённого гостя подключений нет
+    if (!$('#rc-list')) return;
+    if (state.remoteSession) { updateRcHomeEntry(); return; } // удалённый гость подключений не имеет
     try { const d = await API.remoteConns(); rcConns = d.connections || []; }
-    catch (e) { sec.classList.add('hidden'); return; } // удалённая сессия (403) — секцию не показываем
-    sec.classList.remove('hidden');
+    catch (e) { rcConns = []; updateRcHomeEntry(); return; } // 403 (удалёнка) — вход прячем
     renderRemoteConns();
+    updateRcHomeEntry();
     for (const c of rcConns) {
       rcChecks[c.id] = undefined;
       API.remoteConnAction('check', { id: c.id })
-        .then((r) => { rcChecks[c.id] = r; updateRcState(c.id); })
-        .catch(() => { rcChecks[c.id] = { online: false, reason: 'нет ответа' }; updateRcState(c.id); });
+        .then((r) => { rcChecks[c.id] = r; })
+        .catch(() => { rcChecks[c.id] = { online: false, reason: 'нет ответа' }; })
+        .then(() => { updateRcState(c.id); updateRcHomeEntry(); });
     }
+  }
+
+  /* Компактный вход «Удалённые панели» на главном экране (и пункт меню). */
+  function updateRcHomeEntry() {
+    const entry = $('#rc-home-entry');
+    if (!entry) return;
+    const menu = $('#menu-remote');
+    if (state.remoteSession) { entry.classList.add('hidden'); if (menu) menu.classList.add('hidden'); return; }
+    entry.classList.remove('hidden');
+    if (menu) menu.classList.remove('hidden');
+    const n = rcConns.length;
+    const online = rcConns.filter((c) => rcChecks[c.id] && rcChecks[c.id].online && !rcChecks[c.id].certChanged).length;
+    $('#rc-home-sub').textContent = n
+      ? ('Подключений: ' + n + (online ? ' · в сети: ' + online : ''))
+      : 'Подключитесь к CONTROLGUI на другом ПК или сервере';
   }
 
   function rcStateView(id) {
     const st = rcChecks[id];
     if (st === undefined) return { dot: '', text: 'Проверка…' };
     if (!st.online) return { dot: '', text: 'Не в сети', title: st.reason || '' };
-    if (st.certChanged) return { dot: ' err', text: 'Сертификат изменился — проверьте заново' };
+    if (st.certChanged) return { dot: ' err', text: 'Сертификат изменился' };
     return { dot: ' on', text: 'В сети' };
   }
   function fillRcState(stEl, id) {
@@ -868,9 +884,17 @@
     stEl.appendChild(document.createTextNode(v.text));
     stEl.title = v.title || '';
   }
-  function updateRcState(id) {
-    const stEl = document.querySelector('.rc-card[data-rcid="' + id + '"] .rc-state');
+  /* Обновить статус-строку и предупреждение о смене серта на карточке. */
+  function refreshRcCard(card, id) {
+    const stEl = card.querySelector('.rc-state');
     if (stEl) fillRcState(stEl, id);
+    const warn = card.querySelector('.rc-warn');
+    const st = rcChecks[id];
+    if (warn) warn.classList.toggle('hidden', !(st && st.certChanged));
+  }
+  function updateRcState(id) {
+    const card = document.querySelector('.rc-card[data-rcid="' + id + '"]');
+    if (card) refreshRcCard(card, id);
   }
 
   function renderRemoteConns() {
@@ -881,7 +905,7 @@
     if (!rcConns.length) {
       const e = document.createElement('div');
       e.className = 'rc-empty';
-      e.textContent = 'Подключений пока нет — нажмите «Добавить».';
+      e.innerHTML = 'Пока нет ни одного подключения.<br>Нажмите «Добавить», чтобы подключиться к CONTROLGUI на другой машине.';
       box.appendChild(e);
       return;
     }
@@ -898,25 +922,32 @@
     const icon = document.createElement('div');
     icon.className = 'rc-icon';
     icon.appendChild(picon('monitor'));
-    const id = document.createElement('div');
-    id.className = 'srv-card-id';
+    const idBox = document.createElement('div');
+    idBox.className = 'srv-card-id';
     const nameEl = document.createElement('div');
     nameEl.className = 'srv-card-name';
     nameEl.textContent = c.name;
     const subEl = document.createElement('div');
     subEl.className = 'srv-card-sub';
     subEl.textContent = c.host + ':' + c.port + ' · ' + c.username;
-    id.appendChild(nameEl);
-    id.appendChild(subEl);
+    idBox.appendChild(nameEl);
+    idBox.appendChild(subEl);
     top.appendChild(icon);
-    top.appendChild(id);
+    top.appendChild(idBox);
 
     const line = document.createElement('div');
     line.className = 'srv-card-line';
     const stEl = document.createElement('span');
     stEl.className = 'rc-state';
-    fillRcState(stEl, c.id);
     line.appendChild(stEl);
+
+    // предупреждение о смене сертификата (скрыто, показывается по результату проверки)
+    const warn = document.createElement('div');
+    warn.className = 'rc-warn hidden';
+    warn.appendChild(picon('lock'));
+    const warnT = document.createElement('span');
+    warnT.textContent = 'Сертификат изменился — откройте «Изменить» и сверьте заново.';
+    warn.appendChild(warnT);
 
     const actions = document.createElement('div');
     actions.className = 'srv-card-actions';
@@ -941,15 +972,17 @@
 
     card.appendChild(top);
     card.appendChild(line);
+    card.appendChild(warn);
     card.appendChild(actions);
     card.addEventListener('click', () => openRemoteConn(c.id, openBtn));
+    refreshRcCard(card, c.id);
     return card;
   }
 
   async function openRemoteConn(id, btn) {
     const st = rcChecks[id];
     if (st && st.certChanged) {
-      showToast('Сертификат удалённой панели изменился — нажмите «Проверить» и сверьте новый отпечаток.');
+      showToast('Сертификат удалённой панели изменился — откройте «Изменить» и сверьте новый отпечаток.');
       const c = rcConns.find((x) => x.id === id);
       if (c) openRcEditor(c);
       return;
@@ -974,14 +1007,19 @@
     } catch (e) { showToast(e.message); }
   }
 
-  // --- модалка подключения: «Проверить» (отпечаток) → «Доверять и сохранить» ---
-  function rcInvalidateProbe() {
-    rcProbedFp = null;
-    $('#rc-fp-box').classList.add('hidden');
-    $('#rc-save').classList.add('hidden');
+  // --- мастер добавления: шаг 1 (данные) → шаг 2 (сверка отпечатка) ---
+  function rcShowStep(n) {
+    $('#rc-step1').classList.toggle('hidden', n !== 1);
+    $('#rc-step2').classList.toggle('hidden', n !== 2);
+    const d1 = $('#rc-steps').querySelector('[data-step="1"]');
+    const d2 = $('#rc-steps').querySelector('[data-step="2"]');
+    d1.classList.toggle('sel', n === 1);
+    d1.classList.toggle('done', n === 2);
+    d2.classList.toggle('sel', n === 2);
   }
   function openRcEditor(conn) {
     rcEditing = conn ? conn.id : null;
+    rcProbedFp = null;
     $('#rc-title').textContent = conn ? 'Подключение «' + conn.name + '»' : 'Новое подключение';
     $('#rc-name').value = conn ? conn.name : '';
     $('#rc-host').value = conn ? conn.host : '';
@@ -994,14 +1032,18 @@
     $('#rc-pass-eye').style.setProperty('--i', "url('/icons/eye.svg')");
     $('#rc-pass-eye').title = 'Показать пароль';
     $('#rc-err').textContent = '';
-    rcInvalidateProbe();
+    $('#rc-err2').textContent = '';
+    rcShowStep(1);
     $('#rc-modal').classList.remove('hidden');
     setTimeout(() => { if (!conn) $('#rc-name').focus(); }, 40);
   }
   async function rcProbe() {
     $('#rc-err').textContent = '';
+    if (!$('#rc-host').value.trim()) { $('#rc-err').textContent = 'Введите адрес.'; return; }
+    if (!rcEditing && !$('#rc-pass').value) { $('#rc-err').textContent = 'Введите пароль.'; return; }
     const btn = $('#rc-probe');
-    btn.disabled = true;
+    const prev = btn.innerHTML;
+    btn.disabled = true; btn.textContent = 'Проверяю…';
     try {
       const r = await API.remoteConnAction('probe', {
         host: $('#rc-host').value.trim(),
@@ -1009,17 +1051,18 @@
       });
       rcProbedFp = r.fingerprint;
       $('#rc-fp').textContent = fmtFingerprint(r.fingerprint);
-      $('#rc-fp-box').classList.remove('hidden');
-      $('#rc-save').classList.remove('hidden');
-    } catch (e) { rcInvalidateProbe(); $('#rc-err').textContent = e.message; }
-    finally { btn.disabled = false; }
+      $('#rc-verify-host').textContent = $('#rc-host').value.trim() + ':' + (parseInt($('#rc-portf').value, 10) || 8433);
+      $('#rc-err2').textContent = '';
+      rcShowStep(2);
+    } catch (e) { $('#rc-err').textContent = e.message; }
+    finally { btn.disabled = false; btn.innerHTML = prev; }
   }
   async function rcSave() {
-    $('#rc-err').textContent = '';
-    if (!rcProbedFp) { $('#rc-err').textContent = 'Сначала нажмите «Проверить».'; return; }
-    if (!rcEditing && !$('#rc-pass').value) { $('#rc-err').textContent = 'Введите пароль.'; return; }
+    $('#rc-err2').textContent = '';
+    if (!rcProbedFp) { rcShowStep(1); $('#rc-err').textContent = 'Сначала нажмите «Проверить».'; return; }
     const btn = $('#rc-save');
-    btn.disabled = true;
+    const prev = btn.innerHTML;
+    btn.disabled = true; btn.textContent = 'Сохраняю…';
     try {
       await API.remoteConnAction('save', {
         id: rcEditing || undefined,
@@ -1033,20 +1076,26 @@
       $('#rc-modal').classList.add('hidden');
       showToast('Подключение сохранено.', 'ok');
       await loadRemoteConns();
-    } catch (e) { $('#rc-err').textContent = e.message; }
-    finally { btn.disabled = false; }
+    } catch (e) { $('#rc-err2').textContent = e.message; }
+    finally { btn.disabled = false; btn.innerHTML = prev; }
   }
   function bindRemoteConns() {
-    if (!$('#rc-section')) return;
+    if (!$('#rc-list')) return;
+    // навигация экрана-менеджера
+    $('#rc-home-entry').addEventListener('click', () => { showScreen('remote'); loadRemoteConns(); });
+    $('#rc-goto-servers').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
+    $('#rc-refresh').addEventListener('click', () => loadRemoteConns());
     $('#rc-add').addEventListener('click', () => openRcEditor(null));
+    // мастер
     $('#rc-close').addEventListener('click', () => $('#rc-modal').classList.add('hidden'));
     $('#rc-cancel').addEventListener('click', () => $('#rc-modal').classList.add('hidden'));
     $('#rc-modal').addEventListener('click', (e) => { if (e.target.id === 'rc-modal') $('#rc-modal').classList.add('hidden'); });
     $('#rc-probe').addEventListener('click', rcProbe);
     $('#rc-save').addEventListener('click', rcSave);
-    // смена адреса/порта обнуляет проверку — пин ставится только по свежесверенному отпечатку
-    $('#rc-host').addEventListener('input', rcInvalidateProbe);
-    $('#rc-portf').addEventListener('input', rcInvalidateProbe);
+    $('#rc-back-step').addEventListener('click', () => rcShowStep(1));
+    // смена адреса/порта на шаге 1 обнуляет сверку — пин ставится только по свежему отпечатку
+    $('#rc-host').addEventListener('input', () => { rcProbedFp = null; });
+    $('#rc-portf').addEventListener('input', () => { rcProbedFp = null; });
     $('#rc-pass-eye').addEventListener('click', () => {
       const p = $('#rc-pass');
       p.type = p.type === 'password' ? 'text' : 'password';
@@ -1073,6 +1122,7 @@
     $('#screen-create').classList.toggle('hidden', name !== 'create');
     $('#screen-server').classList.toggle('hidden', name !== 'server');
     $('#screen-proxy').classList.toggle('hidden', name !== 'proxy');
+    $('#screen-remote').classList.toggle('hidden', name !== 'remote');
     // бургер-меню — на всех экранах
     $('#btn-burger').classList.remove('hidden');
     if (name === 'create') updateJavaInstallUI();
@@ -1088,6 +1138,7 @@
     if (name === 'list') pushHash('');
     else if (name === 'create') pushHash('#create');
     else if (name === 'proxy') pushHash('#proxy');
+    else if (name === 'remote') pushHash('#remote');
   }
 
   /* Применяем состояние из адреса при нажатии «назад/вперёд» — без выхода из SPA. */
@@ -1099,6 +1150,8 @@
         if (state.screen !== 'create') { showScreen('create'); suggestPort(); loadVersions(); }
       } else if (hash === '#proxy') {
         if (state.screen !== 'proxy') { showScreen('proxy'); renderProxyViz(); }
+      } else if (hash === '#remote') {
+        if (state.screen !== 'remote') { showScreen('remote'); loadRemoteConns(); }
       } else if (hash.indexOf('#server=') === 0) {
         const rest = hash.slice(8);
         const id = rest.split('/tab/')[0].split('/player/')[0];
@@ -1238,8 +1291,10 @@
   function routeInitialHash() {
     if (location.hash === '#create') {
       showScreen('create'); loadVersions(); guard(loadServers).then(suggestPort);
+    } else if (location.hash === '#remote') {
+      showScreen('remote'); loadRemoteConns(); // экран-менеджер удалённых панелей
     } else if (location.hash === '#rc-add') {
-      openRcEditor(null); // диплинк «добавить удалённую панель»
+      showScreen('remote'); loadRemoteConns(); openRcEditor(null); // диплинк «добавить панель»
     } else if (location.hash === '#proxy') {
       showScreen('proxy'); guard(loadServers).then(() => renderProxyViz());
     } else if (location.hash.startsWith('#server=')) {
@@ -4916,6 +4971,7 @@
         if (state.memCreateSlider) state.memCreateSlider.refresh();
       }
       if (action === 'proxy') { showScreen('proxy'); guard(loadServers).then(() => renderProxyViz()); }
+      if (action === 'remote') { showScreen('remote'); loadRemoteConns(); }
       if (action === 'settings') openAppSettings();
       if (action === 'about') $('#about-root').classList.remove('hidden');
       if (action === 'logout') doLogout();
