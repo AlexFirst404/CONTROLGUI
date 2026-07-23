@@ -8,7 +8,7 @@ set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-VERSION="${1:-2.3.0}"
+VERSION="${1:-2.3.1}"
 NODE_VER="v20.18.1"
 
 case "$(uname -m)" in
