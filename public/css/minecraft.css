@@ -206,6 +206,7 @@ a { color: var(--accent-bright); }
 .mc-btn.primary { --btn-c: var(--btn-pc); --btn-rim: var(--btn-prim); --btn-sh: var(--btn-psh); --btn-ts: var(--btn-pts); }
 .mc-btn.accent  { --btn-c: #e0a72a; --btn-rim: #f1c659; --btn-sh: #7e5a0c; --btn-ts: #5a3f08; color: #2a1f00; text-shadow: 2px 2px 0 #d8b452; }
 .mc-btn.danger  { --btn-c: #c43f35; --btn-rim: #d0655c; --btn-sh: #581c17; --btn-ts: #6b221b; }
+.mc-btn.dark    { --btn-c: #232323; --btn-rim: #3d3d3d; --btn-sh: #000; --btn-ts: #000; color: #ededed; }
 
 .mc-btn.sm { font-size: 13px; padding: 6px 12px; min-width: 0; border-width: 2px; box-shadow: 0 4px 0 0 var(--btn-sh); margin-bottom: 4px; }
 .mc-btn.lg { font-size: 22px; padding: 14px 26px; border-width: 4px; box-shadow: 0 8px 0 0 var(--btn-sh); margin-bottom: 8px; }
