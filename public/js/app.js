@@ -1753,19 +1753,15 @@
   function coreWord(n) { const d = n % 10, dd = n % 100; if (d === 1 && dd !== 11) return 'ядро'; if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return 'ядра'; return 'ядер'; }
   function platformName(p) { return ({ win32: 'Windows', darwin: 'macOS', linux: 'Linux' })[p] || (p || '—'); }
 
-  // строка над консолью: аптайм (тикает раз в секунду) + TPS + игроки онлайн
+  // строка над консолью: только аптайм (тикает раз в секунду); TPS и игроки — в графиках
   function renderConsoleMeta() {
     const el = $('#console-meta');
     if (!el) return;
     const s = state.current;
     const live = s && (s.status === 'running' || s.status === 'starting');
-    if (!live) { el.classList.add('hidden'); el.textContent = ''; return; }
+    if (!live || !s.startedAt) { el.classList.add('hidden'); el.textContent = ''; return; }
     el.classList.remove('hidden');
-    const parts = [];
-    if (s.startedAt) parts.push('Аптайм: ' + fmtDuration(Date.now() - s.startedAt));
-    parts.push('TPS: ' + (s.tps || '—'));
-    parts.push('Игроков: ' + (s.players ? s.players.length : 0));
-    el.textContent = parts.join('   ·   ');
+    el.textContent = 'Аптайм: ' + fmtDuration(Date.now() - s.startedAt);
   }
 
   // ---------- метрики процесса (чёткие графики с учётом DPI) ----------
@@ -1822,9 +1818,12 @@
     const server = state.current;
     if (!server) return;
     const active = server.status === 'running' || server.status === 'starting' || server.status === 'stopping';
+    // TPS-карточку показываем только у ядер, поддерживающих команду tps (Paper-совместимые)
+    const paperTps = ['paper', 'purpur', 'folia', 'mohist'].includes(server.type);
+    if ($('#stat-card-tps')) $('#stat-card-tps').classList.toggle('hidden', !paperTps);
     if (!active) {
-      ['#stat-cpu', '#stat-ram', '#stat-read', '#stat-write', '#stat-players'].forEach((id) => { $(id).textContent = '—'; });
-      ['#graph-cpu', '#graph-ram', '#graph-read', '#graph-write', '#graph-players'].forEach((id) => sparkline(id, [], 1));
+      ['#stat-cpu', '#stat-ram', '#stat-read', '#stat-write', '#stat-players', '#stat-tps'].forEach((id) => { $(id).textContent = '—'; });
+      ['#graph-cpu', '#graph-ram', '#graph-read', '#graph-write', '#graph-players', '#graph-tps'].forEach((id) => sparkline(id, [], 1));
       return;
     }
     try {
@@ -1846,6 +1845,14 @@
       sparkline('#graph-read', pts.map((p) => p.readBps), null);
       sparkline('#graph-write', pts.map((p) => p.writeBps), null);
       sparkline('#graph-players', pts.map((p) => p.players || 0), Math.max(state.maxPlayers || 0, 5));
+      if (paperTps) {
+        const curTps = (last && last.tps != null) ? last.tps : (server.tps != null ? parseFloat(server.tps) : null);
+        $('#stat-tps').textContent = curTps != null ? curTps.toFixed(1) + ' / 20' : 'сбор…';
+        // null-точки (до первого замера) заполняем последним известным — линия непрерывна
+        let lk = null;
+        const tvals = pts.map((p) => { if (p.tps != null) lk = p.tps; return lk; }).filter((v) => v != null);
+        sparkline('#graph-tps', tvals, 20);
+      }
     } catch (e) { /* статы не критичны */ }
   }
 
