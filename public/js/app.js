@@ -2863,6 +2863,7 @@
     try {
       const data = await API.properties(state.currentId);
       renderSettings(data);
+      populateLaunchCard(data);
       applyPropsModeUI();
       if ((state.propsMode || 'fields') === 'raw') await loadRawProps();
       markSettingsClean(); // базовый снимок после заполнения редактируемой формы
@@ -3619,6 +3620,37 @@
     updateWlVisibility();
   }
 
+  // ---------- карточка «Команда запуска»: jar-файл, пресеты флагов, свой шаблон ----------
+  function populateLaunchCard(data) {
+    state.launchPresets = data.launchPresets || [];
+    const jarSel = $('#launch-jar');
+    if (jarSel) {
+      jarSel.innerHTML = '';
+      const jars = (data.jars && data.jars.length) ? data.jars : [data.jarFile || 'server.jar'];
+      for (const j of jars) { const o = document.createElement('option'); o.value = j; o.textContent = j; jarSel.appendChild(o); }
+      jarSel.value = data.jarFile || jars[0] || 'server.jar';
+      $('#launch-jar-label').classList.toggle('hidden', jars.length <= 1); // один jar — выбор не нужен
+      enhanceSelect(jarSel);
+      if (jarSel._mcSync) jarSel._mcSync();
+    }
+    const presetSel = $('#launch-preset');
+    if (presetSel) {
+      presetSel.innerHTML = '';
+      (data.launchPresets || []).forEach((p, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = p.name; presetSel.appendChild(o); });
+      const co = document.createElement('option'); co.value = 'custom'; co.textContent = 'Своя команда (в поле ниже)'; presetSel.appendChild(co);
+      presetSel.value = 'custom';
+      enhanceSelect(presetSel);
+      if (presetSel._mcSync) presetSel._mcSync();
+    }
+    $('#launch-cmd').value = data.launchCmd || '';
+    const note = $('#launch-forge-note');
+    if (note) {
+      const forgeArgs = data.forgeArgs && !data.launchCmd;
+      note.classList.toggle('hidden', !forgeArgs);
+      if (forgeArgs) note.textContent = 'Это Forge-сервер (запуск через @unix_args.txt/@win_args.txt). Выбор .jar или своя команда перекроют его — меняйте, только если понимаете, что делаете.';
+    }
+  }
+
   // ---------- server.properties: режим «Поля» (перевод) / «Файл» (как есть) ----------
 
   function applyPropsModeUI() {
@@ -3799,6 +3831,8 @@
     const memoryMb = state.memSettingsSlider ? state.memSettingsSlider.value : null;
     const cpuPercent = state.cpuSettingsSlider ? state.cpuSettingsSlider.value : 100;
     const javaPath = state.javaSelectEl ? state.javaSelectEl.value : '';
+    const jarFile = $('#launch-jar') ? $('#launch-jar').value : undefined;   // файл .jar для запуска
+    const launchCmd = $('#launch-cmd') ? $('#launch-cmd').value : undefined; // кастомная команда/пресет
 
     for (const el of $$('#settings-known [data-prop-key]')) {
       const key = el.dataset.propKey;
@@ -3808,7 +3842,7 @@
     }
 
     await guard(async () => {
-      state.current = await API.saveProperties(state.currentId, { properties, name, memoryMb, cpuPercent, javaPath });
+      state.current = await API.saveProperties(state.currentId, { properties, name, memoryMb, cpuPercent, javaPath, jarFile, launchCmd });
       renderServerHead();
       showToast(isRunning
         ? 'Сохранено. Перезапустите сервер, чтобы применить изменения.'
@@ -5250,6 +5284,17 @@
     $('#settings-form').addEventListener('submit', saveSettings);
     document.querySelectorAll('#settings-form .props-mode-btn').forEach((b) => {
       b.addEventListener('click', () => switchPropsMode(b.dataset.pm));
+    });
+    // пресет команды запуска → подставить его шаблон в поле
+    if ($('#launch-preset')) $('#launch-preset').addEventListener('change', () => {
+      const v = $('#launch-preset').value;
+      if (v === 'custom') return;
+      const p = (state.launchPresets || [])[parseInt(v, 10)];
+      if (p) $('#launch-cmd').value = p.cmd || '';
+    });
+    // ручная правка команды сбрасывает выбор пресета на «Своя команда»
+    if ($('#launch-cmd')) $('#launch-cmd').addEventListener('input', () => {
+      const ps = $('#launch-preset'); if (ps && ps.value !== 'custom') { ps.value = 'custom'; if (ps._mcSync) ps._mcSync(); }
     });
     $('#btn-delete-server').addEventListener('click', () => state.currentId && deleteServer(state.currentId));
 

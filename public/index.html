@@ -562,6 +562,26 @@
         </div>
       </div>
 
+      <!-- КОМАНДА ЗАПУСКА: файл .jar, готовые пресеты флагов, свой шаблон -->
+      <div class="mc-card form-panel" id="launch-card">
+        <div class="section-title"><i class="pi" data-ic="terminal-sharp"></i> Команда запуска</div>
+        <div class="hint" style="margin:0 0 12px">Файл ядра для запуска, готовые пресеты флагов JVM (Aikar и др.) или своя команда. Переменные: <code>{{SERVER_MEMORY}}</code> — выделенная память в МБ, <code>{{SERVER_JARFILE}}</code> — имя .jar. Пусто — панель подберёт флаги сама. Применяется после перезапуска.</div>
+        <div class="form-grid" style="align-items:end;margin-bottom:12px">
+          <label class="mc-label" id="launch-jar-label">Файл .jar для запуска
+            <select class="fld" id="launch-jar"></select>
+          </label>
+          <label class="mc-label">Готовый пресет
+            <select class="fld" id="launch-preset"></select>
+          </label>
+        </div>
+        <label class="mc-label">Команда запуска (шаблон)
+          <textarea class="fld" id="launch-cmd" spellcheck="false" autocomplete="off"
+            style="min-height:110px;font-family:ui-monospace,Consolas,'Courier New',monospace;font-size:12.5px;line-height:1.55;white-space:pre-wrap;resize:vertical"
+            placeholder="Пусто — панель подберёт флаги сама. Пример: java -Xms128M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC ... -jar {{SERVER_JARFILE}}"></textarea>
+        </label>
+        <div class="hint hidden" id="launch-forge-note" style="margin:8px 0 0"></div>
+      </div>
+
       <div class="mc-card form-panel" id="icon-card">
         <div class="section-title">Иконка сервера</div>
         <div class="icon-row">
