@@ -712,6 +712,11 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 .toast-error { border-left-color: #c43f35; color: #ffb0a4; }
 .toast-ok { border-left-color: var(--accent); color: var(--accent-bright); }
 @keyframes toast-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.dl-toast { display: flex; align-items: center; gap: 10px; }
+.dl-spin { width: 14px; height: 14px; flex: none; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.22); border-top-color: var(--accent-bright);
+  animation: dl-spin .7s linear infinite; }
+@keyframes dl-spin { to { transform: rotate(360deg); } }
 
 /* --------------------------------- колокол уведомлений (на стилях кита) ---- */
 /* кнопка — квадратная .mc-btn sm, закреплена в правом нижнем углу */

@@ -291,6 +291,48 @@
     else pop.classList.add('hidden');
   }
 
+  // ---- скачивание файла/папки на ПК: свой тост вместо «шторки» браузера/WebView2 ----
+  // В десктоп-приложении C#-обёртка прячет стандартное окно загрузок WebView2 и присылает
+  // сообщение «готово», а панель показывает тост в стиле кита. В обычном браузере качает
+  // сам браузер — тогда просто коротко подсвечиваем начало.
+  const pendingDownloads = [];
+  const inWebView = !!(window.chrome && window.chrome.webview);
+  function beginDownloadFeedback(name) {
+    name = name || 'файл';
+    const el = document.createElement('div');
+    el.className = 'toast toast-ok dl-toast';
+    const spin = document.createElement('span'); spin.className = 'dl-spin';
+    const msg = document.createElement('span'); msg.className = 'dl-msg';
+    msg.textContent = 'Скачивание: ' + name;
+    el.appendChild(spin); el.appendChild(msg);
+    const root = $('#toast-root'); if (root) root.appendChild(el);
+    const entry = { name: name, el: el, msg: msg };
+    pendingDownloads.push(entry);
+    // в приложении ждём сигнал обёртки (страховка 45с); в браузере тихо гасим через ~3.5с
+    entry.timer = setTimeout(() => finishDownloadFeedback(name, true, true), inWebView ? 45000 : 3500);
+  }
+  function finishDownloadFeedback(name, ok, quiet) {
+    if (!pendingDownloads.length) return;
+    let i = pendingDownloads.findIndex((d) => d.name === name);
+    if (i < 0) i = 0; // имя не совпало (коллизия/переименование) — закрываем самый старый ожидающий
+    const entry = pendingDownloads.splice(i, 1)[0];
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    const spin = entry.el.querySelector('.dl-spin');
+    if (spin) spin.remove();
+    if (quiet) { setTimeout(() => entry.el.remove(), 2500); return; }
+    if (ok) { entry.el.className = 'toast toast-ok'; entry.msg.textContent = 'Сохранено в «Загрузки»: ' + name; }
+    else { entry.el.className = 'toast toast-error'; entry.msg.textContent = 'Не удалось скачать: ' + name; }
+    setTimeout(() => entry.el.remove(), 5000);
+  }
+  if (inWebView && window.chrome.webview.addEventListener) {
+    window.chrome.webview.addEventListener('message', (e) => {
+      const d = e.data;
+      if (!d || d.type !== 'cg-download') return;
+      finishDownloadFeedback(d.name, d.state === 'completed', false);
+    });
+  }
+
   function confirmDialog(text, opts) {
     opts = opts || {};
     return new Promise((resolve) => {
@@ -3970,6 +4012,11 @@
     if (dlFolder) {
       dlFolder.classList.toggle('perm-hidden', !can('files.read'));
       dlFolder.href = API.folderDownloadUrl(state.currentId, state.filesPath);
+      const segs = state.filesPath ? state.filesPath.split('/') : [];
+      const folderName = (segs.length ? segs[segs.length - 1]
+        : ((state.current && state.current.name) || 'server')) + '.zip';
+      dlFolder.setAttribute('download', folderName);
+      dlFolder.onclick = () => beginDownloadFeedback(folderName);
     }
 
     const crumbs = $('#files-crumbs');
@@ -4043,12 +4090,15 @@
       // скачать на ПК: файл — как есть, папка — архивом ZIP (ссылка, чтобы браузер скачал)
       if (can('files.read')) {
         const rel = joinPath(state.filesPath, entry.name);
+        const dlName = entry.dir ? entry.name + '.zip' : entry.name;
         const dl = document.createElement('a');
         dl.className = 'mc-btn sm';
         dl.href = entry.dir ? API.folderDownloadUrl(state.currentId, rel) : API.fileDownloadUrl(state.currentId, rel);
         dl.title = entry.dir ? 'Скачать папку архивом (ZIP)' : 'Скачать файл на ПК';
+        dl.setAttribute('download', dlName);
         dl.appendChild(picon('download'));
-        dl.addEventListener('click', (event) => event.stopPropagation()); // не открывать файл/папку по клику
+        // не открывать файл/папку по клику + показать свой тост вместо «шторки» загрузок
+        dl.addEventListener('click', (event) => { event.stopPropagation(); beginDownloadFeedback(dlName); });
         actions.appendChild(dl);
       }
       if (!entry.dir && /\.(zip|jar)$/i.test(entry.name) && can('files.write')) {
