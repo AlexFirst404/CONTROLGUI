@@ -989,12 +989,49 @@
     }
     const prev = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Подключение…'; }
+    const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = prev; } };
     try {
-      const r = await API.remoteConnAction('open', { id: id });
-      if (r && r.url) { location.href = r.url; return; } // прокси уже проверил вход
-      showToast('Не удалось открыть подключение.');
-    } catch (e) { showToast(e.message); }
-    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+      const r = await API.remoteConnAction('open', { id: id }); // поднимает прокси, проверяет вход
+      if (!r || !r.url) { showToast('Не удалось открыть подключение.'); restore(); return; }
+      // к скольким серверам есть доступ на той панели: 1 — сразу его, много — выбор, 0 — на корень
+      let servers = [];
+      try { const sr = await API.remoteConnAction('servers', { id: id }); servers = (sr && sr.servers) || []; }
+      catch (e) { /* не удалось узнать — откроем корень удалённой панели */ }
+      if (servers.length === 1) { location.href = r.url + '#server=' + servers[0].id; return; }
+      if (servers.length > 1) { rcServerChooser(r.url, servers); restore(); return; }
+      location.href = r.url; // 0 доступных или список недоступен — корень удалённой панели
+    } catch (e) { showToast(e.message); restore(); }
+  }
+
+  /* Модалка выбора сервера, когда на удалённой панели доступно несколько. */
+  function rcServerChooser(url, servers) {
+    const box = $('#rc-srv-list');
+    box.innerHTML = '';
+    for (const s of servers) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'rc-srv-row';
+      const ic = document.createElement('span');
+      ic.className = 'rc-srv-ic';
+      ic.appendChild(picon('server'));
+      const mid = document.createElement('div');
+      mid.className = 'rc-srv-mid';
+      const nm = document.createElement('div');
+      nm.className = 'rc-srv-name';
+      nm.textContent = s.name;
+      const sub = document.createElement('div');
+      sub.className = 'rc-srv-sub';
+      sub.textContent = (CORE_NAMES[s.type] || s.type) + ' ' + (s.version || '') +
+        ' · ' + (STATUS_LABEL[s.status] || s.status) + (s.status === 'running' ? ' · игроков ' + s.players : '');
+      mid.appendChild(nm);
+      mid.appendChild(sub);
+      row.appendChild(ic);
+      row.appendChild(mid);
+      row.appendChild(picon('arrow-right'));
+      row.addEventListener('click', () => { location.href = url + '#server=' + s.id; });
+      box.appendChild(row);
+    }
+    $('#rc-srv-modal').classList.remove('hidden');
   }
 
   async function deleteRemoteConn(c) {
@@ -1093,6 +1130,9 @@
     $('#rc-probe').addEventListener('click', rcProbe);
     $('#rc-save').addEventListener('click', rcSave);
     $('#rc-back-step').addEventListener('click', () => rcShowStep(1));
+    // модалка выбора сервера удалённой панели
+    $('#rc-srv-close').addEventListener('click', () => $('#rc-srv-modal').classList.add('hidden'));
+    $('#rc-srv-modal').addEventListener('click', (e) => { if (e.target.id === 'rc-srv-modal') $('#rc-srv-modal').classList.add('hidden'); });
     // смена адреса/порта на шаге 1 обнуляет сверку — пин ставится только по свежему отпечатку
     $('#rc-host').addEventListener('input', () => { rcProbedFp = null; });
     $('#rc-portf').addEventListener('input', () => { rcProbedFp = null; });
@@ -1856,6 +1896,23 @@
     }
     return opsSet.has(nameLc);
   }
+  // те же оптимистичные оверрайды для бана (banned-players.json пишется сервером с задержкой,
+  // без оверрайда бейдж «ЗАБАНЕН»/кнопка «Разбан» мигают из-за гонки чтения файла)
+  function bannedIsSet(bannedSet, nameLc) {
+    const o = state.banOverrides && state.banOverrides[nameLc];
+    if (o) {
+      if (bannedSet.has(nameLc) === o.val || Date.now() - o.at > 12000) { delete state.banOverrides[nameLc]; }
+      else return o.val;
+    }
+    return bannedSet.has(nameLc);
+  }
+  /* Оптимистичное действие над игроком: мгновенно перерисовать + два «догоняющих» рефреша
+     (сервер пишет ops/banned/usercache с задержкой — один рефреш часто ловит старый файл). */
+  function afterPlayerAction() {
+    if (state.current && state.currentTab === 'players') renderPlayers(state.current);
+    setTimeout(refreshServer, 600);
+    setTimeout(refreshServer, 1800);
+  }
 
   function renderPlayers(server) {
     const panel = $('#players-list');
@@ -1889,7 +1946,7 @@
 
       const main = document.createElement('div');
       main.className = 'player-main';
-      const banned = bannedSet.has(p.name.toLowerCase());
+      const banned = bannedIsSet(bannedSet, p.name.toLowerCase());
       const isOp = opIsSet(opsSet, p.name.toLowerCase());
       const nameEl = document.createElement('div');
       nameEl.className = 'player-name';
@@ -1948,9 +2005,10 @@
         kickBtn.title = kickBtn.disabled ? 'Игрок не в сети' : 'Выгнать с сервера';
         kickBtn.addEventListener('click', async () => {
           if (await confirmDialog('Кикнуть игрока «' + p.name + '»?', { title: 'Кик', yesText: 'Кикнуть' })) {
-            await guard(() => API.moderate(state.currentId, 'kick', p.name));
+            const r = await guard(() => API.moderate(state.currentId, 'kick', p.name));
+            if (!r) return;
             showToast('Игрок «' + p.name + '» кикнут.', 'ok');
-            setTimeout(refreshServer, 800);
+            afterPlayerAction();
           }
         });
         actions.appendChild(kickBtn);
@@ -1990,9 +2048,12 @@
           pardonBtn.appendChild(document.createTextNode(' Разбан'));
           pardonBtn.addEventListener('click', async () => {
             if (await confirmDialog('Разбанить игрока «' + p.name + '»?', { title: 'Разбан', yesText: 'Разбанить', danger: false })) {
-              await guard(() => API.moderate(state.currentId, 'pardon', p.name));
+              const r = await guard(() => API.moderate(state.currentId, 'pardon', p.name));
+              if (!r) return;
               showToast('Игрок «' + p.name + '» разбанен.', 'ok');
-              setTimeout(refreshServer, 800);
+              if (!state.banOverrides) state.banOverrides = {};
+              state.banOverrides[p.name.toLowerCase()] = { val: false, at: Date.now() };
+              afterPlayerAction();
             }
           });
           actions.appendChild(pardonBtn);
@@ -2003,9 +2064,12 @@
           banBtn.appendChild(document.createTextNode(' Бан'));
           banBtn.addEventListener('click', async () => {
             if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн не сможет зайти, пока не разбанят.', { title: 'Бан' })) {
-              await guard(() => API.moderate(state.currentId, 'ban', p.name));
+              const r = await guard(() => API.moderate(state.currentId, 'ban', p.name));
+              if (!r) return;
               showToast('Игрок «' + p.name + '» забанен.', 'ok');
-              setTimeout(refreshServer, 800);
+              if (!state.banOverrides) state.banOverrides = {};
+              state.banOverrides[p.name.toLowerCase()] = { val: true, at: Date.now() };
+              afterPlayerAction();
             }
           });
           actions.appendChild(banBtn);
@@ -2024,7 +2088,9 @@
             await API.playerDelete(state.currentId, p.name);
             showToast('Данные игрока «' + p.name + '» стёрты.', 'ok');
             delete state.playTimes[p.name];
-            setTimeout(refreshServer, 400);
+            if (state.banOverrides) delete state.banOverrides[p.name.toLowerCase()];
+            if (state.opOverrides) delete state.opOverrides[p.name.toLowerCase()];
+            afterPlayerAction();
           });
         }
       });
