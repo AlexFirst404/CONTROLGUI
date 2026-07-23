@@ -70,6 +70,8 @@ window.API = (function () {
     filesCreate: (id, path, type) => call('POST', '/api/servers/' + id + '/files-create', { path: path, type: type }),
     filesRename: (id, from, to) => call('POST', '/api/servers/' + id + '/files-rename', { from: from, to: to }),
     filesExtract: (id, path) => call('POST', '/api/servers/' + id + '/files-extract', { path: path }),
+    fileDownloadUrl: (id, path) => B('/api/servers/' + id + '/file-download?path=' + encodeURIComponent(path)),
+    folderDownloadUrl: (id, path) => B('/api/servers/' + id + '/folder-download?path=' + encodeURIComponent(path || '')),
     upload: upload,
 
     launchMode: () => call('GET', '/api/launch-mode'),

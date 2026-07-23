@@ -3965,6 +3965,13 @@
       (state.rootPath ? state.rootPath + '\\' : '') + 'servers\\' + state.currentId +
       (state.filesPath ? '\\' + state.filesPath.replace(/\//g, '\\') : '');
 
+    // кнопка «Скачать» в тулбаре — текущая папка целиком архивом (ZIP)
+    const dlFolder = $('#btn-download-folder');
+    if (dlFolder) {
+      dlFolder.classList.toggle('perm-hidden', !can('files.read'));
+      dlFolder.href = API.folderDownloadUrl(state.currentId, state.filesPath);
+    }
+
     const crumbs = $('#files-crumbs');
     crumbs.innerHTML = '';
     const rootLink = document.createElement('a');
@@ -4033,6 +4040,17 @@
         b.addEventListener('click', (event) => { event.stopPropagation(); handler(); });
         return b;
       };
+      // скачать на ПК: файл — как есть, папка — архивом ZIP (ссылка, чтобы браузер скачал)
+      if (can('files.read')) {
+        const rel = joinPath(state.filesPath, entry.name);
+        const dl = document.createElement('a');
+        dl.className = 'mc-btn sm';
+        dl.href = entry.dir ? API.folderDownloadUrl(state.currentId, rel) : API.fileDownloadUrl(state.currentId, rel);
+        dl.title = entry.dir ? 'Скачать папку архивом (ZIP)' : 'Скачать файл на ПК';
+        dl.appendChild(picon('download'));
+        dl.addEventListener('click', (event) => event.stopPropagation()); // не открывать файл/папку по клику
+        actions.appendChild(dl);
+      }
       if (!entry.dir && /\.(zip|jar)$/i.test(entry.name) && can('files.write')) {
         actions.appendChild(mkBtn('box', 'Распаковать архив', 'accent', () => extractEntry(entry)));
       }
