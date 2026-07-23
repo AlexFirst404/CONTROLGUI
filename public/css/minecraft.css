@@ -444,6 +444,10 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .console .ln-cmd { color: #6fb1e8; }
 .console .ln-panel { color: var(--accent-bright); }
 
+/* строка над консолью: аптайм · TPS · игроки */
+.console-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 8px; color: #9fb0a4; font-size: 12px; letter-spacing: .02em; }
+.console-meta:empty { display: none; }
+
 .console-input-row { display: flex; gap: 10px; margin-top: 12px; align-items: flex-start; }
 .cmd-wrap { position: relative; flex: 1; }
 .console-input { font-family: Consolas, 'Courier New', monospace; font-size: 13px; }

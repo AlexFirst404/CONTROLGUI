@@ -1193,6 +1193,10 @@
     try {
       const st = await API.status();
       state.lanIps = st.lanIps || [];
+      state.externalIp = st.externalIp || null;      // внешний (WAN) IP для подключения друзей
+      state.cpuModel = st.cpuModel || null;
+      state.platform = st.platform || '';
+      state.javaVersion = (st.java && st.java.version) || null;
       state.rootPath = st.root || '';
       if (st.cores) state.cores = st.cores;          // os.cpus() с бэкенда (надёжно и на Linux)
       if (st.totalMemMb) {
@@ -1285,6 +1289,8 @@
     guard(loadServers);
     loadRemoteConns();
     startPolling();
+    setInterval(renderConsoleMeta, 1000); // аптайм тикает раз в секунду
+    setInterval(syncFiles, 4000);         // автосинхронизация вкладки «Файлы»
     routeInitialHash();
     if (EMBED === 'settings') openAppSettings(); // окно настроек панели
   }
@@ -1310,6 +1316,11 @@
         }
       });
     }
+  }
+
+  // предпочитаемый адрес подключения: внешний (WAN) IP для друзей → LAN → localhost
+  function bestHost() {
+    return state.externalIp || (state.lanIps && state.lanIps[0]) || 'localhost';
   }
 
   function renderList() {
@@ -1346,8 +1357,7 @@
       // адрес для подключения + копирование
       const addrRow = document.createElement('div');
       addrRow.className = 'srv-card-addr';
-      const host = (state.lanIps && state.lanIps.length ? state.lanIps[0] : 'localhost');
-      const address = host + ':' + server.port;
+      const address = bestHost() + ':' + server.port;
       const code = document.createElement('code');
       code.textContent = address;
       addrRow.appendChild(code);
@@ -1627,7 +1637,7 @@
     const st = $('#server-status');
     st.className = 'status-badge st-' + server.status;
     st.textContent = statusText(server);
-    $('#server-addr').textContent = (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server) + ' · localhost:' + server.port;
+    $('#server-addr').textContent = (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server) + ' · ' + bestHost() + ':' + server.port;
 
     const dlWrap = $('#download-wrap');
     const dl = server.download;
@@ -1663,18 +1673,28 @@
     );
 
     renderInfo(server);
+    renderConsoleMeta();
     renderPlayers(server);
     applyPermissions();
   }
 
   function renderInfo(server) {
     const grid = $('#info-grid');
+    const running = server.status === 'running' || server.status === 'starting';
+    const uptime = (running && server.startedAt) ? fmtDuration(Date.now() - server.startedAt) : '—';
+    const ramLine = fmtMem(server.memoryMb) + ' выделено' + (state.totalMemMb ? ' · всего в системе ' + fmtMem(state.totalMemMb) : '');
+    const cpuLine = (state.cpuModel ? state.cpuModel : 'CPU') + (state.cores ? ' · ' + state.cores + ' ' + coreWord(state.cores) : '') +
+      (server.cpuPercent != null && server.cpuPercent < 100 ? ' · лимит ' + server.cpuPercent + '%' : '');
     const rows = [
-      ['Адрес (этот ПК)', 'localhost:' + server.port],
+      ['Адрес (внешний)', state.externalIp ? state.externalIp + ':' + server.port : '— (не определён)'],
       ['Адрес (локальная сеть)', state.lanIps.length ? state.lanIps.map((ip) => ip + ':' + server.port).join('  ') : '—'],
+      ['Адрес (этот ПК)', 'localhost:' + server.port],
       ['Ядро', (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server)],
-      ['Память', fmtMem(server.memoryMb)],
-      ['Владелец', server.creatorUsername || server.owner || '—'],
+      ['Статус', statusText(server) + (running ? ' · аптайм ' + uptime : '') + (server.tps ? ' · TPS ' + server.tps : '')],
+      ['Память', ramLine],
+      ['Процессор', cpuLine],
+      ['Java', server.javaPath ? server.javaPath : (state.javaVersion ? state.javaVersion + ' (авто)' : '—')],
+      ['Система', platformName(state.platform)],
       ['Создан', new Date(server.createdAt).toLocaleString('ru-RU')],
       ['Файлы сервера', (state.rootPath ? state.rootPath + '\\' : '') + 'servers\\' + server.id],
     ];
@@ -1689,6 +1709,23 @@
       grid.appendChild(kEl);
       grid.appendChild(vEl);
     }
+  }
+  function coreWord(n) { const d = n % 10, dd = n % 100; if (d === 1 && dd !== 11) return 'ядро'; if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return 'ядра'; return 'ядер'; }
+  function platformName(p) { return ({ win32: 'Windows', darwin: 'macOS', linux: 'Linux' })[p] || (p || '—'); }
+
+  // строка над консолью: аптайм (тикает раз в секунду) + TPS + игроки онлайн
+  function renderConsoleMeta() {
+    const el = $('#console-meta');
+    if (!el) return;
+    const s = state.current;
+    const live = s && (s.status === 'running' || s.status === 'starting');
+    if (!live) { el.classList.add('hidden'); el.textContent = ''; return; }
+    el.classList.remove('hidden');
+    const parts = [];
+    if (s.startedAt) parts.push('Аптайм: ' + fmtDuration(Date.now() - s.startedAt));
+    parts.push('TPS: ' + (s.tps || '—'));
+    parts.push('Игроков: ' + (s.players ? s.players.length : 0));
+    el.textContent = parts.join('   ·   ');
   }
 
   // ---------- метрики процесса (чёткие графики с учётом DPI) ----------
@@ -2619,11 +2656,12 @@
   function updateSuggest() {
     const input = $('#command-input');
     const value = input.value;
-    if (!value.startsWith('/') || value.includes(' ')) {
-      hideSuggest();
-      return;
-    }
-    const prefix = value.slice(1).toLowerCase();
+    // подсказываем имя команды и БЕЗ ведущего «/» (пишешь «sa» → предлагает say и т.п.);
+    // только пока не введён пробел (дальше уже аргументы, а не имя команды)
+    if (value.includes(' ')) { hideSuggest(); return; }
+    let prefix = value.startsWith('/') ? value.slice(1) : value;
+    prefix = prefix.toLowerCase();
+    if (!prefix) { hideSuggest(); return; } // пусто — не вываливаем весь список
     state.sugItems = COMMANDS.filter((c) => c.startsWith(prefix));
     if (!state.sugItems.length) {
       hideSuggest();
@@ -2640,7 +2678,7 @@
       const el = document.createElement('div');
       el.className = 'sug' + (i === state.sugIndex ? ' sel' : '');
       const name = document.createElement('span');
-      name.textContent = '/' + cmd;
+      name.textContent = cmd;
       el.appendChild(name);
       el.addEventListener('mousedown', (event) => {
         event.preventDefault();
@@ -2661,7 +2699,8 @@
 
   function applySuggest(cmd) {
     const input = $('#command-input');
-    input.value = '/' + cmd + ' ';
+    // подставляем имя команды без «/» (команды и так отправляются без него)
+    input.value = cmd + ' ';
     hideSuggest();
     input.focus();
   }
@@ -2685,7 +2724,7 @@
       } else if (state.sugItems.length > 1) {
         state.sugIndex = (state.sugIndex + 1) % state.sugItems.length;
         const input = $('#command-input');
-        input.value = '/' + state.sugItems[state.sugIndex];
+        input.value = state.sugItems[state.sugIndex];
         renderSuggest();
       }
       return;
@@ -3785,12 +3824,33 @@
     return base ? base + '/' + name : name;
   }
 
+  let filesSig = ''; // сигнатура последнего листинга — чтобы авто-синк не дёргал DOM зря
   async function loadFiles() {
     if (!state.currentId) return;
     await guard(async () => {
       const data = await API.files(state.currentId, state.filesPath);
-      renderFiles(data.entries || []);
+      const entries = data.entries || [];
+      filesSig = JSON.stringify(entries);
+      renderFiles(entries);
     });
+  }
+  /* Автосинхронизация списка файлов: пока открыта вкладка «Файлы» (браузер, не редактор),
+     тихо перечитываем текущую папку и перерисовываем ТОЛЬКО при изменениях (с сохранением
+     прокрутки) — чтобы не перезагружать вкладку вручную. */
+  async function syncFiles() {
+    if (state.screen !== 'server' || state.currentTab !== 'files' || state.editorPath || !state.currentId) return;
+    if ($('#files-browser').classList.contains('hidden')) return;
+    try {
+      const data = await API.files(state.currentId, state.filesPath);
+      const entries = data.entries || [];
+      const sig = JSON.stringify(entries);
+      if (sig === filesSig) return; // ничего не поменялось
+      filesSig = sig;
+      const list = $('#files-list');
+      const scroll = list ? list.scrollTop : 0;
+      renderFiles(entries);
+      if (list) list.scrollTop = scroll;
+    } catch (e) { /* авто-синк молчит: не спамим тостами */ }
   }
 
   function renderFiles(entries) {
