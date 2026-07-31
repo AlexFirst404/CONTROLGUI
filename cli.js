@@ -6,6 +6,7 @@
 
    controlgui serve                 панель в текущем терминале (Ctrl+C — стоп)
    controlgui start|stop|status     панель фоном (pid-файл в данных)
+   controlgui server create|list    серверы Minecraft прямо из терминала (без веб-панели)
    controlgui remote setup          мастер настройки удалённого доступа (по шагам)
    controlgui remote ...            удалённый доступ (show/enable/disable/user/port)
    controlgui service install       systemd-сервис (Linux, от root)
@@ -378,6 +379,289 @@ async function remoteSetup(ra, perms) {
   process.exit(0);
 }
 
+// ---------- серверы из терминала (без веб-панели) ----------
+/* Все операции идут ЧЕРЕЗ HTTP-API локальной панели, а не через lib/store напрямую:
+   store кеширует реестр в памяти, поэтому прямая запись в servers.json мимо живой
+   панели была бы ею не видна и затёрлась бы при её следующем сохранении. Если панель
+   не запущена — поднимаем её фоном, чтобы писатель всегда был один. */
+function apiCall(method, pathname, body) {
+  return new Promise((resolve, reject) => {
+    const http = require('http');
+    const data = body == null ? null : Buffer.from(JSON.stringify(body), 'utf8');
+    const req = http.request({
+      host: '127.0.0.1', port: PORT, path: pathname, method: method, timeout: 120000,
+      headers: Object.assign({ 'x-cg-local': '1' }, data ? { 'Content-Type': 'application/json', 'Content-Length': data.length } : {}),
+    }, (res) => {
+      let d = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { d += c; });
+      res.on('end', () => {
+        let parsed = {};
+        try { parsed = d ? JSON.parse(d) : {}; } catch (e) { /* не JSON */ }
+        if (res.statusCode >= 200 && res.statusCode < 300) return resolve(parsed);
+        reject(new Error(parsed.error || ('панель ответила HTTP ' + res.statusCode)));
+      });
+    });
+    req.on('error', (e) => reject(new Error('нет связи с панелью: ' + e.message)));
+    req.on('timeout', () => { req.destroy(); reject(new Error('панель не ответила вовремя')); });
+    if (data) req.write(data);
+    req.end();
+  });
+}
+function panelUp() { return new Promise((resolve) => panelListening((st) => resolve(!!st))); }
+async function ensurePanel() {
+  if (await panelUp()) return;
+  out('Панель не запущена — поднимаю фоном…');
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const log = fs.openSync(path.join(DATA_DIR, 'panel.log'), 'a');
+  const child = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
+    detached: true, stdio: ['ignore', log, log], env: Object.assign({}, process.env), windowsHide: true,
+  });
+  try { fs.writeFileSync(PID_FILE, String(child.pid)); } catch (e) { /* */ }
+  child.unref();
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (await panelUp()) { out('Панель поднялась (PID ' + child.pid + ').'); return; }
+  }
+  die('Панель не ответила на порту ' + PORT + ' за 10 с. Смотрите ' + path.join(DATA_DIR, 'panel.log'));
+}
+function parseFlags(args) {
+  const flags = {}; const rest = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.slice(0, 2) === '--') {
+      const eq = a.indexOf('=');
+      if (eq > 0) { flags[a.slice(2, eq)] = a.slice(eq + 1); continue; }
+      const key = a.slice(2);
+      const next = args[i + 1];
+      if (next != null && next.slice(0, 1) !== '-') { flags[key] = next; i++; } else flags[key] = true;
+    } else rest.push(a);
+  }
+  return { flags, rest };
+}
+const TYPE_INFO = [
+  ['paper', 'Paper — быстрый Bukkit/Spigot-совместимый (плагины), рекомендуется'],
+  ['vanilla', 'Vanilla — официальное ядро Mojang, без плагинов'],
+  ['purpur', 'Purpur — форк Paper с доп. настройками'],
+  ['folia', 'Folia — Paper с многопоточностью регионов'],
+  ['forge', 'Forge — моды (Forge)'],
+  ['mohist', 'Mohist — моды Forge + плагины Bukkit'],
+  ['velocity', 'Velocity — прокси (объединяет серверы)'],
+  ['bungeecord', 'BungeeCord — прокси (классический)'],
+];
+function fmtStatus(s) {
+  const map = { running: 'работает', stopped: 'остановлен', downloading: 'скачивается', error: 'ошибка', 'no-jar': 'нет ядра', orphaned: 'потерян' };
+  return map[s] || s || '—';
+}
+function findServer(list, key) {
+  const k = String(key || '').toLowerCase();
+  return list.find((s) => s.id.toLowerCase() === k) ||
+    list.find((s) => String(s.name || '').toLowerCase() === k) || null;
+}
+async function serverList() {
+  const data = await apiCall('GET', '/api/servers');
+  return data.servers || [];
+}
+async function printServers() {
+  const list = await serverList();
+  if (!list.length) { out('Серверов нет. Создать: controlgui server create'); return; }
+  out('ID        ИМЯ                  ТИП         ВЕРСИЯ      ПОРТ    СОСТОЯНИЕ');
+  for (const s of list) {
+    out([
+      String(s.id).padEnd(9),
+      String(s.name || '').slice(0, 20).padEnd(20),
+      String(s.type || '').padEnd(11),
+      String(s.version || '—').padEnd(11),
+      String(s.port || '').padEnd(7),
+      fmtStatus(s.status),
+    ].join(' '));
+  }
+}
+// Ждём завершения скачивания ядра, рисуя прогресс одной строкой.
+async function waitDownload(id) {
+  const tty = process.stdout.isTTY;
+  for (let i = 0; i < 2400; i++) { // до ~20 минут
+    let s;
+    try { s = await apiCall('GET', '/api/servers/' + id); } catch (e) { break; }
+    const d = s.download || {};
+    if (s.status === 'error' || d.phase === 'error') { out(''); return { ok: false, error: d.error || 'ошибка скачивания' }; }
+    if (s.status !== 'downloading') { if (tty) process.stdout.write('\r' + ' '.repeat(60) + '\r'); return { ok: true, server: s }; }
+    const pct = Math.round((d.progress || 0) * 100);
+    const mb = d.totalBytes ? ' ' + (d.doneBytes / 1048576).toFixed(1) + '/' + (d.totalBytes / 1048576).toFixed(1) + ' МБ' : '';
+    const line = '  Скачивание ядра: ' + pct + '%' + mb + ' (' + (d.phase || '') + ')';
+    if (tty) process.stdout.write('\r' + line.padEnd(60));
+    else if (i % 20 === 0) out(line);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return { ok: false, error: 'слишком долго' };
+}
+
+async function cmdServer(args) {
+  const { flags, rest } = parseFlags(args);
+  const sub = rest[0] || 'list';
+
+  if (sub === 'list' || sub === 'ls') { await ensurePanel(); return printServers(); }
+
+  if (sub === 'create' || sub === 'new' || sub === 'add') {
+    await ensurePanel();
+    const existing = await serverList();
+    const interactive = !flags.name; // без --name идём мастером
+    if (interactive) { banner(); out('Создание сервера Minecraft — по шагам.'); out(''); }
+
+    // имя
+    let name = flags.name ? String(flags.name) : null;
+    while (!name) {
+      const raw = await askLine('  Название сервера: ', '');
+      if (raw == null) abortNoInput();
+      const v = String(raw).trim();
+      if (v && v.length <= 40) name = v; else out('  От 1 до 40 символов.');
+    }
+
+    // тип ядра
+    let type = flags.type ? String(flags.type).toLowerCase() : null;
+    if (!type) {
+      out('');
+      out('  Ядро:');
+      TYPE_INFO.forEach((t, i) => out('    ' + (i + 1) + ') ' + t[1]));
+      for (;;) {
+        const raw = await askLine('  Номер [1]: ', '1');
+        if (raw == null) abortNoInput();
+        const n = parseInt(String(raw).trim(), 10);
+        if (n >= 1 && n <= TYPE_INFO.length) { type = TYPE_INFO[n - 1][0]; break; }
+        out('  Введите число от 1 до ' + TYPE_INFO.length + '.');
+      }
+    }
+    if (!TYPE_INFO.some((t) => t[0] === type)) die('Неизвестный тип ядра «' + type + '». Доступно: ' + TYPE_INFO.map((t) => t[0]).join(', '));
+
+    // версия
+    let version = flags.version ? String(flags.version) : null;
+    let versions = [];
+    try { versions = (await apiCall('GET', '/api/versions/' + type)).versions || []; }
+    catch (e) { if (!version) die('Не удалось получить список версий: ' + e.message); }
+    if (!version) {
+      const top = versions.slice(0, 10);
+      out('');
+      out('  Доступные версии (последние): ' + (top.join(', ') || '—'));
+      const raw = await askLine('  Версия [' + (versions[0] || 'latest') + ']: ', versions[0] || 'latest');
+      if (raw == null) abortNoInput();
+      version = String(raw).trim();
+    }
+    if (versions.length && versions.indexOf(version) < 0) {
+      out('  ⚠ Версии «' + version + '» нет в списке — пробую всё равно.');
+    }
+
+    // порт
+    let port = flags.port ? parseInt(flags.port, 10) : null;
+    if (!port) {
+      let def = 25565;
+      while (existing.some((s) => s.port === def)) def++;
+      const raw = await askLine('  Порт [' + def + ']: ', String(def));
+      if (raw == null) abortNoInput();
+      port = parseInt(String(raw).trim(), 10);
+    }
+    if (!(port >= 1024 && port <= 65535)) die('Порт: число от 1024 до 65535.');
+    if (existing.some((s) => s.port === port)) die('Порт ' + port + ' уже занят сервером «' + existing.find((s) => s.port === port).name + '».');
+
+    // память
+    let memoryMb = flags.memory ? parseInt(flags.memory, 10) : (flags.memoryMb ? parseInt(flags.memoryMb, 10) : null);
+    if (!memoryMb) {
+      const raw = await askLine('  Память, МБ [2048]: ', '2048');
+      if (raw == null) abortNoInput();
+      memoryMb = parseInt(String(raw).trim(), 10) || 2048;
+    }
+
+    // EULA (прокси-ядра её не требуют)
+    const isProxy = type === 'velocity' || type === 'bungeecord';
+    let eula = !!(flags.yes || flags.eula || flags.y);
+    if (!isProxy && !eula) {
+      out('');
+      out('  Minecraft EULA: https://aka.ms/MinecraftEULA');
+      eula = await askYesNo('  Принимаете лицензионное соглашение Minecraft?', false);
+      if (!eula) die('Без принятия EULA сервер создать нельзя.');
+    }
+
+    out('');
+    out('Создаю: «' + name + '» · ' + type + ' ' + version + ' · порт ' + port + ' · ' + memoryMb + ' МБ');
+    let created;
+    try {
+      created = await apiCall('POST', '/api/servers', {
+        name: name, type: type, version: version, port: port, memoryMb: memoryMb, eulaAccepted: !isProxy ? true : undefined,
+      });
+    } catch (e) { die('Не удалось создать: ' + e.message); }
+    out('  ✓ Сервер создан (ID ' + created.id + ').');
+
+    if (flags['no-wait']) { out('Скачивание ядра идёт фоном: controlgui server list'); return; }
+    const r = await waitDownload(created.id);
+    if (!r.ok) { out('  ✗ ' + r.error); out('Повторить скачивание: controlgui server redownload ' + created.id); return; }
+    out('  ✓ Ядро скачано, сервер готов.');
+    out('');
+    out('Дальше:');
+    out('  controlgui server start ' + created.id + '     # запустить');
+    out('  controlgui tui                       # консоль сервера в терминале');
+    return;
+  }
+
+  if (sub === 'redownload') {
+    await ensurePanel();
+    const s = findServer(await serverList(), rest[1]);
+    if (!s) die('Сервер не найден: ' + (rest[1] || '—'));
+    await apiCall('POST', '/api/servers/' + s.id + '/download');
+    const r = await waitDownload(s.id);
+    return out(r.ok ? '  ✓ Ядро скачано.' : '  ✗ ' + r.error);
+  }
+
+  if (sub === 'start' || sub === 'stop' || sub === 'restart' || sub === 'kill') {
+    await ensurePanel();
+    const s = findServer(await serverList(), rest[1]);
+    if (!s) die('Сервер не найден: ' + (rest[1] || '—') + '. Список: controlgui server list');
+    await apiCall('POST', '/api/servers/' + s.id + '/' + sub);
+    const verb = { start: 'запускается', stop: 'останавливается', restart: 'перезапускается', kill: 'убит' }[sub];
+    out('Сервер «' + s.name + '» ' + verb + '. Консоль: controlgui tui');
+    return;
+  }
+
+  if (sub === 'cmd' || sub === 'command' || sub === 'say') {
+    await ensurePanel();
+    const s = findServer(await serverList(), rest[1]);
+    if (!s) die('Сервер не найден: ' + (rest[1] || '—'));
+    const command = rest.slice(2).join(' ');
+    if (!command) die('Что отправить? Пример: controlgui server cmd ' + s.id + ' "say привет"');
+    await apiCall('POST', '/api/servers/' + s.id + '/command', { command: command });
+    out('Отправлено серверу «' + s.name + '»: ' + command);
+    return;
+  }
+
+  if (sub === 'rm' || sub === 'remove' || sub === 'delete') {
+    await ensurePanel();
+    const s = findServer(await serverList(), rest[1]);
+    if (!s) die('Сервер не найден: ' + (rest[1] || '—'));
+    if (!(flags.yes || flags.y)) {
+      out('Удаление СНОСИТ папку сервера вместе с миром — восстановить будет нечем.');
+      const okDel = await askYesNo('Удалить сервер «' + s.name + '» (' + s.id + ')?', false);
+      if (!okDel) return out('Отменено.');
+    }
+    await apiCall('DELETE', '/api/servers/' + s.id);
+    out('Сервер «' + s.name + '» удалён.');
+    return;
+  }
+
+  if (sub === 'info' || sub === 'show') {
+    await ensurePanel();
+    const s = findServer(await serverList(), rest[1]);
+    if (!s) die('Сервер не найден: ' + (rest[1] || '—'));
+    const full = await apiCall('GET', '/api/servers/' + s.id);
+    out('Имя:       ' + full.name);
+    out('ID:        ' + full.id);
+    out('Ядро:      ' + full.type + ' ' + (full.version || '—'));
+    out('Порт:      ' + full.port);
+    out('Память:    ' + (full.memoryMb || '—') + ' МБ');
+    out('Состояние: ' + fmtStatus(full.status));
+    return;
+  }
+
+  die('Доступно: server list | create | info <id> | start|stop|restart|kill <id> | cmd <id> "<команда>" | redownload <id> | rm <id>');
+}
+
 // ---------- systemd ----------
 function cmdService(args) {
   if (process.platform !== 'linux') die('systemd-сервис доступен только на Linux.');
@@ -472,6 +756,15 @@ function help() {
   banner();
   out('  controlgui serve                 запустить панель в этом терминале');
   out('  controlgui start | stop | status панель фоном / остановить / состояние');
+  out('');
+  out('  Серверы Minecraft прямо из терминала (без веб-панели):');
+  out('  controlgui server create         создать сервер — мастер по шагам ★');
+  out('  controlgui server list           список серверов и их состояние');
+  out('  controlgui server start|stop <id> запустить / остановить сервер');
+  out('  controlgui server restart|kill <id> перезапустить / убить процесс');
+  out('  controlgui server cmd <id> "..."  отправить команду в консоль сервера');
+  out('  controlgui server info|rm <id>    подробности / удалить сервер');
+  out('');
   out('  controlgui remote setup          мастер удалённого доступа (по шагам) ★');
   out('  controlgui remote show           состояние удалённого доступа');
   out('  controlgui remote user add <ник> добавить пользователя (спросит пароль)');
@@ -494,6 +787,7 @@ function help() {
     if (cmd === 'start') return cmdStart();
     if (cmd === 'stop') return cmdStop();
     if (cmd === 'status') return cmdStatus();
+    if (cmd === 'server' || cmd === 'servers') return await cmdServer(rest);
     if (cmd === 'remote') return await cmdRemote(rest);
     if (cmd === 'service') return cmdService(rest);
     if (cmd === 'connect') return cmdConnect(rest);

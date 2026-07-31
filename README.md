@@ -157,11 +157,26 @@ node server.js          # откройте http://localhost:8400
 ./install.sh                        # установка на сервер: Node.js, автозапуск, удалёнка
 controlgui serve                    # панель в этом терминале
 controlgui start | stop | status    # панель фоном
+
+# Серверы Minecraft — прямо из терминала, веб-панель не нужна:
+controlgui server create            # ★ мастер: ядро, версия, порт, память, EULA
+controlgui server list              # список серверов и состояние
+controlgui server start|stop <id>   # запустить / остановить
+controlgui server cmd <id> "say привет"   # команда в консоль сервера
+controlgui server info|rm <id>      # подробности / удалить
+
 controlgui remote setup             # ★ мастер удалённого доступа по шагам (в терминале)
 controlgui remote user add <ник>    # добавить пользователя удалённого доступа
 controlgui remote enable            # включить HTTPS-листенер (порт 8433)
 sudo controlgui service install     # systemd-сервис с автозапуском
 controlgui tui                      # текстовый интерфейс (работает и по HTTPS)
+```
+
+`controlgui server create` — создаёт сервер целиком из терминала: выбор ядра (Paper/Vanilla/Purpur/Folia/Forge/Mohist/Velocity/BungeeCord), версии из живого списка, порта и памяти, принятие EULA, затем скачивает ядро с прогрессом. Для скриптов — флагами в одну строку:
+
+```bash
+controlgui server create --name "Мой сервер" --type paper --version 1.21.11 \
+                         --port 25565 --memory 4096 --yes
 ```
 
 `controlgui remote setup` — интерактивный мастер прямо в SSH: создаёт пользователя (пароль без эха), спрашивает порт, включает HTTPS и **показывает отпечаток сертификата**, который нужно сверить при первом подключении клиента. Запущенная панель подхватывает изменения на лету — перезапуск не нужен.
