@@ -126,9 +126,19 @@ CONTROLGUI поднимает и обслуживает **настоящие** �
 | 🍎 **macOS** (Apple Silicon) | `CONTROLGUI-<v>-macos-arm64.pkg` | Node.js встроен |
 | 🐧 **Linux** (Debian/Ubuntu) | `controlgui_<v>_all.deb` | Нужен системный `nodejs` (≥ 18) |
 | 🐧 **Linux** (любой дистрибутив) | `CONTROLGUI-<v>-x86_64.AppImage` | Node.js встроен |
-| 🖥️ **Linux-сервер** (без GUI) | `controlgui-<v>-linux.tar.gz` | `tar -xzf … && sudo controlgui/install.sh` |
+| 🖥️ **Linux-сервер** (без GUI) | — | Одна команда, см. ниже ⬇️ |
 
-Либо запустите из исходников (любая ОС, Node.js ≥ 18, ноль npm-зависимостей):
+### 🖥️ Linux-сервер без графики — в одну команду
+
+```bash
+git clone https://github.com/AlexFirst404/CONTROLGUI.git
+cd CONTROLGUI
+./install.sh
+```
+
+Установщик сам: проверит и **поставит Node.js** (apt/dnf/pacman/zypper/apk, иначе nvm), заведёт команду `controlgui`, спросит про **автозапуск (systemd)**, предложит **настроить удалённый доступ** прямо в терминале и запустит панель. Ничего доустанавливать руками не нужно.
+
+Либо запустите из исходников вручную (любая ОС, Node.js ≥ 18, ноль npm-зависимостей):
 
 ```bash
 git clone https://github.com/AlexFirst404/CONTROLGUI.git
@@ -144,13 +154,17 @@ node server.js          # откройте http://localhost:8400
 <br>
 
 ```bash
+./install.sh                        # установка на сервер: Node.js, автозапуск, удалёнка
 controlgui serve                    # панель в этом терминале
 controlgui start | stop | status    # панель фоном
+controlgui remote setup             # ★ мастер удалённого доступа по шагам (в терминале)
 controlgui remote user add <ник>    # добавить пользователя удалённого доступа
 controlgui remote enable            # включить HTTPS-листенер (порт 8433)
 sudo controlgui service install     # systemd-сервис с автозапуском
 controlgui tui                      # текстовый интерфейс (работает и по HTTPS)
 ```
+
+`controlgui remote setup` — интерактивный мастер прямо в SSH: создаёт пользователя (пароль без эха), спрашивает порт, включает HTTPS и **показывает отпечаток сертификата**, который нужно сверить при первом подключении клиента. Запущенная панель подхватывает изменения на лету — перезапуск не нужен.
 
 TUI показывает серверы со статусом и CPU/RAM, умеет старт/стоп/рестарт и живую консоль с вводом команд — прямо в SSH-сессии. Подключение к удалённой панели: `controlgui tui https://ip:8433` (отпечаток сертификата пинится при первом входе и сверяется дальше).
 

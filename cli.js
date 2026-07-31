@@ -6,7 +6,8 @@
 
    controlgui serve                 панель в текущем терминале (Ctrl+C — стоп)
    controlgui start|stop|status     панель фоном (pid-файл в данных)
-   controlgui remote ...            удалённый доступ (show/enable/disable/password/port)
+   controlgui remote setup          мастер настройки удалённого доступа (по шагам)
+   controlgui remote ...            удалённый доступ (show/enable/disable/user/port)
    controlgui service install       systemd-сервис (Linux, от root)
    controlgui tui [url]             текстовый интерфейс (локально или по https)
    controlgui connect <url>|--local клиент-режим GUI-обёрток */
@@ -25,15 +26,58 @@ const PORT = parseInt(process.env.PORT, 10) || 8400;
 function out(s) { process.stdout.write(s + '\n'); }
 function die(s) { process.stderr.write(s + '\n'); process.exit(1); }
 
+// ---------- ASCII-баннер ----------
+function banner() {
+  const tty = process.stdout.isTTY;
+  const g = tty ? '\x1b[38;5;40m' : '';
+  const g2 = tty ? '\x1b[38;5;114m' : '';
+  const dim = tty ? '\x1b[2m' : '';
+  const rst = tty ? '\x1b[0m' : '';
+  const art = String.raw`  ____ ___  _   _ _____ ____   ___  _     ____ _   _ ___
+ / ___/ _ \| \ | |_   _|  _ \ / _ \| |   / ___| | | |_ _|
+| |  | | | |  \| | | | | |_) | | | | |   | |  _| | | || |
+| |__| |_| | |\  | | | |  _ <| |_| | |___| |_| | |_| || |
+ \____\___/|_| \_| |_| |_| \_\\___/|_____|\____|\___/|___|`;
+  out('');
+  out(g + art + rst);
+  out(g2 + '     Панель Minecraft-серверов · Minecraft server panel' + rst);
+  out(dim + '     https://github.com/AlexFirst404/CONTROLGUI' + rst);
+  out('');
+}
+
+// ---------- ввод строки / да-нет (видимый ввод) ----------
+// Намеренно НЕ readline: он буферизует stdin «под себя», и следующий за ним
+// askHidden (сырой режим) уже не увидел бы остаток ввода — мастер зависал бы
+// при подаче ответов из пайпа. Оба промпта читают один общий буфер.
+// Возвращает строку, либо null при EOF (ввод закрыт) — вызывающий обязан это
+// обработать, иначе цикл «спрашивай, пока не введёт» станет бесконечным.
+function askLine(prompt, def) {
+  process.stdout.write(prompt);
+  return readLineNonTty().then((s) => (s == null ? null : (String(s).trim() || def || '')));
+}
+function abortNoInput() { die('\nВвод прерван (нет данных на входе). Запустите мастер в интерактивном терминале: controlgui remote setup'); }
+async function askYesNo(prompt, defYes) {
+  const raw = await askLine(prompt + (defYes ? ' [Д/н]: ' : ' [д/Н]: '), '');
+  if (raw == null) abortNoInput();
+  const a = String(raw).toLowerCase();
+  if (!a) return !!defYes;
+  return a === 'y' || a === 'yes' || a === 'д' || a === 'да';
+}
+
 // ---------- пароль без эха ----------
 let stdinBuf = '';        // остаток буфера stdin между чтениями строк (не-TTY)
 let stdinEnded = false;
+// Возвращает строку, либо null — если ввод кончился (EOF: Ctrl+D, </dev/null, пустой
+// пайп). null обязателен: без него цикл «спрашивай, пока не ответит» крутился бы вечно.
 function readLineNonTty() {
   return new Promise((resolve) => {
     const take = () => {
       const nl = stdinBuf.indexOf('\n');
       if (nl !== -1) { const line = stdinBuf.slice(0, nl); stdinBuf = stdinBuf.slice(nl + 1); return resolve(line.replace(/\r$/, '')); }
-      if (stdinEnded) { const line = stdinBuf; stdinBuf = ''; return resolve(line.replace(/\r$/, '')); }
+      if (stdinEnded) {
+        if (!stdinBuf) return resolve(null);
+        const line = stdinBuf; stdinBuf = ''; return resolve(line.replace(/\r$/, ''));
+      }
       return false;
     };
     if (take() !== false) return;
@@ -50,26 +94,37 @@ function askHidden(prompt) {
     process.stdout.write(prompt);
     const stdin = process.stdin;
     if (!stdin.isTTY) { // пайп/скрипт — читаем ОДНУ строку (не до EOF, иначе второй промпт зависнет)
-      readLineNonTty().then((s) => { try { stdin.pause(); } catch (e) { /* */ } resolve(s.trim()); });
+      readLineNonTty().then((s) => { try { stdin.pause(); } catch (e) { /* */ } resolve(s == null ? null : s.trim()); });
       return;
     }
     stdin.setRawMode(true);
     stdin.resume();
     let pw = '';
+    // Разбираем чанк ПОСИМВОЛЬНО: при вставке пароля из буфера обмена весь он
+    // приходит одним куском вместе с переводом строки — проверка «первый символ ==
+    // \n» его бы не заметила и \n уехал бы В ПАРОЛЬ (вход потом не работал бы).
     const onData = (ch) => {
-      const c = String(ch);
-      const code = c.charCodeAt(0);
-      if (c === '\r' || c === '\n') {
-        stdin.setRawMode(false); stdin.pause(); stdin.removeListener('data', onData);
-        process.stdout.write('\n');
-        resolve(pw);
-      } else if (code === 3) { // Ctrl+C
-        stdin.setRawMode(false); process.stdout.write('\n'); process.exit(130);
-      } else if (code === 8 || code === 127) { // backspace / delete
-        if (pw.length) { pw = pw.slice(0, -1); process.stdout.write('\b \b'); }
-      } else if (code >= 32) {
-        pw += c;
-        process.stdout.write('*');
+      const s = String(ch);
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        const code = c.charCodeAt(0);
+        if (c === '\r' || c === '\n') {
+          stdin.setRawMode(false); stdin.pause(); stdin.removeListener('data', onData);
+          process.stdout.write('\n');
+          return resolve(pw);
+        }
+        if (code === 3) { // Ctrl+C
+          stdin.setRawMode(false); process.stdout.write('\n'); process.exit(130);
+        } else if (code === 4) { // Ctrl+D — конец ввода
+          stdin.setRawMode(false); stdin.pause(); stdin.removeListener('data', onData);
+          process.stdout.write('\n');
+          return resolve(pw || null);
+        } else if (code === 8 || code === 127) { // backspace / delete
+          if (pw.length) { pw = pw.slice(0, -1); process.stdout.write('\b \b'); }
+        } else if (code >= 32) {
+          pw += c;
+          process.stdout.write('*');
+        }
       }
     };
     stdin.on('data', onData);
@@ -169,6 +224,7 @@ async function cmdRemote(args) {
   const ra = require('./lib/remoteaccess');
   const perms = require('./lib/users');
   const sub = args[0] || 'show';
+  if (sub === 'setup' || sub === 'wizard') return await remoteSetup(ra, perms);
   if (sub === 'show') {
     const s = ra.status();
     out('включён: ' + (s.enabled ? 'да' : 'нет') + ' · порт: ' + s.port + ' · пользователей: ' + s.userCount);
@@ -197,6 +253,7 @@ async function cmdRemote(args) {
       if (!ra.validName(name)) die('Ник: 1–32 символа (буквы, цифры, _ . -). Пример: controlgui remote user add friend');
       const pw = await askHidden('Пароль для «' + name + '» (мин. 6): ');
       const pw2 = await askHidden('Повторите пароль: ');
+      if (pw == null || pw2 == null) abortNoInput();
       if (pw !== pw2) die('Пароли не совпадают.');
       // из CLI по умолчанию — полный доступ ко всем серверам; сузить можно в панели
       const r = ra.saveUser({ username: name, password: pw, access: { '*': perms.presetPerms('full') } });
@@ -234,7 +291,91 @@ async function cmdRemote(args) {
     out('Клиенты покажут предупреждение о новом сертификате — это ожидаемо.');
     return;
   }
-  die('Неизвестная подкоманда remote. Доступно: show, user (list/add/rm), enable, disable, port <порт>, cert-reset');
+  die('Неизвестная подкоманда remote. Доступно: setup, show, user (list/add/rm), enable, disable, port <порт>, cert-reset');
+}
+
+// Пошаговый мастер настройки удалённого доступа прямо в терминале: создать
+// пользователя → выбрать порт → включить HTTPS → показать отпечаток и адреса.
+// Работает и на «голом» Linux-сервере без графики. Конфиг перечитывается
+// запущенной панелью на лету (fs.watchFile), поэтому доступ включается без рестарта.
+async function remoteSetup(ra, perms) {
+  banner();
+  out('Настройка удалённого доступа (HTTPS) — по шагам.');
+  const s0 = ra.status();
+  out('Сейчас: ' + (s0.enabled ? 'включён' : 'выключен') + ' · порт ' + s0.port + ' · пользователей ' + s0.userCount);
+  out('');
+
+  const makeUser = async () => {
+    let name;
+    for (;;) {
+      const raw = await askLine('  Логин (1–32: буквы, цифры, _ . -): ', '');
+      if (raw == null) abortNoInput();
+      name = String(raw).trim();
+      if (ra.validName(name)) break;
+      out('  Неверный логин. Пример: admin');
+    }
+    let pw;
+    for (;;) {
+      pw = await askHidden('  Пароль (мин. 6): ');
+      if (pw == null) abortNoInput();
+      if (pw.length < 6) { out('  Слишком короткий (мин. 6 символов).'); continue; }
+      const pw2 = await askHidden('  Повторите пароль: ');
+      if (pw2 == null) abortNoInput();
+      if (pw !== pw2) { out('  Пароли не совпадают, попробуйте снова.'); continue; }
+      break;
+    }
+    const r = ra.saveUser({ username: name, password: pw, access: { '*': perms.presetPerms('full') } });
+    if (r.error) { out('  Ошибка: ' + r.error); return false; }
+    out('  ✓ Пользователь «' + name + '» создан (полный доступ; сузить права по серверам — в панели).');
+    return true;
+  };
+
+  if (!s0.userCount) {
+    out('Шаг 1. Создайте пользователя для входа с других устройств.');
+    if (!(await makeUser())) die('Не удалось создать пользователя.');
+  } else {
+    out('Шаг 1. Пользователи уже есть (' + s0.userCount + ').');
+    if (await askYesNo('  Добавить ещё одного пользователя?', false)) await makeUser();
+  }
+  out('');
+
+  out('Шаг 2. Порт HTTPS (по умолчанию 8433; на роутере/фаерволе пробросьте TCP-порт).');
+  const portRaw = await askLine('  Порт [' + s0.port + ']: ', String(s0.port));
+  const portAns = String(portRaw == null ? s0.port : portRaw).trim();
+  if (portAns && portAns !== String(s0.port)) {
+    const pr = ra.setPort(portAns);
+    if (pr.error) out('  Порт не изменён: ' + pr.error);
+    else out('  ✓ Порт: ' + pr.port);
+  }
+  out('');
+
+  out('Шаг 3. Включаю удалённый доступ…');
+  const er = ra.enable();
+  if (er.error) die('Не удалось включить: ' + er.error);
+  let s = ra.status();
+  // Сертификат обычно создаётся при старте HTTPS-листенера — но в CLI листенер не
+  // поднимается, и отпечаток было бы нечего показать. Если серта ещё нет, выпускаем
+  // его прямо сейчас (существующий НЕ трогаем — иначе сломали бы доверие клиентов).
+  if (!s.fingerprint) {
+    try { ra.regenerateCert(); s = ra.status(); } catch (e) { out('  Не удалось выпустить сертификат: ' + e.message); }
+  }
+  out('  ✓ Удалённый доступ ВКЛЮЧЁН (HTTPS-порт ' + s.port + ').');
+  out('');
+  if (s.lanIps && s.lanIps.length) {
+    out('Адреса в локальной сети:');
+    for (const ip of s.lanIps) out('  https://' + ip + ':' + s.port);
+    out('');
+  }
+  out('Отпечаток сертификата (SHA-256) — сверьте его при первом подключении клиента:');
+  out('  ' + (s.fingerprint || '—'));
+  out('');
+  out('Подключение: приложение CONTROLGUI → «Удалённая панель…» → адрес выше + логин/пароль.');
+  out('Либо из терминала другого хоста: controlgui tui https://<адрес>:' + s.port);
+  out('Если панель запущена — доступ поднимется за ~2 сек (конфиг перечитывается на лету).');
+  // В CLI-процессе листенер не поднимается (remoteaccess.sync() без init() ничего не
+  // делает) — мы только пишем конфиг, а HTTPS поднимет сама панель, увидев изменения
+  // файла. Выходим явно, чтобы не ждать возможных «хвостов» stdin после промптов.
+  process.exit(0);
 }
 
 // ---------- systemd ----------
@@ -256,7 +397,16 @@ function cmdService(args) {
       const ent = require('child_process').execFileSync('getent', ['passwd', user], { encoding: 'utf8' }).trim();
       const f = ent.split(':'); if (f[5]) home = f[5];
     } catch (e) { /* нет getent — оставляем догадку */ }
-    const dataDir = process.env.CONTROLGUI_DATA || path.join(home, '.local', 'share', 'controlgui');
+    // Каталог данных сервиса ОБЯЗАН совпадать с тем, что видит панель при обычном
+    // запуске, иначе `controlgui remote setup` пишет в одно место, а сервис читает
+    // другое (и серверы «пропадают»). Приоритет: явный CONTROLGUI_DATA → уже
+    // существующие данные в старом месте (~/.local/share/controlgui — так ставит
+    // .deb-лаунчер, не ломаем его) → тот же корень, что у lib/paths.js.
+    const legacyDir = path.join(home, '.local', 'share', 'controlgui');
+    const legacyUsed = (() => {
+      try { return fs.existsSync(path.join(legacyDir, 'data', 'servers.json')); } catch (e) { return false; }
+    })();
+    const dataDir = process.env.CONTROLGUI_DATA || (legacyUsed ? legacyDir : require('./lib/paths').DATA_ROOT);
     // systemd поддерживает двойные кавычки в ExecStart/Environment — экранируем пути с пробелами
     const q = (s) => '"' + String(s).replace(/"/g, '\\"') + '"';
     const unit = [
@@ -319,10 +469,10 @@ function cmdConnect(args) {
 
 // ---------- справка ----------
 function help() {
-  out('CONTROLGUI — панель Minecraft-серверов (https://github.com/AlexFirst404/CONTROLGUI)');
-  out('');
+  banner();
   out('  controlgui serve                 запустить панель в этом терминале');
   out('  controlgui start | stop | status панель фоном / остановить / состояние');
+  out('  controlgui remote setup          мастер удалённого доступа (по шагам) ★');
   out('  controlgui remote show           состояние удалённого доступа');
   out('  controlgui remote user add <ник> добавить пользователя (спросит пароль)');
   out('  controlgui remote user list|rm   список / удалить пользователя');
@@ -332,6 +482,8 @@ function help() {
   out('  sudo controlgui service install  systemd-сервис с автозапуском (Linux)');
   out('  controlgui tui [url]             текстовый интерфейс в терминале');
   out('  controlgui connect <url>|--local GUI-приложение ходит на удалённую панель');
+  out('');
+  out('Установка на Linux-сервер:  git clone … && cd CONTROLGUI && ./install.sh');
 }
 
 (async () => {

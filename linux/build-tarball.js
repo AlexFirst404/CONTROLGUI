@@ -65,10 +65,10 @@ exec node /opt/controlgui/cli.js "\$@"
 EOF
 chmod 755 /usr/local/bin/controlgui
 echo "Готово. Дальше:"
-echo "  controlgui remote password   # задать пароль удалённого доступа"
-echo "  controlgui remote enable     # включить HTTPS-доступ (порт 8433)"
+echo "  controlgui remote setup          # мастер удалённого доступа (пользователь + HTTPS)"
 echo "  sudo controlgui service install  # автозапуск через systemd"
-echo "  controlgui tui               # текстовый интерфейс"
+echo "  controlgui start                 # запустить панель фоном"
+echo "  controlgui tui                   # текстовый интерфейс"
 `;
 
 addDir('controlgui');
