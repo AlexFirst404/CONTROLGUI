@@ -484,8 +484,11 @@ async function waitDownload(id) {
     let s;
     try { s = await apiCall('GET', '/api/servers/' + id); } catch (e) { break; }
     const d = s.download || {};
-    if (s.status === 'error' || d.phase === 'error') { out(''); return { ok: false, error: d.error || 'ошибка скачивания' }; }
-    if (s.status !== 'downloading') { if (tty) process.stdout.write('\r' + ' '.repeat(60) + '\r'); return { ok: true, server: s }; }
+    // Ориентируемся ТОЛЬКО на download.phase: общий status сервера бывает 'error'
+    // и по другой причине (например, прошлый неудачный запуск) — тогда мы бы
+    // сообщили о несуществующей ошибке скачивания.
+    if (d.phase === 'error') { out(''); return { ok: false, error: d.error || 'ошибка скачивания' }; }
+    if (!s.download || d.phase === 'done') { if (tty) process.stdout.write('\r' + ' '.repeat(60) + '\r'); return { ok: true, server: s }; }
     const pct = Math.round((d.progress || 0) * 100);
     const mb = d.totalBytes ? ' ' + (d.doneBytes / 1048576).toFixed(1) + '/' + (d.totalBytes / 1048576).toFixed(1) + ' МБ' : '';
     const line = '  Скачивание ядра: ' + pct + '%' + mb + ' (' + (d.phase || '') + ')';
@@ -700,7 +703,10 @@ function cmdService(args) {
       '',
       '[Service]',
       'ExecStart=' + q(process.execPath) + ' ' + q(path.join(ROOT, 'server.js')),
-      'WorkingDirectory=' + q(ROOT),
+      // БЕЗ кавычек: WorkingDirectory= (в отличие от ExecStart=) кавычки НЕ разбирает —
+      // они попадают внутрь пути, и systemd отвергает юнит: «path is not absolute».
+      // Значение берётся до конца строки целиком, поэтому пробелы в пути безопасны.
+      'WorkingDirectory=' + ROOT,
       'Environment=PORT=' + PORT,
       'Environment=' + q('CONTROLGUI_DATA=' + dataDir),
       'User=' + user,
