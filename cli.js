@@ -19,7 +19,11 @@ const os = require('os');
 const { spawn } = require('child_process');
 
 const ROOT = __dirname;
+// Установка systemd лишь пишет unit-файл: пользовательские каталоги должен
+// впервые создать уже сам сервис под User=..., а не root-процесс через sudo.
+if (process.argv[2] === 'service') global.__controlguiSkipDataInit = true;
 const { DATA_DIR } = require('./lib/paths');
+delete global.__controlguiSkipDataInit;
 const PID_FILE = path.join(DATA_DIR, 'panel.pid');
 const REMOTE_URL_FILE = path.join(DATA_DIR, 'remote-connect');
 const PORT = parseInt(process.env.PORT, 10) || 8400;
@@ -178,28 +182,43 @@ function cmdStart() {
     setTimeout(poll, 300);
   });
 }
-// штатная остановка: просим панель завершиться по HTTP (и остановить MC-серверы) —
-// работает одинаково на всех ОС; kill по PID оставлен как фолбэк.
+// Штатная остановка всегда идёт через API: pid-файл может устареть, а Windows
+// переиспользует PID, поэтому автоматический kill рискует завершить чужой процесс.
 function cmdStop() {
   const http = require('http');
+  let finished = false;
+  const unavailable = () => {
+    if (finished) return;
+    finished = true;
+    process.exitCode = 1;
+    const pid = panelPid();
+    out(pid
+      ? 'Панель не ответила по HTTP. Процесс по pid-файлу не завершён: сначала проверьте его вручную (PID ' + pid + ').'
+      : 'Панель не запущена или не отвечает по HTTP.');
+  };
   const r = http.request({ host: '127.0.0.1', port: PORT, path: '/api/quit', method: 'POST',
     headers: { 'x-cg-local': '1', 'x-cg-stop-servers': '1' }, timeout: 4000 }, (res) => {
-    res.resume();
-    if (res.statusCode === 200) {
-      try { fs.rmSync(PID_FILE, { force: true }); } catch (e) { /* */ }
-      out('Панель штатно завершается (запущенные Minecraft-серверы останавливаются, миры сохраняются).');
-    } else { out('Панель ответила HTTP ' + res.statusCode + '.'); killFallback(); }
+    let body = '';
+    res.on('data', (chunk) => { if (body.length < 4096) body += chunk.toString('utf8'); });
+    res.on('end', () => {
+      if (finished) return;
+      finished = true;
+      if (res.statusCode === 200) {
+        try { fs.rmSync(PID_FILE, { force: true }); } catch (e) { /* */ }
+        out('Панель штатно завершается (запущенные Minecraft-серверы останавливаются, миры сохраняются).');
+        return;
+      }
+      let message = '';
+      try { message = JSON.parse(body).error || ''; } catch (e) { /* не-JSON ответ чужого процесса */ }
+      // Ответивший процесс жив и сам объяснил отказ. Особенно важно не посылать
+      // Windows SIGTERM во время restore: там это жёсткий TerminateProcess.
+      process.exitCode = 1;
+      out('Панель не остановлена: ' + (message || ('HTTP ' + res.statusCode)) + '.');
+    });
   });
-  r.on('error', () => killFallback());
-  r.on('timeout', () => { r.destroy(); killFallback(); });
+  r.on('error', unavailable);
+  r.on('timeout', () => { unavailable(); r.destroy(); });
   r.end();
-}
-function killFallback() {
-  const pid = panelPid();
-  if (!pid) return out('Панель не запущена (не отвечает и pid-файла нет).');
-  try { process.kill(pid, 'SIGTERM'); } catch (e) { return die('Не удалось остановить PID ' + pid + ': ' + e.message); }
-  try { fs.rmSync(PID_FILE, { force: true }); } catch (e) { /* */ }
-  out('Панель не ответила по HTTP — отправлен сигнал остановки процессу PID ' + pid + '.');
 }
 function cmdStatus() {
   const pid = panelPid();
@@ -682,7 +701,8 @@ function cmdService(args) {
     let home = user === 'root' ? '/root' : '/home/' + user;
     try {
       const ent = require('child_process').execFileSync('getent', ['passwd', user], { encoding: 'utf8' }).trim();
-      const f = ent.split(':'); if (f[5]) home = f[5];
+      const f = ent.split(':');
+      if (f[5]) home = f[5];
     } catch (e) { /* нет getent — оставляем догадку */ }
     // Каталог данных сервиса ОБЯЗАН совпадать с тем, что видит панель при обычном
     // запуске, иначе `controlgui remote setup` пишет в одно место, а сервис читает
@@ -693,7 +713,13 @@ function cmdService(args) {
     const legacyUsed = (() => {
       try { return fs.existsSync(path.join(legacyDir, 'data', 'servers.json')); } catch (e) { return false; }
     })();
-    const dataDir = process.env.CONTROLGUI_DATA || (legacyUsed ? legacyDir : require('./lib/paths').DATA_ROOT);
+    let dataDir = process.env.CONTROLGUI_DATA || (legacyUsed ? legacyDir : require('./lib/paths').DATA_ROOT);
+    // Относительный CONTROLGUI_DATA обычный CLI разрешает от текущего каталога.
+    // В unit сохраняем уже тот же абсолютный путь, иначе systemd разрешил бы его от ROOT.
+    dataDir = path.resolve(dataDir);
+    // Старые системные лаунчеры вычисляли путь ещё под sudo и передавали /root.
+    // Такой каталог недоступен сервису, который ниже запускается от SUDO_USER.
+    if (user !== 'root' && path.resolve(dataDir).startsWith(path.resolve('/root') + path.sep)) dataDir = legacyDir;
     // systemd поддерживает двойные кавычки в ExecStart/Environment — экранируем пути с пробелами
     const q = (s) => '"' + String(s).replace(/"/g, '\\"') + '"';
     const unit = [

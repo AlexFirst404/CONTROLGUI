@@ -34,7 +34,10 @@ const PARENT_PID = parseInt(process.env.CONTROLGUI_PARENT_PID, 10);
 if (PARENT_PID) {
   const wd = setInterval(() => {
     try { process.kill(PARENT_PID, 0); } // сигнал 0 — только проверка существования
-    catch (e) { console.log('Родительское окно закрылось — выходим, серверы остаются жить.'); process.exit(0); }
+    catch (e) {
+      console.log('Родительское окно закрылось — безопасно завершаем панель, серверы остаются жить.');
+      shutdown(false);
+    }
   }, 3000);
   if (wd.unref) wd.unref();
 }
@@ -120,6 +123,9 @@ async function handleRequest(req, res) {
   }
 
   if (req.url.startsWith('/api/')) {
+    if (shuttingDown && urlPath !== '/api/quit') {
+      return sendJson(res, 503, { error: 'Панель завершает работу — новые операции временно недоступны' });
+    }
     // anti-CSRF: изменяющий запрос — только со своего origin (см. sameOriginRequest)
     if (!sameOriginRequest(req)) {
       return sendJson(res, 403, { error: 'Запрос отклонён: чужой источник (cross-origin)' });
@@ -151,13 +157,13 @@ async function handleRequest(req, res) {
       // anyActive: живые процессы + автоустановка Java (proc ещё null) +
       // переходные статусы + живые «осиротевшие» серверы
       if (!stopServers && manager.anyActive()) return sendJson(res, 409, { error: 'Есть работающие серверы' });
+      shuttingDown = true; // после проверки не даём новому restore вклиниться до process.exit
+      shutdownStopsServers = stopServers;
       sendJson(res, 200, { ok: true });
-      if (stopServers && manager.anyRunning()) {
-        manager.stopAll();
-        setTimeout(() => process.exit(0), 5000); // ждём сохранения миров
-      } else {
-        setTimeout(() => process.exit(0), 300);
-      }
+      // Подтверждаем запрос до долгого ожидания: CLI/оболочка затем следят за
+      // освобождением порта и никогда не применяют TerminateProcess по таймауту.
+      if (manager.anyMaintenance()) console.log('Дожидаюсь завершения операции с файлами перед выходом...');
+      setTimeout(finishShutdown, 300);
       return;
     }
     return handleApi(req, res);
@@ -195,16 +201,35 @@ server.on('error', (err) => {
 
 // Аккуратно гасим запущенные серверы при закрытии панели
 let shuttingDown = false;
-function shutdown() {
+let shutdownStopsRequested = false;
+let shutdownStopsServers = true;
+function finishShutdown() {
+  // Сигнал ОС может прийти посреди staging/swap. Дожидаемся завершения файловой
+  // операции и лишь затем останавливаем JVM/панель — исходный каталог не повредится.
+  if (manager.anyMaintenance()) {
+    setTimeout(finishShutdown, 300);
+    return;
+  }
+  if (shutdownStopsServers && manager.anyRunning()) {
+    if (!shutdownStopsRequested) {
+      shutdownStopsRequested = true;
+      console.log('Останавливаю запущенные Minecraft-серверы...');
+      manager.stopAll();
+    }
+    // Большой мир может сохраняться заметно дольше пяти секунд. Не завершаем
+    // Node по таймеру: оболочка/установщик сами имеют безопасный таймаут и при
+    // его истечении оставят панель работать вместо обрыва записи мира.
+    setTimeout(finishShutdown, 300);
+    return;
+  }
+  process.exit(0);
+}
+function shutdown(stopServers) {
   if (shuttingDown) return;
   shuttingDown = true;
-  if (manager.anyRunning()) {
-    console.log('Останавливаю запущенные Minecraft-серверы...');
-    manager.stopAll();
-    setTimeout(() => process.exit(0), 5000);
-  } else {
-    process.exit(0);
-  }
+  shutdownStopsServers = stopServers !== false;
+  if (manager.anyMaintenance()) console.log('Дожидаюсь завершения операции с файлами перед выходом...');
+  finishShutdown();
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
