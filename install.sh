@@ -82,6 +82,21 @@ run_root() { if [ "$CUR_UID" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
 # root-команда как выполнялась бы для systemd (нужны root + SUDO_USER для User=)
 node_root_service() { run_root env PORT="$PORT" CONTROLGUI_DATA="$REPO_DIR" "$NODE_BIN" "$REPO_DIR/cli.js" service install; }
 
+# Перед systemd ждём освобождения порта. PID-файл не используем: PID мог быть
+# переиспользован, а на Windows-подобных окружениях kill по нему особенно опасен.
+panel_port_busy() {
+  env PORT="$PORT" "$NODE_BIN" -e 'const net=require("net"),p=Number(process.env.PORT);let d=false;const end=c=>{if(d)return;d=true;try{s.destroy()}catch(e){}process.exit(c)};const s=net.connect({host:"127.0.0.1",port:p},()=>end(0));s.on("error",()=>end(1));s.setTimeout(800,()=>end(0));' >/dev/null 2>&1
+}
+wait_panel_down() {
+  local i=0
+  while panel_port_busy; do
+    i=$((i + 1))
+    [ "$i" -ge 30 ] && return 1
+    sleep 1
+  done
+  return 0
+}
+
 # Данные (data/, servers/) живут РЯДОМ с кодом (DATA_ROOT = каталог репозитория).
 # Любой запуск cli.js от root создаёт эти каталоги от root — и панель, работающая
 # под обычным пользователем, потом не может туда писать (сервис и мастер удалёнки
@@ -298,7 +313,9 @@ if have systemctl; then
   if askyn "Добавить CONTROLGUI в автозапуск (systemd) и запустить сейчас?" y; then
     # панель, поднятая ранее фоном, заняла бы порт — сервис ушёл бы в рестарт-цикл
     node_as_user stop >/dev/null 2>&1 || true
-    if node_root_service; then
+    if ! wait_panel_down; then
+      warn "Порт $PORT не освободился за 30 секунд — сервис не запущен рядом с прежней панелью. Остановите процесс вручную и повторите установку."
+    elif node_root_service; then
       SERVICE_ON=1
       ensure_data_owner
       ok "Сервис ${BOLD}controlgui${RST} включён — стартует при загрузке. Логи: journalctl -u controlgui -f"

@@ -60,7 +60,17 @@ cp -a "$HERE/." "$DEST/"
 rm -f "$DEST/install.sh"
 cat > /usr/local/bin/controlgui <<'EOF'
 #!/bin/sh
-export CONTROLGUI_DATA="\${CONTROLGUI_DATA:-\${XDG_DATA_HOME:-\$HOME/.local/share}/controlgui}"
+if [ -z "\${CONTROLGUI_DATA:-}" ]; then
+  if [ "\${1:-}" = "service" ] && [ "\${2:-install}" = "install" ] && [ -n "\${SUDO_USER:-}" ] && [ "\$SUDO_USER" != "root" ]; then
+    CG_SERVICE_HOME="\$(getent passwd "\$SUDO_USER" 2>/dev/null | cut -d: -f6)"
+    [ -n "\$CG_SERVICE_HOME" ] || CG_SERVICE_HOME="/home/\$SUDO_USER"
+    CONTROLGUI_DATA="\$CG_SERVICE_HOME/.local/share/controlgui"
+  else
+    CONTROLGUI_DATA="\${XDG_DATA_HOME:-\${HOME:-/root}/.local/share}/controlgui"
+  fi
+fi
+export CONTROLGUI_DATA
+export PORT="\${CONTROLGUI_PORT:-\${PORT:-8400}}"
 exec node /opt/controlgui/cli.js "\$@"
 EOF
 chmod 755 /usr/local/bin/controlgui
@@ -75,7 +85,7 @@ addDir('controlgui');
 addFile('controlgui/server.js', fs.readFileSync(path.join(ROOT, 'server.js')), 0o644);
 addFile('controlgui/cli.js', fs.readFileSync(path.join(ROOT, 'cli.js')), 0o755);
 addFile('controlgui/tui.js', fs.readFileSync(path.join(ROOT, 'tui.js')), 0o755);
-addFile('controlgui/install.sh', INSTALL_SH, 0o755);
+addFile('controlgui/install.sh', INSTALL_SH.replace(/\r\n?/g, '\n'), 0o755);
 for (const extra of ['LICENSE', 'README.md', 'README.en.md']) {
   const p = path.join(ROOT, extra);
   if (fs.existsSync(p)) addFile('controlgui/' + extra, fs.readFileSync(p), 0o644);

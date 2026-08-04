@@ -8,32 +8,49 @@ HERE="$(dirname "$(readlink -f "$0")")"
 export PATH="$HERE/usr/bin:$PATH"
 NODE="$HERE/usr/bin/node"
 [ -x "$NODE" ] || NODE="node"
-export CONTROLGUI_DATA="${CONTROLGUI_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/controlgui}"
+CG_XDG_BASE="${XDG_DATA_HOME:-${HOME:-/root}/.local/share}"
+if [ -z "${CONTROLGUI_DATA:-}" ]; then
+  if [ "${1:-}" = "service" ] && [ "${2:-install}" = "install" ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    CG_SERVICE_HOME="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)"
+    [ -n "$CG_SERVICE_HOME" ] || CG_SERVICE_HOME="/home/$SUDO_USER"
+    CONTROLGUI_DATA="$CG_SERVICE_HOME/.local/share/controlgui"
+  else
+    CONTROLGUI_DATA="$CG_XDG_BASE/controlgui"
+  fi
+fi
+export CONTROLGUI_DATA
+PORT="${CONTROLGUI_PORT:-${PORT:-8400}}"
+export PORT
 
-# Обратный сетап удаления (режим «удалить всё»):
+# Удаляем только интеграцию AppImage. Миры, бэкапы и настройки принадлежат
+# пользователю и не должны исчезать вместе с оболочкой приложения.
 #   ./CONTROLGUI-<версия>-x86_64.AppImage --uninstall
-# Останавливаем панель и сносим ВСЕ данные (серверы, миры, бэкапы, настройки) и
-# интеграцию в меню. Сам файл .AppImage удаляет пользователь.
 if [ "${1:-}" = "--uninstall" ]; then
-  UPORT="${CONTROLGUI_PORT:-8400}"
-  command -v fuser >/dev/null 2>&1 && fuser -k "$UPORT/tcp" 2>/dev/null || true
-  command -v pkill >/dev/null 2>&1 && pkill -f "$CONTROLGUI_DATA" 2>/dev/null || true
-  rm -rf "$CONTROLGUI_DATA" 2>/dev/null || true
-  rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/controlgui-appimage.desktop" 2>/dev/null || true
-  rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/icons/controlgui.png" 2>/dev/null || true
+  rm -f "$CG_XDG_BASE/applications/controlgui-appimage.desktop" 2>/dev/null || true
+  rm -f "$CG_XDG_BASE/icons/controlgui.png" 2>/dev/null || true
   command -v update-desktop-database >/dev/null 2>&1 && \
-    update-desktop-database -q "${XDG_DATA_HOME:-$HOME/.local/share}/applications" 2>/dev/null || true
-  echo "CONTROLGUI: все данные и интеграция удалены. Теперь удалите сам файл .AppImage."
+    update-desktop-database -q "$CG_XDG_BASE/applications" 2>/dev/null || true
+  echo "CONTROLGUI: интеграция удалена. Серверы и бэкапы сохранены в $CONTROLGUI_DATA. Теперь удалите сам файл .AppImage."
   exit 0
+fi
+
+# Из временной точки монтирования нельзя ставить долговечный systemd-unit:
+# после выхода AppImage его ExecStart исчезнет. Удаление старого unit допустимо.
+if [ "${1:-}" = "service" ]; then
+  if [ "${2:-install}" != "uninstall" ]; then
+    echo "CONTROLGUI: systemd-сервис устанавливайте из .deb или серверного .tar.gz, а не из AppImage." >&2
+    exit 1
+  fi
+  exec "$NODE" "$HERE/opt/controlgui/cli.js" "$@"
 fi
 
 mkdir -p "$CONTROLGUI_DATA"
 
 # интеграция в меню приложений (один раз): ярлык, указывающий на сам AppImage,
 # чтобы запускать из списка приложений, а не только из файла
-DESKTOP_DST="${XDG_DATA_HOME:-$HOME/.local/share}/applications/controlgui-appimage.desktop"
+DESKTOP_DST="$CG_XDG_BASE/applications/controlgui-appimage.desktop"
 if [ -n "${APPIMAGE:-}" ] && [ ! -f "$DESKTOP_DST" ]; then
-  ICON_DST="${XDG_DATA_HOME:-$HOME/.local/share}/icons/controlgui.png"
+  ICON_DST="$CG_XDG_BASE/icons/controlgui.png"
   mkdir -p "$(dirname "$DESKTOP_DST")" "$(dirname "$ICON_DST")"
   cp -f "$HERE/controlgui.png" "$ICON_DST" 2>/dev/null || true
   cat > "$DESKTOP_DST" <<EOF
@@ -51,7 +68,6 @@ EOF
     update-desktop-database -q "$(dirname "$DESKTOP_DST")" 2>/dev/null || true
 fi
 
-PORT="${CONTROLGUI_PORT:-8400}"
 URL="http://127.0.0.1:$PORT"
 
 # Панель запускаем из стабильной копии (не из точки монтирования образа: после
@@ -66,9 +82,9 @@ if [ ! -f "$APP/server.js" ] || [ "$(cat "$APP/.build" 2>/dev/null || echo)" != 
   printf '%s' "$BUILD" > "$APP/.build"
 fi
 
-# CLI-команды: ./CONTROLGUI-*.AppImage serve|start|stop|status|remote|service|tui|connect …
+# CLI-команды: ./CONTROLGUI-*.AppImage serve|start|stop|status|server|remote|tui|connect …
 case "${1:-}" in
-  serve|start|stop|status|remote|service|tui|connect|help|--help|-h)
+  serve|start|stop|status|server|servers|remote|tui|connect|help|--help|-h)
     exec "$NODE" "$APP/cli.js" "$@"
     ;;
 esac
@@ -84,7 +100,7 @@ elif [ "${1:-}" != "--local" ] && [ -s "$REMOTE_URL_FILE" ]; then
 fi
 
 # режим открытия (тот же файл, что пишет панель: ~/.local/share/controlgui/launch-mode)
-MODE_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/controlgui/launch-mode"
+MODE_FILE="$CG_XDG_BASE/controlgui/launch-mode"
 MODE="$(cat "$MODE_FILE" 2>/dev/null || echo)"
 if [ "$MODE" != "app" ] && [ "$MODE" != "browser" ]; then
   if command -v zenity >/dev/null 2>&1 && zenity --question --title="CONTROLGUI" \

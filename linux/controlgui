@@ -7,9 +7,19 @@
 set -u
 
 APP_DIR=/opt/controlgui
-PORT="${CONTROLGUI_PORT:-8400}"
-export CONTROLGUI_DATA="${CONTROLGUI_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/controlgui}"
-mkdir -p "$CONTROLGUI_DATA"
+PORT="${CONTROLGUI_PORT:-${PORT:-8400}}"
+export PORT
+if [ -z "${CONTROLGUI_DATA:-}" ]; then
+  if [ "${1:-}" = "service" ] && [ "${2:-install}" = "install" ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    CG_SERVICE_HOME="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)"
+    [ -n "$CG_SERVICE_HOME" ] || CG_SERVICE_HOME="/home/$SUDO_USER"
+    CONTROLGUI_DATA="$CG_SERVICE_HOME/.local/share/controlgui"
+  else
+    CONTROLGUI_DATA="${XDG_DATA_HOME:-${HOME:-/root}/.local/share}/controlgui"
+  fi
+fi
+export CONTROLGUI_DATA
+if [ "${1:-}" != "service" ]; then mkdir -p "$CONTROLGUI_DATA"; fi
 
 if ! command -v node >/dev/null 2>&1; then
   echo "CONTROLGUI: требуется Node.js. Установите: sudo apt install nodejs" >&2
@@ -18,7 +28,7 @@ fi
 
 # CLI-команды делегируем в cli.js (тот же экземпляр Node, без GUI)
 case "${1:-}" in
-  serve|start|stop|status|remote|service|tui|connect|help|--help|-h)
+  serve|start|stop|status|server|servers|remote|service|tui|connect|help|--help|-h)
     exec node "$APP_DIR/cli.js" "$@"
     ;;
 esac
@@ -40,7 +50,7 @@ elif [ -s "$REMOTE_URL_FILE" ]; then
 fi
 
 # режим открытия (тот же файл, что пишет панель)
-MODE_FILE="$CONTROLGUI_DATA/launch-mode"
+MODE_FILE="${XDG_DATA_HOME:-${HOME:-/root}/.local/share}/controlgui/launch-mode"
 MODE="$(cat "$MODE_FILE" 2>/dev/null || echo)"
 if [ "$MODE" != "app" ] && [ "$MODE" != "browser" ]; then
   if command -v zenity >/dev/null 2>&1 && zenity --question --title="CONTROLGUI" \

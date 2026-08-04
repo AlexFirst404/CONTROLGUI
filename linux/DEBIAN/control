@@ -3,7 +3,7 @@ Version: __VERSION__
 Section: games
 Priority: optional
 Architecture: all
-Depends: nodejs (>= 16)
+Depends: nodejs (>= 18)
 Recommends: libarchive-tools, iproute2, default-jre-headless | java17-runtime-headless | java21-runtime-headless, python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0, zenity, chromium | chromium-browser | google-chrome-stable
 Installed-Size: __SIZE__
 Maintainer: AlexFirst <alextorx2020@gmail.com>
