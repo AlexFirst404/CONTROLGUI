@@ -383,7 +383,7 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 /* ------------------------------------------------------- статусы ---------- */
 .status-badge { font-size: 13px; }
 .st-running { color: #7ed957; }
-.st-starting, .st-stopping { color: #e0a72a; }
+.st-starting, .st-stopping, .st-restoring { color: #e0a72a; }
 .st-stopped { color: #9aa0a6; }
 .st-downloading { color: #6fb1e8; }
 .st-error, .st-no-jar { color: #ff7a6a; }
@@ -448,6 +448,10 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 /* строка над консолью: аптайм · TPS · игроки */
 .console-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 8px; color: #9fb0a4; font-size: 12px; letter-spacing: .02em; }
 .console-meta:empty { display: none; }
+.console-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.console-tools .console-meta { margin: 0; }
+.console-autoscroll-row { display: inline-flex; align-items: center; gap: 8px; color: #9fb0a4; font-size: 12px; cursor: pointer; }
+.console-autoscroll-row .mc-toggle { flex: none; }
 
 .console-input-row { display: flex; gap: 10px; margin-top: 12px; align-items: flex-start; }
 .cmd-wrap { position: relative; flex: 1; }
@@ -477,11 +481,26 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .info-grid { display: grid; grid-template-columns: max-content 1fr; gap: 12px 24px; font-size: 14px; }
 .info-grid .k { color: #a9a9a9; }
 .info-grid .v { color: #ececec; word-break: break-all; }
+.info-copy { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
+.info-copy .fld { flex: 1; min-width: 0; margin: 0; }
+.info-copy .mc-btn { flex: none; min-width: 40px; margin: 0; }
 
 .danger-zone { margin-top: 26px; border-top: 1px solid #5a2a24; padding-top: 16px; }
 .danger-card { margin-top: 16px; border-color: #5a2a24; }
 .danger-title { color: #ff7a6a; font-size: 13px; text-transform: uppercase; letter-spacing: 2px;
   font-family: var(--font-head); margin-bottom: 12px; }
+
+/* Смысловые группы настроек используют только карточки и поля MinecraftUI. */
+.settings-area-title { margin: 22px 0 9px; color: var(--accent-bright); font-family: var(--font-head);
+  font-size: 13px; letter-spacing: 1px; text-transform: uppercase; }
+.settings-area-title:first-child { margin-top: 0; }
+.settings-groups { display: flex; flex-direction: column; gap: 14px; }
+.settings-group { padding: 14px; }
+.settings-group .section-title { margin-bottom: 12px; }
+.settings-group-grid { align-items: start; }
+#restore-notice { margin: 0 0 14px; }
+.plugin-delete-actions { flex-wrap: wrap; }
+.plugin-delete-actions .mc-btn { min-width: 160px; }
 
 /* ---------------------------------------------------- белый список -------- */
 .wl-card { margin-top: 16px; }
@@ -849,6 +868,8 @@ input[type=password]::-ms-clear { display: none; }
 
 /* --------------------------------------------- вынос консоли в окно --------- */
 .console-wrap { position: relative; }
+.console-lock { position: absolute; z-index: 7; left: 10px; right: 54px; top: 10px;
+  margin: 0; pointer-events: none; }
 .console-pop { position: absolute; right: 10px; bottom: 10px; z-index: 4;
   width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center;
   background: rgba(20, 20, 20, .82); border: 1px solid #3a3a3a; color: #cdd6cf;
@@ -881,34 +902,13 @@ input[type=password]::-ms-clear { display: none; }
 .pl-filters { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .pl-fl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9fb0a4; flex: 1; min-width: 150px; }
 .pl-fl .fld { font-size: 13px; }
-/* пагинация плагинов/модов — чанковые пиксельные плитки (переиспользуют движок .mc-btn) */
+/* Пагинация использует те же кнопки кита, что и стрелки; активна только текущая. */
 .pl-pager { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .pl-pager .mc-btn[disabled] { opacity: .4; pointer-events: none; }
-.pl-pager > .mc-btn {
-  --btn-c: #5a5a5a; --btn-rim: #7d7d7d; --btn-sh: #1e1e1f; --btn-ts: #161616;
-  min-width: 44px; padding: 10px 12px; border-width: 3px; box-shadow: 0 5px 0 0 var(--btn-sh);
-}
-.pl-pager > .mc-btn .pi { width: 18px; height: 18px; }
-.pl-pager > .mc-btn:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 0 0 0 var(--btn-sh); }
+.pl-pager .mc-btn { width: 40px; min-width: 40px; padding-left: 0; padding-right: 0; margin: 0; justify-content: center; }
 .pl-pages { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: center; }
-.pl-pages .pg {
-  --btn-c: #3a3a3a; --btn-rim: #1e1e1f; --btn-sh: #161616; --btn-ts: #141414;
-  width: 42px; min-width: 42px; height: 42px; padding: 0; margin-bottom: 0;
-  font-size: 15px; line-height: 1; color: #d9e4d4; text-shadow: 2px 2px 0 var(--btn-ts);
-  border: 3px solid var(--btn-rim);
-  box-shadow: 0 5px 0 0 var(--btn-sh), inset 0 2px 0 0 rgba(255,255,255,.10), inset 0 -3px 0 0 rgba(0,0,0,.42);
-}
-.pl-pages .pg:hover:not(.sel) { --btn-c: #474747; color: #fff; }
-.pl-pages .pg:active:not(.sel) {
-  transform: translateY(5px);
-  box-shadow: 0 0 0 0 var(--btn-sh), inset 0 2px 0 0 rgba(255,255,255,.08), inset 0 -2px 0 0 rgba(0,0,0,.40);
-}
-.pl-pages .pg.sel {
-  --btn-c: var(--accent); --btn-rim: var(--accent-bright); --btn-sh: #1e1e1f; --btn-ts: #1f4a12;
-  color: #0c1a07; text-shadow: 1px 1px 0 var(--accent-bright); transform: translateY(5px);
-  box-shadow: 0 0 0 0 var(--btn-sh), 0 0 0 2px rgba(0,0,0,.55), inset 0 3px 0 0 rgba(0,0,0,.45),
-    inset 0 -2px 0 0 rgba(255,255,255,.22), inset 0 0 14px 0 rgba(128,218,91,.45);
-}
+.pl-pages .pg { width: 40px; }
+.pl-pages .pg.sel { pointer-events: none; }
 .pl-count { font-size: 12px; color: #aab4ac; width: 100%; text-align: center; margin-top: 6px; letter-spacing: .02em; }
 .pl-results { display: flex; flex-direction: column; gap: 8px; }
 .pl-empty { color: #a9a9a9; font-size: 13px; padding: 14px 4px; text-align: center; }
@@ -1018,18 +1018,19 @@ input[type=password]::-ms-clear { display: none; }
 .stat-chip b { color: #fff; font-weight: normal; }
 .stat-chip .pi { width: 12px; height: 12px; color: var(--accent-bright); }
 
-/* карточки серверов: до 3 — по центру в ряд; больше 3 — раскладка в 3 столбца */
+/* Карточки серверов: максимум три в строке, неполные строки симметричны. */
 .srv-grid { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; min-height: 180px; }
 .srv-grid .list-empty { width: 100%; }
-/* больше 3 серверов — раскладка ровно в 3 столбца (с адаптивом для узких экранов) */
-.srv-grid.cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
-.srv-grid.cols3 .srv-card { width: auto; }
-.srv-grid.cols3 .list-empty { grid-column: 1 / -1; }
-@media (max-width: 1080px) { .srv-grid.cols3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 700px) { .srv-grid.cols3 { grid-template-columns: minmax(0, 1fr); } }
 .srv-card { background: var(--card); border: 1px solid var(--bd); padding: 16px;
-  width: 380px; max-width: 100%;
+  width: 380px; max-width: 100%; min-width: 0;
   cursor: pointer; transition: background .1s, border-color .1s; }
+.srv-grid > .srv-card { flex: 0 0 calc((100% - 28px) / 3); width: calc((100% - 28px) / 3); }
+.srv-grid.balance-one > .srv-card { flex-basis: min(380px, 100%); width: min(380px, 100%); }
+.srv-grid.balance-tail2 > .srv-card:nth-last-child(-n+2),
+.srv-grid.balance-tail4 > .srv-card:nth-last-child(-n+4) {
+  flex-basis: calc((100% - 14px) / 2);
+  width: calc((100% - 14px) / 2);
+}
 .srv-card:hover { background: #333333; border-color: #5a5a5a; }
 .srv-card-top { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .srv-card .server-icon { width: 52px; height: 52px; }

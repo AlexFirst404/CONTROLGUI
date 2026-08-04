@@ -471,6 +471,11 @@
       <div class="mc-progress"><div class="mc-progress-fill" id="download-fill"></div></div>
     </div>
 
+    <div class="java-alert hidden" id="restore-notice">
+      <i class="pi" data-ic="save"></i>
+      Восстанавливается бэкап. Консоль и конфликтующие действия временно недоступны.
+    </div>
+
     <nav class="mc-card tabbar">
       <button class="mc-tab sel" data-tab="console"><i class="pi" data-ic="terminal-sharp"></i> Консоль</button>
       <button class="mc-tab" data-tab="settings"><i class="pi" data-ic="sliders-2"></i> Настройки</button>
@@ -537,9 +542,19 @@
         </div>
       </div>
 
-      <div class="console-meta" id="console-meta"></div>
+      <div class="console-tools">
+        <div class="console-meta" id="console-meta"></div>
+        <label class="console-autoscroll-row">
+          <span class="mc-toggle" id="console-autoscroll"></span>
+          <span>Автопрокрутка</span>
+        </label>
+      </div>
 
       <div class="console-wrap">
+        <div class="java-alert console-lock hidden" id="console-lock">
+          <i class="pi" data-ic="save"></i>
+          Консоль отключена на время восстановления бэкапа. История ниже сохранена для просмотра.
+        </div>
         <div class="console" id="console"></div>
         <button class="console-jump hidden" id="console-jump" type="button"
                 title="К последним сообщениям"><i class="pi" data-ic="chevron-down"></i></button>
@@ -559,6 +574,10 @@
 
     <!-- Вкладка: настройки -->
     <div class="tab-pane hidden" id="tab-settings">
+      <div class="mc-card form-panel hidden" id="settings-loading">
+        <div class="inv-loading"><div class="mc-loader"></div><div class="load-note">Загрузка настроек сервера…</div></div>
+      </div>
+      <div class="settings-area-title" id="settings-integrations-title">Интеграции</div>
       <div class="mc-card form-panel hidden" id="proxy-card">
         <div class="section-title"><i class="pi" data-ic="cellular-signal-3"></i> Подключение к прокси (Velocity / BungeeCord)</div>
         <div class="hint" id="proxy-info" style="margin:0 0 10px"></div>
@@ -574,6 +593,7 @@
         <div class="err" id="proxy-err"></div>
       </div>
 
+      <div class="settings-area-title">Ресурсы и запуск</div>
       <div class="mc-card form-panel" id="core-card">
         <div class="section-title">Ядро сервера</div>
         <div class="hint" id="core-info" style="margin:0 0 10px">Текущее ядро: <b id="core-current">—</b>. Можно скачать его заново (если файлы повредились) или загрузить своё ядро .jar. Сервер должен быть остановлен.</div>
@@ -641,13 +661,13 @@
       </div>
 
       <form id="settings-form" class="mc-card form-panel" autocomplete="off">
-        <div class="props-modebar" style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <div class="props-modebar" id="props-modebar" style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
           <span class="label-dim" style="font-size:13px">server.properties:</span>
           <button type="button" class="mc-btn sm props-mode-btn primary" data-pm="fields"><i class="pi" data-ic="sliders"></i> Поля (с переводом)</button>
           <button type="button" class="mc-btn sm props-mode-btn" data-pm="raw"><i class="pi" data-ic="file"></i> Файл (как есть)</button>
         </div>
 
-        <div class="form-grid" id="settings-known"></div>
+        <div class="settings-groups" id="settings-known"></div>
 
         <div id="settings-raw-wrap" class="hidden">
           <div class="hint" style="margin:0 0 8px">Прямое редактирование файла <code>server.properties</code>: формат <code>ключ=значение</code>, строки с <code>#</code> — комментарии. Имя/память/CPU/Java меняются в режиме «Поля».</div>
@@ -896,6 +916,19 @@
       <div class="btn-row">
         <button class="mc-btn" id="dialog-yes">Да</button>
         <button class="mc-btn" id="dialog-no">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ВЫБОР ОБЪЁМА УДАЛЕНИЯ ПЛАГИНА -->
+  <div id="plugin-delete-root" class="modal-wrap hidden">
+    <div class="modal">
+      <div class="modal-head"><span id="plugin-delete-title">Удаление плагина</span></div>
+      <div class="modal-body" id="plugin-delete-text"></div>
+      <div class="btn-row plugin-delete-actions">
+        <button class="mc-btn danger" id="plugin-delete-jar"><i class="pi" data-ic="trash"></i> Только .jar</button>
+        <button class="mc-btn danger" id="plugin-delete-data"><i class="pi" data-ic="folder"></i> .jar и папку данных</button>
+        <button class="mc-btn" id="plugin-delete-cancel">Отмена</button>
       </div>
     </div>
   </div>

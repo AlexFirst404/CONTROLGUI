@@ -131,7 +131,8 @@ window.API = (function () {
     pluginInstall: (id, projectId) => call('POST', '/api/servers/' + id + '/plugins/install', { projectId: projectId }),
     pluginDetails: (id, projectId) => call('GET', '/api/servers/' + id + '/plugins/project?id=' + encodeURIComponent(projectId)),
     modDetails: (id, projectId) => call('GET', '/api/servers/' + id + '/mods/project?id=' + encodeURIComponent(projectId)),
-    pluginDelete: (id, file) => call('DELETE', '/api/servers/' + id + '/plugins?file=' + encodeURIComponent(file)),
+    pluginDelete: (id, file, withData) => call('DELETE', '/api/servers/' + id + '/plugins?file=' + encodeURIComponent(file) +
+      '&withData=' + (withData ? 'true' : 'false')),
     pluginToggle: (id, file) => call('POST', '/api/servers/' + id + '/plugins/toggle', { file: file }),
 
     modsList: (id) => call('GET', '/api/servers/' + id + '/mods'),

@@ -18,6 +18,7 @@
   .pop-head { display: flex; align-items: center; gap: 10px; flex: none; }
   .pop-head .sh-name { font-size: 16px; }
   .pop-head .status-badge { font-size: 11px; }
+  .pop-autoscroll { margin-left: auto; min-height: 40px; }
   .pop-wrap .console { flex: 1; height: auto; min-height: 0; }
 </style>
 </head>
@@ -27,6 +28,10 @@
     <img class="sh-icon" id="pop-icon" alt="" hidden>
     <div class="sh-name" id="pop-title">Консоль</div>
     <span class="status-badge" id="pop-status"></span>
+    <div class="toggle-row pop-autoscroll">
+      <span class="toggle-label">Автопрокрутка</span>
+      <div class="mc-toggle" id="auto-scroll-toggle" role="switch" aria-label="Автопрокрутка"></div>
+    </div>
   </div>
   <div class="console" id="console"></div>
   <div class="console-input-row">
@@ -44,9 +49,44 @@
   id = (id || '').replace(/[^a-f0-9]/gi, '');
   var consoleEl = document.getElementById('console');
   var input = document.getElementById('command-input');
+  var btnSend = document.getElementById('btn-send');
   var statusEl = document.getElementById('pop-status');
+  var autoScrollToggle = document.getElementById('auto-scroll-toggle');
+  var commandPlaceholder = input.placeholder;
+  var autoScrollKey = 'cgConsoleAutoScroll';
+  var autoScroll = true;
+  var sse = null;
+  var restoring = false;
+  var canView = false;
+  var canCommand = false;
+  var accessFailed = false;
   var history = [];
   var historyIdx = 0;
+
+  input.disabled = true;
+  btnSend.disabled = true;
+
+  try {
+    var savedAutoScroll = localStorage.getItem(autoScrollKey);
+    if (savedAutoScroll !== null) autoScroll = savedAutoScroll === '1';
+  } catch (e) { /* приватный режим */ }
+
+  function mkToggle(el, initialOn) {
+    if (initialOn) el.classList.add('on');
+    el.innerHTML = '<div class="fill"></div><div class="knob"><div class="face"></div></div>';
+    el.setAttribute('aria-checked', initialOn ? 'true' : 'false');
+    el.addEventListener('click', function () {
+      el.classList.toggle('on');
+      el.setAttribute('aria-checked', el.classList.contains('on') ? 'true' : 'false');
+    });
+  }
+
+  mkToggle(autoScrollToggle, autoScroll);
+  autoScrollToggle.addEventListener('click', function () {
+    autoScroll = autoScrollToggle.classList.contains('on');
+    try { localStorage.setItem(autoScrollKey, autoScroll ? '1' : '0'); } catch (e) { /* приватный режим */ }
+    if (autoScroll) consoleEl.scrollTop = consoleEl.scrollHeight;
+  });
 
   function appendLine(line) {
     line = String(line).replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
@@ -60,37 +100,100 @@
     el.textContent = line;
     consoleEl.appendChild(el);
     while (consoleEl.childNodes.length > 1500) consoleEl.removeChild(consoleEl.firstChild);
-    if (atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+    if (autoScroll && atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
   }
 
   function setStatus(s) {
     statusEl.className = 'status-badge st-' + (s.status || '');
     var names = { running: 'Работает', starting: 'Запускается', stopping: 'Останавливается',
-      stopped: 'Остановлен', error: 'Ошибка', orphaned: 'Завис процесс', 'no-jar': 'Нет ядра', downloading: 'Загрузка' };
+      stopped: 'Остановлен', error: 'Ошибка', orphaned: 'Завис процесс', 'no-jar': 'Нет ядра',
+      downloading: 'Загрузка', restoring: 'Восстанавливается' };
     statusEl.textContent = names[s.status] || s.status || '';
   }
 
+  function disconnect() {
+    if (!sse) return;
+    sse.onmessage = null;
+    sse.onerror = null;
+    sse.close();
+    sse = null;
+  }
+
   function connect() {
-    var sse = API.consoleStream(id);
-    sse.onmessage = function (event) {
+    if (restoring || !canView || sse) return;
+    var stream = API.consoleStream(id);
+    sse = stream;
+    stream.onmessage = function (event) {
       var line; try { line = JSON.parse(event.data); } catch (e) { return; }
       appendLine(line);
     };
-    sse.onerror = function () { consoleEl.innerHTML = ''; };
+    stream.onerror = function () {
+      /* EventSource переподключится сам; историю не очищаем даже при начале восстановления. */
+    };
+  }
+
+  function setRestoring(active) {
+    var changed = restoring !== active;
+    restoring = active;
+    input.disabled = active || !canCommand;
+    btnSend.disabled = active || !canCommand;
+    input.placeholder = active
+      ? 'Восстановление сервера — команды недоступны'
+      : (canCommand ? commandPlaceholder : 'Недостаточно прав для отправки команд');
+
+    if (active) {
+      disconnect();
+      if (changed) {
+        appendLine('[ПАНЕЛЬ] Идёт восстановление сервера из резервной копии. Консоль и отправка команд временно недоступны.');
+      }
+      return;
+    }
+
+    if (changed) consoleEl.textContent = '';
+    connect();
+  }
+
+  function denyConsoleAccess(message) {
+    canView = false;
+    canCommand = false;
+    restoring = false;
+    disconnect();
+    input.disabled = true;
+    btnSend.disabled = true;
+    input.placeholder = message;
+    if (!accessFailed) {
+      accessFailed = true;
+      consoleEl.textContent = '';
+      appendLine('[ПАНЕЛЬ] Доступ к консоли закрыт или сервер недоступен.');
+    }
   }
 
   async function refresh() {
     try {
       var s = await API.server(id);
+      var permissions = s.permissions || {};
+      canView = !!(permissions.admin || permissions['console.view']);
+      canCommand = !!(permissions.admin || permissions['console.command']);
       document.getElementById('pop-title').textContent = s.name + ' — консоль';
       document.title = s.name + ' — консоль';
       var icon = document.getElementById('pop-icon');
       if (s.hasIcon) { icon.src = API.iconUrl(id, s.hasIcon); icon.hidden = false; }
       setStatus(s);
-    } catch (e) { /* нет доступа/сервера */ }
+      if (!canView) {
+        denyConsoleAccess('Недостаточно прав для просмотра консоли');
+        return;
+      }
+      accessFailed = false;
+      setRestoring(s.status === 'restoring');
+    } catch (e) {
+      // Уже открытый SSE сам не узнает, что администратор отозвал права. При
+      // первой же неуспешной перепроверке закрываем поток и очищаем старый вывод.
+      denyConsoleAccess('Нет доступа к консоли или сервер недоступен');
+    }
   }
 
   function send() {
+    if (restoring || input.disabled) return;
     var command = input.value.trim();
     if (!command) return;
     if (command.charAt(0) === '/') command = command.slice(1);
@@ -99,7 +202,7 @@
     API.command(id, command).catch(function (e) { appendLine('[ПАНЕЛЬ] ' + e.message); });
   }
 
-  document.getElementById('btn-send').addEventListener('click', send);
+  btnSend.addEventListener('click', send);
   input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { send(); }
     else if (e.key === 'ArrowUp') { if (historyIdx > 0) { historyIdx--; input.value = history[historyIdx] || ''; e.preventDefault(); } }
@@ -107,9 +210,9 @@
   });
 
   if (!id) { appendLine('[ПАНЕЛЬ] Не указан сервер.'); return; }
-  connect();
   refresh();
   setInterval(refresh, 4000);
+  window.addEventListener('beforeunload', disconnect);
   input.focus();
 })();
 </script>

@@ -15,6 +15,7 @@
     running: 'Работает',
     stopping: 'Останавливается...',
     downloading: 'Установка...',
+    restoring: 'Восстанавливается...',
     error: 'Ошибка',
     'no-jar': 'Ядро не установлено',
     orphaned: 'Работает вне панели',
@@ -172,19 +173,49 @@
     logContent: '',      // загруженный текст лога
     logTimer: null,      // таймер live-обновления логов
     customCoreFile: null, // выбранный пользователем jar для своего ядра
+    wasRestoring: false,
+    consoleAutoscroll: true,
+    sugContext: null,
   };
 
   // ---------- права ----------
 
-  function can(perm) {
+  function can(perm, server) {
     const m = state.me;
-    if (!m) return true; // ещё не загрузили — не блокируем заранее
+    if (!m) return false;
     if (m.admin || (m.perms && m.perms.admin)) return true;
+    const srv = server === undefined ? state.current : server;
+    const effective = srv && srv.permissions;
+    if (effective) return !!(effective.admin || effective[perm]);
     return !!(m.perms && m.perms[perm]);
   }
 
-  function canAny(perms) {
-    return perms.some((p) => can(p));
+  function canAny(perms, server) {
+    return perms.some((p) => can(p, server));
+  }
+
+  function isRestoring(server) {
+    return !!(server && server.status === 'restoring');
+  }
+
+  const TAB_PERMISSIONS = {
+    console: ['console.view'],
+    settings: ['settings.edit'],
+    files: ['files.read'],
+    plugins: ['files.read'],
+    mods: ['files.read'],
+    players: ['players.kick', 'players.ban', 'players.op', 'players.whitelist', 'players.delete'],
+    logs: ['logs.view'],
+    backups: ['backups.create', 'backups.restore', 'backups.delete'],
+  };
+
+  function tabAllowed(tab, server) {
+    const srv = server || state.current;
+    const perms = TAB_PERMISSIONS[tab];
+    if (perms && !canAny(perms, srv)) return false;
+    if (tab === 'plugins' && !(srv && srv.plugins)) return false;
+    if (tab === 'mods' && !(srv && srv.mods)) return false;
+    return ['console', 'settings', 'files', 'plugins', 'mods', 'players', 'logs', 'backups', 'info'].includes(tab);
   }
 
   async function loadMe() {
@@ -196,32 +227,22 @@
       // «Выйти» имеет смысл только в удалённой сессии (локально входа нет)
       const lo = $('#menu-logout'); if (lo) lo.classList.toggle('hidden', !state.remoteSession);
       applyPermissions();
+      renderList();
+      updateRcHomeEntry();
     } catch (e) { /* при 401 клиент сам уведёт на /login */ }
   }
 
   /* Прячем вкладки/кнопки/пункты меню, недоступные пользователю. */
   function applyPermissions() {
     // создание сервера
-    $('#btn-goto-create').classList.toggle('hidden', !can('server.create'));
+    const canCreate = can('server.create', null);
+    $('#btn-goto-create').classList.toggle('hidden', !canCreate);
+    const createMenu = $('[data-menu="create"]');
+    if (createMenu) createMenu.classList.toggle('hidden', !canCreate);
     // вкладки сервера (по любому из соответствующих прав)
-    const tabPerm = {
-      console: ['console.view'],
-      settings: ['settings.edit'],
-      files: ['files.read'],
-      plugins: ['files.read'],
-      mods: ['files.read'],
-      players: ['players.kick', 'players.ban', 'players.op', 'players.whitelist', 'players.delete'],
-      logs: ['logs.view'],
-      backups: ['backups.create', 'backups.restore', 'backups.delete'],
-    };
     $$('.mc-tab').forEach((btn) => {
       const tab = btn.dataset.tab;
-      const p = tabPerm[tab];
-      let hide = p ? !canAny(p) : false;
-      // вкладки «Плагины»/«Моды» — только для ядер с их поддержкой
-      if (tab === 'plugins' && !(state.current && state.current.plugins)) hide = true;
-      if (tab === 'mods' && !(state.current && state.current.mods)) hide = true;
-      btn.classList.toggle('hidden', hide);
+      btn.classList.toggle('hidden', !tabAllowed(tab));
     });
     // файловый тулбар по правам
     const fb = (sel, ok) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !ok); };
@@ -229,6 +250,7 @@
     fb('#btn-new-dir', can('files.write'));
     fb('#btn-upload', can('files.upload'));
     fb('#btn-upload-dir', can('files.upload'));
+    fb('#btn-editor-save', can('files.write'));
     // кнопки питания — каждая по своему праву
     const toggleBtn = (sel, perm) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !can(perm)); };
     toggleBtn('#btn-start', 'server.start');
@@ -236,6 +258,9 @@
     toggleBtn('#btn-stop', 'server.stop');
     toggleBtn('#btn-kill', 'server.kill');
     toggleBtn('#btn-redownload', 'server.install');
+    toggleBtn('#core-redownload', 'server.install');
+    toggleBtn('#core-upload-btn', 'server.install');
+    toggleBtn('#btn-delete-server', 'server.delete');
     const noCmd = !can('console.command');
     ['#command-input', '#btn-send'].forEach((s) => { const el = $(s); if (el) el.classList.toggle('perm-hidden', noCmd); });
     // создание бэкапа
@@ -333,9 +358,24 @@
     });
   }
 
+  let confirmQueue = Promise.resolve();
+  function captureDialogContext() {
+    return {
+      screen: state.screen,
+      serverId: state.currentId,
+      tab: state.currentTab,
+      hash: location.hash || '',
+    };
+  }
+  function sameDialogContext(context) {
+    return state.screen === context.screen && state.currentId === context.serverId &&
+      state.currentTab === context.tab && (location.hash || '') === context.hash;
+  }
   function confirmDialog(text, opts) {
     opts = opts || {};
-    return new Promise((resolve) => {
+    const context = captureDialogContext();
+    const open = () => new Promise((resolve) => {
+      if (!sameDialogContext(context)) { resolve(false); return; }
       $('#dialog-title').textContent = opts.title || 'Подтверждение';
       $('#dialog-text').textContent = text;
       const yes = $('#dialog-yes');
@@ -348,13 +388,21 @@
         $('#dialog-no').onclick = null;
         resolve(answer);
       };
-      yes.onclick = () => done(true);
+      // Если за открытым диалогом уже сменился экран/сервер/вкладка, подтверждение
+      // относится к устаревшему контексту и не должно запускать действие над ним.
+      yes.onclick = () => done(sameDialogContext(context));
       $('#dialog-no').onclick = () => done(false);
     });
+    // Один экземпляр модалки не должен терять Promise при двух быстрых popstate.
+    const queued = confirmQueue.then(open, open);
+    confirmQueue = queued.then(() => undefined, () => undefined);
+    return queued;
   }
 
   function promptDialog(title, value, placeholder) {
+    const context = captureDialogContext();
     return new Promise((resolve) => {
+      if (!sameDialogContext(context)) { resolve(null); return; }
       $('#input-title').textContent = title;
       const field = $('#input-field');
       field.value = value || '';
@@ -369,10 +417,10 @@
         field.onkeydown = null;
         resolve(answer);
       };
-      $('#input-ok').onclick = () => done(field.value.trim() || null);
+      $('#input-ok').onclick = () => done(sameDialogContext(context) ? (field.value.trim() || null) : null);
       $('#input-cancel').onclick = () => done(null);
       field.onkeydown = (event) => {
-        if (event.key === 'Enter') done(field.value.trim() || null);
+        if (event.key === 'Enter') done(sameDialogContext(context) ? (field.value.trim() || null) : null);
         if (event.key === 'Escape') done(null);
       };
     });
@@ -939,11 +987,20 @@
     if (card) refreshRcCard(card, id);
   }
 
+  /* Последняя строка карточек остаётся симметричной: 3; 2+2; 3+2;
+     3+3; 3+2+2 и далее без одинокой растянутой карточки. */
+  function applyBalancedCards(box, count) {
+    box.classList.remove('balance-one', 'balance-tail2', 'balance-tail4');
+    if (count === 1) box.classList.add('balance-one');
+    else if (count % 3 === 2) box.classList.add('balance-tail2');
+    else if (count > 1 && count % 3 === 1) box.classList.add('balance-tail4');
+  }
+
   function renderRemoteConns() {
     const box = $('#rc-list');
     if (!box) return;
     box.innerHTML = '';
-    box.classList.toggle('cols3', rcConns.length > 3);
+    applyBalancedCards(box, rcConns.length);
     if (!rcConns.length) {
       const e = document.createElement('div');
       e.className = 'rc-empty';
@@ -1035,13 +1092,21 @@
     try {
       const r = await API.remoteConnAction('open', { id: id }); // поднимает прокси, проверяет вход
       if (!r || !r.url) { showToast('Не удалось открыть подключение.'); restore(); return; }
-      // к скольким серверам есть доступ на той панели: 1 — сразу его, много — выбор, 0 — на корень
+      // Корень удалённой панели намеренно не открываем: там находится её локальный
+      // список серверов, который не является экраном этого режима подключения.
       let servers = [];
-      try { const sr = await API.remoteConnAction('servers', { id: id }); servers = (sr && sr.servers) || []; }
-      catch (e) { /* не удалось узнать — откроем корень удалённой панели */ }
-      if (servers.length === 1) { location.href = r.url + '#server=' + servers[0].id; return; }
+      try {
+        const sr = await API.remoteConnAction('servers', { id: id });
+        servers = (sr && sr.servers) || [];
+      } catch (e) {
+        showToast('Не удалось получить доступные серверы: ' + e.message);
+        restore();
+        return;
+      }
+      if (servers.length === 1) { location.href = r.url + '#server=' + encodeURIComponent(servers[0].id); return; }
       if (servers.length > 1) { rcServerChooser(r.url, servers); restore(); return; }
-      location.href = r.url; // 0 доступных или список недоступен — корень удалённой панели
+      showToast('На удалённой панели нет доступных вам серверов.');
+      restore();
     } catch (e) { showToast(e.message); restore(); }
   }
 
@@ -1070,7 +1135,7 @@
       row.appendChild(ic);
       row.appendChild(mid);
       row.appendChild(picon('arrow-right'));
-      row.addEventListener('click', () => { location.href = url + '#server=' + s.id; });
+      row.addEventListener('click', () => { location.href = url + '#server=' + encodeURIComponent(s.id); });
       box.appendChild(row);
     }
     $('#rc-srv-modal').classList.remove('hidden');
@@ -1199,6 +1264,7 @@
   }
 
   function showScreen(name) {
+    if (state.screen === 'server' && name !== 'server') resetServerScopedViews();
     state.screen = name;
     $('#screen-list').classList.toggle('hidden', name !== 'list');
     $('#screen-create').classList.toggle('hidden', name !== 'create');
@@ -1224,23 +1290,42 @@
   }
 
   /* Применяем состояние из адреса при нажатии «назад/вперёд» — без выхода из SPA. */
-  function routeFromHash() {
+  async function routeFromHash() {
+    const navSeq = (state.navSeq = (state.navSeq || 0) + 1);
+    const hash = location.hash || '';
     state.navLock = true;
     try {
-      const hash = location.hash || '';
+      const settingsHash = state.currentId ? '#server=' + state.currentId + '/tab/settings' : '';
+      const keepsSettings = !!settingsHash && hash === settingsHash;
+      if (state.screen === 'server' && state.currentTab === 'settings' && !keepsSettings && isSettingsDirty()) {
+        const leave = await confirmDialog(
+          'На вкладке «Настройки» есть несохранённые изменения. Выйти без сохранения?',
+          { title: 'Несохранённые изменения', yesText: 'Выйти без сохранения', danger: true });
+        if (navSeq !== state.navSeq || location.hash !== hash) return;
+        if (!leave) {
+          history.pushState(null, '', settingsHash);
+          return;
+        }
+        discardSettingsChanges();
+      }
+      if (navSeq !== state.navSeq || location.hash !== hash) return;
       if (hash === '#create') {
+        if (!can('server.create', null)) { showScreen('list'); return; }
         if (state.screen !== 'create') { showScreen('create'); suggestPort(); loadVersions(); }
       } else if (hash === '#proxy') {
         if (state.screen !== 'proxy') { showScreen('proxy'); renderProxyViz(); }
       } else if (hash === '#remote') {
+        if (state.remoteSession) { showScreen('list'); return; }
         if (state.screen !== 'remote') { showScreen('remote'); loadRemoteConns(); }
       } else if (hash.indexOf('#server=') === 0) {
         const rest = hash.slice(8);
         const id = rest.split('/tab/')[0].split('/player/')[0];
         const tab = (rest.split('/tab/')[1] || '').split('/')[0] || null;
         if ((state.servers || []).some((s) => s.id === id)) {
-          if (state.screen !== 'server' || state.currentId !== id) openServer(id);
-          if (tab && tab !== state.currentTab) switchTab(tab);
+          if (state.screen !== 'server' || state.currentId !== id) openServer(id, tab);
+          // Подтверждение ухода из настроек уже получено выше. Второй диалог
+          // мог оставить hash на новой вкладке, а интерфейс — на старой.
+          if (tab && tab !== state.currentTab) await switchTab(tab, true);
         } else {
           showScreen('list'); guard(loadServers);
         }
@@ -1248,7 +1333,7 @@
         showScreen('list'); guard(loadServers);
       }
     } finally {
-      state.navLock = false;
+      if (navSeq === state.navSeq) state.navLock = false;
     }
   }
 
@@ -1305,14 +1390,16 @@
   // ---------- список серверов ----------
 
   async function loadServers() {
+    const seq = (state.serversSeq = (state.serversSeq || 0) + 1);
     const data = await API.servers();
+    if (seq !== state.serversSeq) return;
     state.servers = data.servers || [];
     renderList();
   }
 
   function statusDotClass(status) {
     if (status === 'running') return ' on';
-    if (status === 'starting' || status === 'stopping' || status === 'orphaned') return ' warn';
+    if (status === 'starting' || status === 'stopping' || status === 'restoring' || status === 'orphaned') return ' warn';
     if (status === 'error' || status === 'no-jar') return ' err';
     if (status === 'downloading') return ' dl';
     return '';
@@ -1346,9 +1433,12 @@
       $('#screen-server').classList.remove('hidden');
       $('#tab-files').classList.remove('hidden');
       document.title = 'Проводник';
-      loadMe();
-      loadStatus();
-      loadFiles();
+      await loadMe();
+      await loadStatus();
+      state.current = await guard(() => API.server(state.currentId));
+      if (!state.current) return;
+      applyPermissions();
+      await loadFiles();
       return;
     }
     if (EMBED_EDITOR) {
@@ -1356,8 +1446,11 @@
       $('#screen-server').classList.remove('hidden');
       $('#tab-files').classList.remove('hidden');
       document.title = EMBED_EDITOR.path.split('/').pop() + ' — редактор';
-      loadMe();
-      await openFileEditor(EMBED_EDITOR.path);
+      await loadMe();
+      state.current = await guard(() => API.server(state.currentId));
+      if (!state.current) return;
+      applyPermissions();
+      await openFileEditor(state.currentId, EMBED_EDITOR.path);
       // файл исчез/стал недоступен (например окно восстановлено из прошлой
       // сессии) — редактор не открылся; просим рабочий стол закрыть окно,
       // иначе останется мёртвое пустое
@@ -1366,10 +1459,9 @@
       }
       return;
     }
-    loadMe();
-    loadStatus();
-    guard(loadServers);
-    loadRemoteConns();
+    await loadMe();
+    await Promise.all([loadStatus(), guard(loadServers), loadRemoteConns()]);
+    renderList(); // адреса карточек должны учитывать уже загруженные WAN/LAN-адреса
     startPolling();
     setInterval(renderConsoleMeta, 1000); // аптайм тикает раз в секунду
     setInterval(syncFiles, 4000);         // автосинхронизация вкладки «Файлы»
@@ -1378,25 +1470,29 @@
   }
   function routeInitialHash() {
     if (location.hash === '#create') {
-      showScreen('create'); loadVersions(); guard(loadServers).then(suggestPort);
+      if (!can('server.create', null)) { showScreen('list'); return; }
+      showScreen('create'); loadVersions(); suggestPort();
     } else if (location.hash === '#remote') {
-      showScreen('remote'); loadRemoteConns(); // экран-менеджер удалённых панелей
+      if (state.remoteSession) { showScreen('list'); return; }
+      showScreen('remote'); // экран-менеджер удалённых панелей
     } else if (location.hash === '#rc-add') {
-      showScreen('remote'); loadRemoteConns(); openRcEditor(null); // диплинк «добавить панель»
+      if (state.remoteSession) { showScreen('list'); return; }
+      showScreen('remote'); openRcEditor(null); // диплинк «добавить панель»
     } else if (location.hash === '#proxy') {
-      showScreen('proxy'); guard(loadServers).then(() => renderProxyViz());
+      showScreen('proxy'); renderProxyViz();
     } else if (location.hash.startsWith('#server=')) {
       const rest = location.hash.slice(8);
       const playerSplit = rest.split('/player/');
       const tabSplit = playerSplit[0].split('/tab/');
       const id = tabSplit[0];
-      guard(loadServers).then(() => {
-        if (state.servers.some((s) => s.id === id)) {
-          openServer(id);
-          if (tabSplit[1]) switchTab(tabSplit[1]);
-          if (playerSplit[1]) setTimeout(() => openInventory(decodeURIComponent(playerSplit[1])), 400);
+      if (state.servers.some((s) => s.id === id)) {
+        openServer(id, tabSplit[1]);
+        if (playerSplit[1] && tabAllowed('players', state.servers.find((s) => s.id === id))) {
+          setTimeout(() => {
+            if (state.currentId === id) openInventory(decodeURIComponent(playerSplit[1]), id);
+          }, 400);
         }
-      });
+      }
     }
   }
 
@@ -1405,11 +1501,57 @@
     return state.externalIp || (state.lanIps && state.lanIps[0]) || 'localhost';
   }
 
+  function formatAddress(host, port) {
+    const value = String(host || 'localhost');
+    const bracketed = value.includes(':') && !(value.startsWith('[') && value.endsWith(']'));
+    return (bracketed ? '[' + value + ']' : value) + ':' + port;
+  }
+
+  function nativePathJoin(base, parts) {
+    const separator = state.platform === 'win32' ? '\\' : '/';
+    const rawBase = String(base || '');
+    let out = rawBase.replace(/[\\/]+$/, '');
+    if (separator === '/' && rawBase && !out) out = '/';
+    for (const raw of parts || []) {
+      const part = String(raw || '').replace(/[\\/]+/g, separator).replace(/^[\\/]+|[\\/]+$/g, '');
+      if (!part) continue;
+      out = out ? out + (out === '/' ? '' : separator) + part : part;
+    }
+    return out;
+  }
+
+  function serverBasePath(server) {
+    const srv = server || {};
+    if (srv.path || srv.serverPath || srv.dir) return String(srv.path || srv.serverPath || srv.dir);
+    if (state.remoteSession || srv.inPlace) return '';
+    return nativePathJoin(state.rootPath, ['servers', srv.id]);
+  }
+
+  async function copyText(value) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(String(value));
+        return true;
+      }
+    } catch (e) { /* WebView/HTTP может запретить Clipboard API — используем запасной путь. */ }
+    const area = document.createElement('textarea');
+    area.value = String(value);
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.left = '-9999px';
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    area.remove();
+    return ok;
+  }
+
   function renderList() {
     const panel = $('#server-list');
     Array.from(panel.querySelectorAll('.srv-card')).forEach((el) => el.remove());
     $('#list-empty').classList.toggle('hidden', state.servers.length > 0);
-    panel.classList.toggle('cols3', state.servers.length > 3);
+    applyBalancedCards(panel, state.servers.length);
     renderHomeStats();
 
     for (const server of state.servers) {
@@ -1439,7 +1581,7 @@
       // адрес для подключения + копирование
       const addrRow = document.createElement('div');
       addrRow.className = 'srv-card-addr';
-      const address = bestHost() + ':' + server.port;
+      const address = formatAddress(bestHost(), server.port);
       const code = document.createElement('code');
       code.textContent = address;
       addrRow.appendChild(code);
@@ -1447,11 +1589,12 @@
       copyBtn.className = 'mc-btn sm copy-btn';
       copyBtn.title = 'Скопировать адрес';
       copyBtn.appendChild(picon('copy'));
-      copyBtn.addEventListener('click', (event) => {
+      copyBtn.addEventListener('click', async (event) => {
         event.stopPropagation();
-        if (navigator.clipboard) navigator.clipboard.writeText(address);
+        const copied = await copyText(address);
+        if (!copied) { showToast('Не удалось скопировать адрес.'); return; }
         const old = copyBtn.querySelector('.pi');
-        copyBtn.replaceChild(picon('check'), old);
+        if (old) copyBtn.replaceChild(picon('check'), old);
         showToast('Адрес скопирован: ' + address, 'ok');
         setTimeout(() => { const c = copyBtn.querySelector('.pi'); if (c) copyBtn.replaceChild(picon('copy'), c); }, 1200);
       });
@@ -1474,11 +1617,14 @@
       const actions = document.createElement('div');
       actions.className = 'srv-card-actions';
       const processAlive = ['starting', 'running', 'stopping'].includes(server.status);
+      const restoring = isRestoring(server);
       const power = document.createElement('button');
       power.className = 'mc-btn sm ' + (processAlive ? '' : 'primary');
       power.appendChild(picon(processAlive ? 'pause' : 'play'));
       power.appendChild(document.createTextNode(processAlive ? ' Остановить' : ' Запустить'));
-      power.disabled = !processAlive && (!server.jarReady || server.status === 'downloading' || server.status === 'orphaned');
+      const canPower = processAlive ? can('server.stop', server) : can('server.start', server);
+      power.classList.toggle('perm-hidden', !canPower);
+      power.disabled = restoring || (!processAlive && (!server.jarReady || server.status === 'downloading' || server.status === 'orphaned'));
       power.addEventListener('click', async (event) => {
         event.stopPropagation();
         if (processAlive) {
@@ -1655,20 +1801,64 @@
 
   // ---------- экран сервера ----------
 
-  function firstAllowedTab() {
-    const order = [
-      ['console', () => can('console.view')], ['settings', () => can('settings.edit')],
-      ['files', () => can('files.read')],
-      ['players', () => canAny(['players.kick', 'players.ban', 'players.op', 'players.whitelist', 'players.delete'])],
-      ['logs', () => can('logs.view')],
-      ['backups', () => canAny(['backups.create', 'backups.restore', 'backups.delete'])],
-      ['info', () => true],
-    ];
-    for (const [tab, ok] of order) { if (ok()) return tab; }
+  function firstAllowedTab(server) {
+    const order = ['console', 'settings', 'files', 'plugins', 'mods', 'players', 'logs', 'backups', 'info'];
+    for (const tab of order) { if (tabAllowed(tab, server)) return tab; }
     return 'info';
   }
 
-  function openServer(id) {
+  let cancelPluginDeleteChoice = null;
+
+  function isCurrentServerView(serverId, tab) {
+    return state.screen === 'server' && state.currentId === serverId && (!tab || state.currentTab === tab);
+  }
+
+  function resetServerScopedViews() {
+    if (cancelPluginDeleteChoice) cancelPluginDeleteChoice();
+    stopLogLive();
+    state.statsSeq = (state.statsSeq || 0) + 1;
+    state.logsListSeq = (state.logsListSeq || 0) + 1;
+    state.logContentSeq = (state.logContentSeq || 0) + 1;
+    state.logSearchSeq = (state.logSearchSeq || 0) + 1;
+    state.logName = '';
+    state.logContent = '';
+    state.contentModalSeq = (state.contentModalSeq || 0) + 1;
+    state.dropCollectSeq = (state.dropCollectSeq || 0) + 1;
+    const loading = (selector) => {
+      const box = $(selector);
+      if (!box) return;
+      box.innerHTML = '';
+      const note = document.createElement('div');
+      note.className = 'files-empty';
+      note.textContent = 'Загрузка данных сервера…';
+      box.appendChild(note);
+    };
+    ['#files-list', '#pl-results', '#pl-installed', '#md-results', '#md-installed',
+      '#players-list', '#bk-list', '#wl-chips'].forEach(loading);
+    const logFile = $('#logs-file'); if (logFile) logFile.innerHTML = '';
+    const logView = $('#logs-view'); if (logView) logView.textContent = '';
+    const logMeta = $('#logs-meta'); if (logMeta) logMeta.textContent = '';
+    const logQuery = $('#logs-query'); if (logQuery) logQuery.value = '';
+    const crumbs = $('#files-crumbs'); if (crumbs) crumbs.textContent = '';
+    const filesPath = $('#files-path'); if (filesPath) filesPath.textContent = '';
+    $('#content-modal').classList.add('hidden');
+    $('#dropconfirm-root').classList.add('hidden');
+    $('#dropconfirm-ok').onclick = null;
+    $('#dropconfirm-cancel').onclick = null;
+    const dropOverlay = $('#drop-overlay'); if (dropOverlay) dropOverlay.classList.add('hidden');
+    closeInventory();
+    state.editorPath = null;
+    state.editorServerId = null;
+    state.editorOpenSeq = (state.editorOpenSeq || 0) + 1;
+    $('#file-editor').classList.add('hidden');
+    $('#files-browser').classList.remove('hidden');
+    const command = $('#command-input'); if (command) command.value = '';
+    state.history = [];
+    state.historyIdx = -1;
+    hideSuggest();
+  }
+
+  function openServer(id, requestedTab) {
     // на рабочем столе сервер открывается ОТДЕЛЬНЫМ окном; собственное окно
     // сервера (go=server/<id>) навигирует как обычно
     if (EMBED && !EMBED.startsWith('server/') && window.parent !== window) {
@@ -1676,29 +1866,44 @@
       window.parent.postMessage({ cg: 'open', what: 'server', id: id, title: srv ? srv.name : null }, location.origin);
       return;
     }
+    if (state.sse) { state.sse.close(); state.sse = null; }
+    const consoleEl = $('#console');
+    if (consoleEl) { consoleEl.innerHTML = ''; delete consoleEl.dataset.restoring; }
+    resetServerScopedViews();
     state.currentId = id;
     state.current = state.servers.find((s) => s.id === id) || null;
     state.filesPath = '';
     state.editorPath = null;
     state.playTimes = {};
+    state.settingsBaseline = null;
+    state.settingsLoadedServerId = null;
+    state.currentTab = '';
+    state.wasRestoring = isRestoring(state.current);
     showScreen('server');
     applyPermissions();
-    switchTab(firstAllowedTab());
     renderServerHead();
-    if (can('console.view')) connectConsole(id);
+    const tab = tabAllowed(requestedTab, state.current) ? requestedTab : firstAllowedTab(state.current);
+    switchTab(tab);
     refreshServer();
-    loadSettings();
   }
 
   async function refreshServer() {
     if (state.screen !== 'server' || !state.currentId) return;
+    const requestedId = state.currentId;
+    const seq = (state.serverRefreshSeq = (state.serverRefreshSeq || 0) + 1);
     try {
-      state.current = await API.server(state.currentId);
+      const server = await API.server(requestedId);
+      if (state.screen !== 'server' || state.currentId !== requestedId || seq !== state.serverRefreshSeq) return;
+      state.current = server;
+      const idx = state.servers.findIndex((s) => s.id === requestedId);
+      if (idx >= 0) state.servers[idx] = Object.assign({}, state.servers[idx], server);
+      if (!tabAllowed(state.currentTab, server)) await switchTab(firstAllowedTab(server));
       renderServerHead();
       if (state.currentTab === 'console') loadStats();
       // перерисовываем вкладку игроков — иначе OP/бан/вайтлист показывают старое состояние после действия
       if (state.currentTab === 'players') renderPlayers(state.current);
     } catch (e) {
+      if (state.currentId !== requestedId || seq !== state.serverRefreshSeq) return;
       // сервер удалён (строго 404) — убираем из списка, чтобы не висел
       if (e.status === 404) {
         state.servers = (state.servers || []).filter((s) => s.id !== state.currentId);
@@ -1719,7 +1924,7 @@
     const st = $('#server-status');
     st.className = 'status-badge st-' + server.status;
     st.textContent = statusText(server);
-    $('#server-addr').textContent = (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server) + ' · ' + bestHost() + ':' + server.port;
+    $('#server-addr').textContent = (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server) + ' · ' + formatAddress(bestHost(), server.port);
 
     const dlWrap = $('#download-wrap');
     const dl = server.download;
@@ -1745,18 +1950,60 @@
     const status = server.status;
     const processAlive = status === 'starting' || status === 'running' || status === 'stopping';
     const orphaned = status === 'orphaned';
-    $('#btn-start').disabled = processAlive || orphaned || status === 'downloading' || !server.jarReady;
-    $('#btn-stop').disabled = !processAlive;
-    $('#btn-restart').disabled = orphaned || status === 'downloading' || !server.jarReady;
-    $('#btn-kill').disabled = !(processAlive || orphaned);
+    const restoring = status === 'restoring';
+    const restorationFinished = state.wasRestoring && !restoring;
+    state.wasRestoring = restoring;
+    const restoreNotice = $('#restore-notice');
+    if (restoreNotice) restoreNotice.classList.toggle('hidden', !restoring);
+    const consoleLock = $('#console-lock');
+    if (consoleLock) consoleLock.classList.toggle('hidden', !restoring);
+    $('#btn-start').disabled = restoring || processAlive || orphaned || status === 'downloading' || !server.jarReady;
+    $('#btn-stop').disabled = restoring || !processAlive;
+    $('#btn-restart').disabled = restoring || orphaned || status === 'downloading' || !server.jarReady;
+    $('#btn-kill').disabled = restoring || !(processAlive || orphaned);
     $('#btn-redownload').classList.toggle(
       'hidden',
       !(status === 'no-jar' || (dl && dl.phase === 'error'))
     );
+    $('#btn-redownload').disabled = restoring;
+    ['#core-redownload', '#core-upload-btn', '#btn-delete-server', '#bk-create-btn', '#bk-label'].forEach((sel) => {
+      const el = $(sel); if (el) el.disabled = restoring;
+    });
+    const canRestoreBackup = ['stopped', 'no-jar', 'error'].includes(status);
+    $$('#bk-list .mc-btn.accent').forEach((el) => { el.disabled = restoring || !canRestoreBackup; });
+    $$('#bk-list .mc-btn.danger').forEach((el) => { el.disabled = restoring; });
+    const cmd = $('#command-input'); if (cmd) cmd.disabled = restoring || !can('console.command');
+    const send = $('#btn-send'); if (send) send.disabled = restoring || !can('console.command');
+    const pop = $('#console-pop'); if (pop) pop.disabled = restoring || !can('console.view');
+    if (restoring) hideSuggest();
+    if (restoring && state.sse) { state.sse.close(); state.sse = null; }
+    const consoleEl = $('#console');
+    if (consoleEl && restoring && consoleEl.dataset.restoring !== '1') {
+      consoleEl.dataset.restoring = '1';
+      appendConsoleLine('[ПАНЕЛЬ] Консоль временно недоступна: идёт восстановление бэкапа.');
+    } else if (consoleEl && !restoring) {
+      delete consoleEl.dataset.restoring;
+    }
+    if (restorationFinished) {
+      if (state.currentTab === 'console' && can('console.view')) connectConsole(server.id);
+      else if (state.currentTab === 'settings') loadSettings();
+      else if (state.currentTab === 'files') {
+        if (state.editorPath) {
+          state.editorPath = null;
+          $('#file-editor').classList.add('hidden');
+          $('#files-browser').classList.remove('hidden');
+          showToast('Редактор закрыт: после восстановления файлы сервера изменились.', 'ok');
+        }
+        loadFiles();
+      } else if (state.currentTab === 'backups') loadBackups();
+      else if (state.currentTab === 'plugins') loadContent('plugins');
+      else if (state.currentTab === 'mods') loadContent('mods');
+      else if (state.currentTab === 'logs') loadLogs();
+    }
 
     renderInfo(server);
     renderConsoleMeta();
-    renderPlayers(server);
+    if (state.currentTab === 'players') renderPlayers(server);
     applyPermissions();
   }
 
@@ -1768,9 +2015,6 @@
     const cpuLine = (state.cpuModel ? state.cpuModel : 'CPU') + (state.cores ? ' · ' + state.cores + ' ' + coreWord(state.cores) : '') +
       (server.cpuPercent != null && server.cpuPercent < 100 ? ' · лимит ' + server.cpuPercent + '%' : '');
     const rows = [
-      ['Адрес (внешний)', state.externalIp ? state.externalIp + ':' + server.port : '— (не определён)'],
-      ['Адрес (локальная сеть)', state.lanIps.length ? state.lanIps.map((ip) => ip + ':' + server.port).join('  ') : '—'],
-      ['Адрес (этот ПК)', 'localhost:' + server.port],
       ['Ядро', (CORE_NAMES[server.type] || server.type) + ' ' + verLabel(server)],
       ['Статус', statusText(server) + (running ? ' · аптайм ' + uptime : '') + (server.tps ? ' · TPS ' + server.tps : '')],
       ['Память', ramLine],
@@ -1778,19 +2022,53 @@
       ['Java', server.javaPath ? server.javaPath : (state.javaVersion ? state.javaVersion + ' (авто)' : '—')],
       ['Система', platformName(state.platform)],
       ['Создан', new Date(server.createdAt).toLocaleString('ru-RU')],
-      ['Файлы сервера', (state.rootPath ? state.rootPath + '\\' : '') + 'servers\\' + server.id],
     ];
     grid.innerHTML = '';
-    for (const [k, v] of rows) {
+    const addKey = (label) => {
       const kEl = document.createElement('div');
       kEl.className = 'k';
-      kEl.textContent = k;
+      kEl.textContent = label;
+      grid.appendChild(kEl);
+    };
+    const addCopyRow = (label, value, copyable) => {
+      addKey(label);
+      const wrap = document.createElement('div');
+      wrap.className = 'info-copy';
+      const input = document.createElement('input');
+      input.className = 'fld';
+      input.readOnly = true;
+      input.value = value;
+      input.setAttribute('aria-label', label);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'mc-btn sm sq';
+      button.title = 'Скопировать';
+      button.disabled = !copyable;
+      button.appendChild(picon('copy'));
+      button.addEventListener('click', async () => {
+        const ok = await copyText(value);
+        showToast(ok ? 'Скопировано: ' + value : 'Не удалось скопировать в буфер обмена.', ok ? 'ok' : '');
+      });
+      wrap.appendChild(input);
+      wrap.appendChild(button);
+      grid.appendChild(wrap);
+    };
+    addCopyRow('Адрес (внешний)', state.externalIp ? formatAddress(state.externalIp, server.port) : '— (не определён)', !!state.externalIp);
+    const lanAddresses = (state.lanIps || []).map((ip) => formatAddress(ip, server.port));
+    addCopyRow('Адрес (локальная сеть)', lanAddresses.length ? lanAddresses.join(', ') : '—', lanAddresses.length > 0);
+    addCopyRow('Адрес (этот ПК)', formatAddress('localhost', server.port), true);
+    for (const [k, v] of rows) {
+      addKey(k);
       const vEl = document.createElement('div');
       vEl.className = 'v';
       vEl.textContent = v;
-      grid.appendChild(kEl);
       grid.appendChild(vEl);
     }
+    const serverPath = serverBasePath(server);
+    const pathText = serverPath || (state.remoteSession
+      ? 'Путь скрыт для удалённого доступа'
+      : 'Внешняя папка (импорт «на месте»)');
+    addCopyRow('Файлы сервера', pathText, !!serverPath);
   }
   function coreWord(n) { const d = n % 10, dd = n % 100; if (d === 1 && dd !== 11) return 'ядро'; if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return 'ядра'; return 'ядер'; }
   function platformName(p) { return ({ win32: 'Windows', darwin: 'macOS', linux: 'Linux' })[p] || (p || '—'); }
@@ -1858,7 +2136,9 @@
 
   async function loadStats() {
     const server = state.current;
-    if (!server) return;
+    const serverId = state.currentId;
+    if (!server || !serverId) return;
+    const seq = (state.statsSeq = (state.statsSeq || 0) + 1);
     const active = server.status === 'running' || server.status === 'starting' || server.status === 'stopping';
     // TPS-карточку показываем только у ядер, поддерживающих команду tps (Paper-совместимые)
     const paperTps = ['paper', 'purpur', 'folia', 'mohist'].includes(server.type);
@@ -1869,7 +2149,9 @@
       return;
     }
     try {
-      const data = await API.stats(state.currentId);
+      const data = await API.stats(serverId);
+      if (state.screen !== 'server' || state.currentTab !== 'console' ||
+          state.currentId !== serverId || seq !== state.statsSeq) return;
       const pts = data.points || [];
       const last = pts[pts.length - 1];
       const online = server.players.length;
@@ -1957,13 +2239,15 @@
   }
   /* Оптимистичное действие над игроком: мгновенно перерисовать + два «догоняющих» рефреша
      (сервер пишет ops/banned/usercache с задержкой — один рефреш часто ловит старый файл). */
-  function afterPlayerAction() {
+  function afterPlayerAction(serverId) {
+    if (state.currentId !== serverId) return;
     if (state.current && state.currentTab === 'players') renderPlayers(state.current);
-    setTimeout(refreshServer, 600);
-    setTimeout(refreshServer, 1800);
+    setTimeout(() => { if (state.currentId === serverId) refreshServer(); }, 600);
+    setTimeout(() => { if (state.currentId === serverId) refreshServer(); }, 1800);
   }
 
   function renderPlayers(server) {
+    const serverId = server.id;
     const panel = $('#players-list');
     const players = mergedPlayers(server.playersInfo);
     const bannedSet = new Set((server.banned || []).map((n) => n.toLowerCase()));
@@ -2042,7 +2326,7 @@
       invBtn.className = 'mc-btn sm';
       invBtn.appendChild(picon('info-box'));
       invBtn.appendChild(document.createTextNode(' Информация'));
-      invBtn.addEventListener('click', () => openInventory(p.name));
+      invBtn.addEventListener('click', () => openInventory(p.name, serverId));
       actions.appendChild(invBtn);
 
       if (can('players.kick')) {
@@ -2054,10 +2338,10 @@
         kickBtn.title = kickBtn.disabled ? 'Игрок не в сети' : 'Выгнать с сервера';
         kickBtn.addEventListener('click', async () => {
           if (await confirmDialog('Кикнуть игрока «' + p.name + '»?', { title: 'Кик', yesText: 'Кикнуть' })) {
-            const r = await guard(() => API.moderate(state.currentId, 'kick', p.name));
+            const r = await guard(() => API.moderate(serverId, 'kick', p.name));
             if (!r) return;
             showToast('Игрок «' + p.name + '» кикнут.', 'ok');
-            afterPlayerAction();
+            afterPlayerAction(serverId);
           }
         });
         actions.appendChild(kickBtn);
@@ -2075,15 +2359,17 @@
             ? 'Снять OP с игрока «' + p.name + '»?'
             : 'Выдать OP игроку «' + p.name + '»?\nОператор получает доступ к админ-командам сервера.';
           if (await confirmDialog(q, { title: isOp ? 'Снять OP' : 'Выдать OP', yesText: isOp ? 'Снять' : 'Выдать', danger: false })) {
-            const r = await guard(() => API.moderate(state.currentId, act, p.name));
+            const r = await guard(() => API.moderate(serverId, act, p.name));
             if (!r) return; // ошибка уже показана тостом
             showToast(isOp ? 'OP снят с «' + p.name + '».' : '«' + p.name + '» теперь оператор.', 'ok');
             // ставим «липкий» оверрайд: кнопка сразу отражает действие и держится,
             // пока сервер не запишет ops.json (а не откатывается из-за гонки чтения)
-            if (!state.opOverrides) state.opOverrides = {};
-            state.opOverrides[p.name.toLowerCase()] = { val: act === 'op', at: Date.now() };
-            if (state.current && state.currentTab === 'players') renderPlayers(state.current);
-            setTimeout(refreshServer, 1500); // подтянуть реальный ops.json (оверрайд снимется при совпадении)
+            if (state.currentId === serverId) {
+              if (!state.opOverrides) state.opOverrides = {};
+              state.opOverrides[p.name.toLowerCase()] = { val: act === 'op', at: Date.now() };
+              if (state.current && state.currentTab === 'players') renderPlayers(state.current);
+              setTimeout(() => { if (state.currentId === serverId) refreshServer(); }, 1500);
+            }
           }
         });
         actions.appendChild(opBtn);
@@ -2097,12 +2383,14 @@
           pardonBtn.appendChild(document.createTextNode(' Разбан'));
           pardonBtn.addEventListener('click', async () => {
             if (await confirmDialog('Разбанить игрока «' + p.name + '»?', { title: 'Разбан', yesText: 'Разбанить', danger: false })) {
-              const r = await guard(() => API.moderate(state.currentId, 'pardon', p.name));
+              const r = await guard(() => API.moderate(serverId, 'pardon', p.name));
               if (!r) return;
               showToast('Игрок «' + p.name + '» разбанен.', 'ok');
-              if (!state.banOverrides) state.banOverrides = {};
-              state.banOverrides[p.name.toLowerCase()] = { val: false, at: Date.now() };
-              afterPlayerAction();
+              if (state.currentId === serverId) {
+                if (!state.banOverrides) state.banOverrides = {};
+                state.banOverrides[p.name.toLowerCase()] = { val: false, at: Date.now() };
+              }
+              afterPlayerAction(serverId);
             }
           });
           actions.appendChild(pardonBtn);
@@ -2113,12 +2401,14 @@
           banBtn.appendChild(document.createTextNode(' Бан'));
           banBtn.addEventListener('click', async () => {
             if (await confirmDialog('Забанить игрока «' + p.name + '»?\nОн не сможет зайти, пока не разбанят.', { title: 'Бан' })) {
-              const r = await guard(() => API.moderate(state.currentId, 'ban', p.name));
+              const r = await guard(() => API.moderate(serverId, 'ban', p.name));
               if (!r) return;
               showToast('Игрок «' + p.name + '» забанен.', 'ok');
-              if (!state.banOverrides) state.banOverrides = {};
-              state.banOverrides[p.name.toLowerCase()] = { val: true, at: Date.now() };
-              afterPlayerAction();
+              if (state.currentId === serverId) {
+                if (!state.banOverrides) state.banOverrides = {};
+                state.banOverrides[p.name.toLowerCase()] = { val: true, at: Date.now() };
+              }
+              afterPlayerAction(serverId);
             }
           });
           actions.appendChild(banBtn);
@@ -2134,12 +2424,14 @@
       delBtn.addEventListener('click', async () => {
         if (await confirmDialog('Стереть ВСЕ данные игрока «' + p.name + '»?\nИнвентарь, позиция, статистика, достижения и история входов будут удалены безвозвратно.', { title: 'Удаление данных игрока' })) {
           await guard(async () => {
-            await API.playerDelete(state.currentId, p.name);
+            await API.playerDelete(serverId, p.name);
             showToast('Данные игрока «' + p.name + '» стёрты.', 'ok');
-            delete state.playTimes[p.name];
-            if (state.banOverrides) delete state.banOverrides[p.name.toLowerCase()];
-            if (state.opOverrides) delete state.opOverrides[p.name.toLowerCase()];
-            afterPlayerAction();
+            if (state.currentId === serverId) {
+              delete state.playTimes[p.name];
+              if (state.banOverrides) delete state.banOverrides[p.name.toLowerCase()];
+              if (state.opOverrides) delete state.opOverrides[p.name.toLowerCase()];
+            }
+            afterPlayerAction(serverId);
           });
         }
       });
@@ -2157,15 +2449,16 @@
   async function fetchPlayTimes() {
     const server = state.current;
     if (!server) return;
+    const serverId = server.id;
     const names = mergedPlayers(server.playersInfo).map((p) => p.name).slice(0, 12);
     for (const name of names) {
       if (state.playTimes[name] != null) continue;
       try {
-        const data = await API.player(state.currentId, name);
-        if (data.playTimeTicks != null) state.playTimes[name] = data.playTimeTicks;
+        const data = await API.player(serverId, name);
+        if (state.currentId === serverId && data.playTimeTicks != null) state.playTimes[name] = data.playTimeTicks;
       } catch (e) { /* нет данных */ }
     }
-    if (state.currentTab === 'players') renderPlayers(server);
+    if (state.currentId === serverId && state.currentTab === 'players') renderPlayers(state.current || server);
   }
 
   // ---------- инвентарь (широкая раскладка, иконки предметов) ----------
@@ -2338,9 +2631,11 @@
 
   function closeInventory() {
     $('#inv-root').classList.add('hidden');
+    state.invSeq = (state.invSeq || 0) + 1;
     if (state.invTimer) { clearInterval(state.invTimer); state.invTimer = null; }
     state.invSnapshot = null;
     if (state.invEdit) { state.invEdit.selected = null; state.invEdit.statOpen = false; }
+    state.invEdit = null;
     hideItemTooltip();
   }
 
@@ -2351,12 +2646,16 @@
       online: d.online, realtime: d.realtime, hp: d.health, hpMax: d.maxHealth, food: d.food,
       xp: d.xpLevel, pos: d.pos, dim: d.dimension, inv: d.inventory,
       time: d.playTimeTicks, fj: d.firstJoinAt, lj: d.lastJoinAt, ips: d.ips, uuid: d.uuid,
+      deaths: d.deaths, playerKills: d.playerKills, mobKills: d.mobKills,
     });
   }
 
-  async function openInventory(name) {
+  async function openInventory(name, requestedServerId) {
+    const serverId = requestedServerId || state.currentId;
+    if (!serverId || !isCurrentServerView(serverId, 'players')) return;
+    const server = state.servers.find((item) => item.id === serverId) || state.current || {};
     if (state.invTimer) { clearInterval(state.invTimer); state.invTimer = null; }
-    state.invEdit = { name: name, editable: can('console.command'), selected: null, busy: false, statOpen: false, data: null };
+    state.invEdit = { serverId, name: name, editable: can('console.command'), selected: null, busy: false, statOpen: false, data: null };
     const seq = (state.invSeq = (state.invSeq || 0) + 1);
     // каркас модалки с лоадером показываем сразу — данные могут идти секунды
     $('#inv-title').textContent = 'Игрок: ' + name;
@@ -2374,20 +2673,21 @@
     body.appendChild(load);
     $('#inv-root').classList.remove('hidden');
     await guard(async () => {
-      const data = await API.player(state.currentId, name);
-      const bases = await resolveIconBases(state.current ? state.current.version : '');
+      const data = await API.player(serverId, name);
+      const bases = await resolveIconBases(server.version || '');
       // пока грузились, модалку закрыли или открыли другого игрока
-      if (seq !== state.invSeq || $('#inv-root').classList.contains('hidden')) return;
+      if (state.currentId !== serverId || seq !== state.invSeq || $('#inv-root').classList.contains('hidden')) return;
       buildPlayerModal(name, data, bases);
       state.invSnapshot = playerSnapshot(data);
       // онлайн-игрок: тихо опрашиваем, но DOM трогаем только при изменениях
       if (data.online) {
         state.invTimer = setInterval(async () => {
-          if ($('#inv-root').classList.contains('hidden')) { closeInventory(); return; }
+          if (state.currentId !== serverId || $('#inv-root').classList.contains('hidden')) { closeInventory(); return; }
           const ed = state.invEdit;
           if (ed && (ed.selected != null || ed.statOpen || ed.busy)) return; // идёт редактирование — не перерисовываем
           try {
-            const fresh = await API.player(state.currentId, name);
+            const fresh = await API.player(serverId, name);
+            if (state.currentId !== serverId || seq !== state.invSeq) return;
             const snap = playerSnapshot(fresh);
             if (snap !== state.invSnapshot) {
               state.invSnapshot = snap;
@@ -2405,9 +2705,14 @@
   async function refreshPlayerModal() {
     const ed = state.invEdit;
     if (!ed || !ed.name) return;
-    const data = await API.player(state.currentId, ed.name);
-    const bases = await resolveIconBases(state.current ? state.current.version : '');
-    if ($('#inv-root').classList.contains('hidden')) return;
+    const invSeq = state.invSeq || 0;
+    const serverId = ed.serverId || state.currentId;
+    const server = state.servers.find((item) => item.id === serverId) || state.current || {};
+    const data = await API.player(serverId, ed.name);
+    if (state.invEdit !== ed || (state.invSeq || 0) !== invSeq) return;
+    const bases = await resolveIconBases(server.version || '');
+    if (state.invEdit !== ed || (state.invSeq || 0) !== invSeq ||
+        state.currentId !== serverId || $('#inv-root').classList.contains('hidden')) return;
     state.invSnapshot = playerSnapshot(data);
     buildPlayerModal(ed.name, data, bases);
   }
@@ -2424,7 +2729,8 @@
   /* клик по слоту: выбрать предмет -> кликнуть слот-назначение (перемещение/обмен) */
   async function onInvCellClick(slot) {
     const ed = state.invEdit;
-    if (!ed || ed.busy || !ed.data) return;
+    if (!ed || ed.busy || !ed.data || !isCurrentServerView(ed.serverId, 'players') ||
+        $('#inv-root').classList.contains('hidden')) return;
     const bySlot = new Map();
     for (const it of (ed.data.inventory || [])) bySlot.set(it.slot, it);
     if (ed.selected == null) {
@@ -2441,7 +2747,7 @@
     }
     ed.busy = true;
     try {
-      await API.playerEdit(state.currentId, { name: ed.name, op: 'move', from: from, to: slot });
+      await API.playerEdit(ed.serverId || state.currentId, { name: ed.name, op: 'move', from: from, to: slot });
     } catch (e) {
       showToast(e.message);
       ed.busy = false;
@@ -2458,10 +2764,11 @@
 
   async function deleteSelectedItem() {
     const ed = state.invEdit;
-    if (!ed || ed.busy || ed.selected == null) return;
+    if (!ed || ed.busy || ed.selected == null || !isCurrentServerView(ed.serverId, 'players') ||
+        $('#inv-root').classList.contains('hidden')) return;
     ed.busy = true;
     try {
-      await API.playerEdit(state.currentId, { name: ed.name, op: 'delete', slot: ed.selected });
+      await API.playerEdit(ed.serverId || state.currentId, { name: ed.name, op: 'delete', slot: ed.selected });
     } catch (e) {
       showToast(e.message);
       ed.busy = false;
@@ -2526,9 +2833,11 @@
       // нечаянно обнулить игроку опыт или сытость
       const v = Number(input.value);
       if (String(input.value).trim() === '' || !isFinite(v)) { showToast('Введите число'); return; }
+      if (state.invEdit !== ed || !isCurrentServerView(ed.serverId, 'players') ||
+          $('#inv-root').classList.contains('hidden')) return;
       ed.busy = true;
       try {
-        await API.playerEdit(state.currentId, Object.assign({ name: ed.name, op: 'stats' }, edit.payload(v)));
+        await API.playerEdit(ed.serverId || state.currentId, Object.assign({ name: ed.name, op: 'stats' }, edit.payload(v)));
       } catch (e) {
         showToast(e.message);
         ed.busy = false;
@@ -2588,6 +2897,9 @@
         ? (data.realtime ? 'В сети · реальное время' : 'В сети')
         : 'Не в сети');
       metaRow(meta, 'clock', 'Всего в игре', data.playTimeTicks != null ? fmtTicks(data.playTimeTicks) : 'нет данных');
+      if (data.deaths != null) metaRow(meta, 'close-box', 'Смертей', String(data.deaths));
+      if (data.playerKills != null) metaRow(meta, 'users', 'Убийств игроков', String(data.playerKills));
+      if (data.mobKills != null) metaRow(meta, 'zap', 'Убийств мобов', String(data.mobKills));
       if (data.firstJoinAt) metaRow(meta, 'clock', 'Первый вход', new Date(data.firstJoinAt).toLocaleString('ru-RU'));
       if (data.lastJoinAt) metaRow(meta, 'clock', 'Последний вход', new Date(data.lastJoinAt).toLocaleString('ru-RU'));
       if (data.ips && data.ips.length) metaRow(meta, 'server', 'IP-адреса', data.ips.join(', '));
@@ -2713,6 +3025,7 @@
 
   function connectConsole(id) {
     if (state.sse) state.sse.close();
+    state.sse = null;
     const consoleEl = $('#console');
     // однократно вешаем слушатель прокрутки и клик по кнопке «к последним»
     if (!consoleEl.dataset.jumpBound) {
@@ -2724,6 +3037,11 @@
       });
     }
     consoleEl.innerHTML = '';
+    if (!can('console.view')) return;
+    if (isRestoring(state.current)) {
+      appendConsoleLine('[ПАНЕЛЬ] Консоль временно недоступна: идёт восстановление бэкапа.');
+      return;
+    }
     updateConsoleJump();
     const sse = API.consoleStream(id);
     state.sse = sse;
@@ -2733,7 +3051,8 @@
       appendConsoleLine(line);
     };
     sse.onerror = () => {
-      consoleEl.innerHTML = '';
+      if (state.sse !== sse) return;
+      // EventSource сам переподключится; не создаём второй поток поверх него.
     };
   }
 
@@ -2750,7 +3069,7 @@
     el.textContent = line;
     consoleEl.appendChild(el);
     while (consoleEl.childNodes.length > 1200) consoleEl.removeChild(consoleEl.firstChild);
-    if (atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+    if (state.consoleAutoscroll && atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
     updateConsoleJump();
   }
 
@@ -2758,6 +3077,8 @@
     const input = $('#command-input');
     let command = input.value.trim();
     if (!command || !state.currentId) return;
+    if (isRestoring(state.current)) { showToast('Команды недоступны во время восстановления бэкапа.'); return; }
+    if (!can('console.command')) { showToast('Недостаточно прав для отправки команд.'); return; }
     if (command.startsWith('/')) command = command.slice(1);
     state.history.push(input.value.trim());
     state.historyIdx = state.history.length;
@@ -2768,16 +3089,71 @@
 
   // ---------- автоподсказки команд ----------
 
+  function knownPlayerNames() {
+    const names = new Map();
+    const add = (value) => {
+      const name = cleanPlayerName(typeof value === 'string' ? value : (value && value.name));
+      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+    };
+    const server = state.current || {};
+    (server.playersInfo || []).forEach(add);
+    (server.players || []).forEach(add);
+    (server.banned || []).forEach(add);
+    (server.ops || []).forEach(add);
+    Object.keys(state.playTimes || {}).forEach(add);
+    return Array.from(names.values()).sort((a, b) => a.localeCompare(b, 'ru'));
+  }
+
+  function argumentCandidates(command, tokenIndex, tokens) {
+    const players = knownPlayerNames();
+    const playerAtFirst = new Set([
+      'ban', 'kick', 'op', 'deop', 'pardon', 'clear', 'give', 'kill', 'spectate',
+      'spawnpoint', 'enchant', 'msg', 'tell', 'w', 'tag', 'recipe', 'advancement',
+    ]);
+    if (playerAtFirst.has(command) && tokenIndex === 1) return players;
+    if ((command === 'tp' || command === 'teleport') && (tokenIndex === 1 || tokenIndex === 2)) return players;
+    if (command === 'whitelist') {
+      if (tokenIndex === 1) return ['add', 'remove', 'list', 'on', 'off', 'reload'];
+      if (tokenIndex === 2 && (tokens[1] === 'add' || tokens[1] === 'remove')) return players;
+    }
+    if (command === 'gamemode') {
+      if (tokenIndex === 1) return ['survival', 'creative', 'adventure', 'spectator'];
+      if (tokenIndex === 2) return players;
+    }
+    if (command === 'effect') {
+      if (tokenIndex === 1) return ['give', 'clear'];
+      if (tokenIndex === 2) return players;
+    }
+    if ((command === 'experience' || command === 'xp')) {
+      if (tokenIndex === 1) return ['add', 'set', 'query'];
+      if (tokenIndex === 2) return players;
+    }
+    if (command === 'difficulty' && tokenIndex === 1) return ['peaceful', 'easy', 'normal', 'hard'];
+    if (command === 'defaultgamemode' && tokenIndex === 1) return ['survival', 'creative', 'adventure', 'spectator'];
+    if (command === 'weather' && tokenIndex === 1) return ['clear', 'rain', 'thunder'];
+    return [];
+  }
+
   function updateSuggest() {
     const input = $('#command-input');
     const value = input.value;
-    // подсказываем имя команды и БЕЗ ведущего «/» (пишешь «sa» → предлагает say и т.п.);
-    // только пока не введён пробел (дальше уже аргументы, а не имя команды)
-    if (value.includes(' ')) { hideSuggest(); return; }
-    let prefix = value.startsWith('/') ? value.slice(1) : value;
-    prefix = prefix.toLowerCase();
-    if (!prefix) { hideSuggest(); return; } // пусто — не вываливаем весь список
-    state.sugItems = COMMANDS.filter((c) => c.startsWith(prefix));
+    if (!value.trim()) { hideSuggest(); return; }
+    const cursor = input.selectionStart == null ? value.length : input.selectionStart;
+    let start = cursor;
+    let end = cursor;
+    while (start > 0 && !/\s/.test(value[start - 1])) start--;
+    while (end < value.length && !/\s/.test(value[end])) end++;
+    const before = value.slice(0, start).trim();
+    const tokens = before ? before.split(/\s+/).map((part) => part.replace(/^\//, '').toLowerCase()) : [];
+    const tokenIndex = tokens.length;
+    const firstToken = (tokenIndex === 0 ? value.slice(start, end) : (value.trim().split(/\s+/)[0] || ''));
+    const command = firstToken.replace(/^\//, '').toLowerCase();
+    let prefix = value.slice(start, cursor);
+    const leadingSlash = tokenIndex === 0 && prefix.startsWith('/');
+    prefix = prefix.replace(/^\//, '').toLowerCase();
+    const candidates = tokenIndex === 0 ? COMMANDS : argumentCandidates(command, tokenIndex, tokens);
+    state.sugContext = { start, end, leadingSlash, tokenIndex };
+    state.sugItems = candidates.filter((item) => item.toLowerCase().startsWith(prefix)).slice(0, 30);
     if (!state.sugItems.length) {
       hideSuggest();
       return;
@@ -2789,7 +3165,7 @@
   function renderSuggest() {
     const box = $('#cmd-suggest');
     box.innerHTML = '';
-    state.sugItems.slice(0, 30).forEach((cmd, i) => {
+    state.sugItems.forEach((cmd, i) => {
       const el = document.createElement('div');
       el.className = 'sug' + (i === state.sugIndex ? ' sel' : '');
       const name = document.createElement('span');
@@ -2803,9 +3179,7 @@
     });
     const hint = document.createElement('div');
     hint.className = 'sug-hint';
-    hint.textContent = state.sugItems.length === 1
-      ? 'Tab — подставить команду'
-      : 'Tab — листать (' + state.sugItems.length + '), Enter — отправить';
+    hint.textContent = 'Tab или клик — подставить · ↑/↓ — выбрать · Enter — отправить';
     box.appendChild(hint);
     box.classList.remove('hidden');
     const selEl = box.querySelector('.sug.sel');
@@ -2814,16 +3188,25 @@
 
   function applySuggest(cmd) {
     const input = $('#command-input');
-    // подставляем имя команды без «/» (команды и так отправляются без него)
-    input.value = cmd + ' ';
+    const ctx = state.sugContext || { start: 0, end: input.value.length, leadingSlash: false };
+    const replacement = (ctx.leadingSlash ? '/' : '') + cmd;
+    const tail = input.value.slice(ctx.end);
+    const separator = tail && /^\s/.test(tail) ? '' : ' ';
+    input.value = input.value.slice(0, ctx.start) + replacement + separator + tail;
+    const caret = ctx.start + replacement.length + separator.length;
+    input.setSelectionRange(caret, caret);
     hideSuggest();
     input.focus();
+    // После выбора команды/подкоманды сразу показываем следующий контекст:
+    // например, `ba` → `ban ` → список известных игроков без лишнего ввода.
+    updateSuggest();
   }
 
   function hideSuggest() {
     $('#cmd-suggest').classList.add('hidden');
     state.sugItems = [];
     state.sugIndex = -1;
+    state.sugContext = null;
   }
 
   function suggestVisible() {
@@ -2833,15 +3216,8 @@
   function onCommandKeydown(event) {
     if (event.key === 'Tab') {
       event.preventDefault();
-      if (!suggestVisible()) { updateSuggest(); return; }
-      if (state.sugItems.length === 1) {
-        applySuggest(state.sugItems[0]);
-      } else if (state.sugItems.length > 1) {
-        state.sugIndex = (state.sugIndex + 1) % state.sugItems.length;
-        const input = $('#command-input');
-        input.value = state.sugItems[state.sugIndex];
-        renderSuggest();
-      }
+      if (!suggestVisible()) updateSuggest();
+      if (state.sugItems.length) applySuggest(state.sugItems[state.sugIndex >= 0 ? state.sugIndex : 0]);
       return;
     }
     if (suggestVisible()) {
@@ -2853,6 +3229,9 @@
         state.sugIndex = ((state.sugIndex + dir) % n + n) % n;
         renderSuggest();
         return;
+      }
+      if (event.key === 'Enter' && state.sugIndex >= 0) {
+        event.preventDefault(); applySuggest(state.sugItems[state.sugIndex]); return;
       }
       if (event.key === 'Enter') { sendCommand(); return; }
       return;
@@ -2945,6 +3324,28 @@
     'use-native-transport': { label: 'Нативный транспорт (Linux)', type: 'bool' },
   };
 
+  const WORLD_PROPERTY_KEYS = new Set([
+    'gamemode', 'difficulty', 'pvp', 'hardcore', 'white-list', 'enforce-whitelist',
+    'view-distance', 'simulation-distance', 'spawn-protection', 'enable-command-block',
+    'allow-flight', 'allow-nether', 'generate-structures', 'generator-settings', 'level-name',
+    'level-seed', 'level-type', 'spawn-monsters', 'spawn-animals', 'spawn-npcs', 'force-gamemode',
+    'max-world-size', 'max-tick-time', 'pause-when-empty-seconds', 'sync-chunk-writes',
+    'entity-broadcast-range-percentage', 'max-chained-neighbor-updates', 'initial-enabled-packs',
+    'initial-disabled-packs', 'region-file-compression',
+  ]);
+  const NETWORK_PROPERTY_KEYS = new Set([
+    'server-port', 'server-ip', 'online-mode', 'enable-query', 'query.port', 'enable-rcon',
+    'rcon.password', 'rcon.port', 'enable-status', 'enforce-secure-profile',
+    'prevent-proxy-connections', 'rate-limit', 'network-compression-threshold', 'log-ips',
+    'accepts-transfers', 'broadcast-console-to-ops', 'broadcast-rcon-to-ops',
+    'hide-online-players', 'use-native-transport', 'status-heartbeat-interval',
+  ]);
+  const RESOURCE_PROPERTY_KEYS = new Set([
+    'resource-pack', 'resource-pack-id', 'resource-pack-prompt', 'resource-pack-sha1',
+    'require-resource-pack', 'enable-jmx-monitoring', 'text-filtering-config',
+    'text-filtering-version',
+  ]);
+
   function autoDef(key, value) {
     if (value === 'true' || value === 'false') return { label: key, type: 'bool' };
     if (/^-?\d+$/.test(value)) return { label: key, type: 'number' };
@@ -2955,14 +3356,20 @@
      несохранённых изменений (слайдеры/тоглы — кастомные виджеты без нативных
      input-событий, поэтому сравниваем снимки, а не слушаем input). */
   function snapshotSettings() {
+    const launchJar = $('#launch-jar');
+    const launchCmd = $('#launch-cmd');
+    const launch = '\nlaunch-jar:' + (launchJar ? launchJar.value : '') +
+      '\nlaunch-cmd:' + (launchCmd ? launchCmd.value : '');
     if ((state.propsMode || 'fields') === 'raw') {
       const ta = $('#settings-raw');
-      return 'raw:' + (ta ? ta.value : '');
+      return 'raw:' + (ta ? ta.value : '') + launch;
     }
     const parts = [];
     parts.push('mem:' + (state.memSettingsSlider ? state.memSettingsSlider.value : ''));
     parts.push('cpu:' + (state.cpuSettingsSlider ? state.cpuSettingsSlider.value : ''));
     parts.push('java:' + (state.javaSelectEl ? state.javaSelectEl.value : ''));
+    parts.push('launch-jar:' + (launchJar ? launchJar.value : ''));
+    parts.push('launch-cmd:' + (launchCmd ? launchCmd.value : ''));
     for (const el of $$('#settings-known [data-prop-key]')) {
       parts.push(el.dataset.propKey + '=' + (el._getValue ? el._getValue() : ''));
     }
@@ -2973,14 +3380,62 @@
     return state.settingsBaseline != null && snapshotSettings() !== state.settingsBaseline;
   }
 
+  function discardSettingsChanges() {
+    state.settingsBaseline = null;
+    state.settingsLoadedServerId = null;
+    state.settingsSeq = (state.settingsSeq || 0) + 1;
+    state.rawPropsSeq = (state.rawPropsSeq || 0) + 1;
+    const loading = state.settingsLoading;
+    if (loading) setSettingsLoading(false, loading.serverId, loading.seq);
+  }
+
+  function setSettingsLoading(loading, serverId, seq, ready) {
+    const tab = $('#tab-settings');
+    const notice = $('#settings-loading');
+    if (loading) {
+      state.settingsLoading = { serverId, seq };
+      if (tab) tab.inert = true;
+      if (notice) {
+        notice.classList.remove('hidden');
+        const note = notice.querySelector('.load-note');
+        if (note) note.textContent = 'Загрузка настроек сервера…';
+      }
+      const save = $('#settings-save-btn');
+      if (save) save.disabled = true;
+      return;
+    }
+    const active = state.settingsLoading;
+    if (!active || active.serverId !== serverId || active.seq !== seq) return;
+    state.settingsLoading = null;
+    if (tab) tab.inert = !ready;
+    if (notice) {
+      notice.classList.toggle('hidden', !!ready);
+      const note = notice.querySelector('.load-note');
+      if (note && !ready) note.textContent = 'Не удалось загрузить настройки. Переключитесь на другую вкладку и вернитесь, чтобы повторить.';
+    }
+    const save = $('#settings-save-btn');
+    if (save) save.disabled = !ready;
+  }
+
   async function loadSettings() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
+    const seq = (state.settingsSeq = (state.settingsSeq || 0) + 1);
+    state.settingsLoadedServerId = null;
+    setSettingsLoading(true, serverId, seq);
+    let loaded = false;
     try {
-      const data = await API.properties(state.currentId);
+      const data = await API.properties(serverId);
+      if (serverId !== state.currentId || seq !== state.settingsSeq) return;
       renderSettings(data);
       populateLaunchCard(data);
       applyPropsModeUI();
-      if ((state.propsMode || 'fields') === 'raw') await loadRawProps();
+      if ((state.propsMode || 'fields') === 'raw') {
+        const loaded = await loadRawProps();
+        if (!loaded || serverId !== state.currentId || seq !== state.settingsSeq) return;
+      }
+      state.settingsLoadedServerId = serverId;
+      loaded = true;
       markSettingsClean(); // базовый снимок после заполнения редактируемой формы
       renderIconCard();
       loadRpCard();
@@ -2988,6 +3443,8 @@
       renderProxyCard();
     } catch (e) {
       showToast(e.message);
+    } finally {
+      setSettingsLoading(false, serverId, seq, loaded);
     }
   }
 
@@ -2995,18 +3452,32 @@
   async function renderProxyCard() {
     const card = $('#proxy-card');
     if (!card) return;
+    const sectionTitle = $('#settings-integrations-title');
+    const setHidden = (hidden) => {
+      card.classList.toggle('hidden', hidden);
+      if (sectionTitle) sectionTitle.classList.toggle('hidden', hidden);
+    };
     const srv = state.current || {};
     // прокси/без прав — карточку прячем
-    if (PROXY_TYPES.includes(srv.type) || !can('settings.edit')) { card.classList.add('hidden'); return; }
+    if (PROXY_TYPES.includes(srv.type) || !can('settings.edit')) { setHidden(true); return; }
     const forId = state.currentId;
     let info;
-    try { info = await API.proxyLinkGet(forId); } catch (e) { card.classList.add('hidden'); return; }
+    try { info = await API.proxyLinkGet(forId); } catch (e) { setHidden(true); return; }
     if (forId !== state.currentId) return;
-    if (!info.canBackend) { card.classList.add('hidden'); return; } // ядро нельзя за прокси
-    card.classList.remove('hidden');
+    if (!info.canBackend) { setHidden(true); return; } // ядро нельзя за прокси
+    setHidden(false);
     $('#proxy-err').textContent = '';
     const sel = $('#proxy-select');
     sel.innerHTML = '';
+    if (info.attachedRestricted) {
+      $('#proxy-info').textContent = 'Сервер уже подключён к прокси, к которому у вашей учётной записи нет доступа. Изменить связь может администратор.';
+      sel.classList.add('hidden');
+      $('#proxy-attach').classList.add('hidden');
+      $('#proxy-detach').classList.add('hidden');
+      $('#proxy-attached').classList.remove('hidden');
+      $('#proxy-attached-name').textContent = 'Прокси без доступа';
+      return;
+    }
     if (!info.proxies.length) {
       $('#proxy-info').textContent = 'Прокси-серверов пока нет. Создайте Velocity или BungeeCord, затем подключите к нему этот сервер.';
       sel.classList.add('hidden'); $('#proxy-attach').classList.add('hidden'); $('#proxy-detach').classList.add('hidden');
@@ -3032,19 +3503,24 @@
   }
   async function proxyLink(action) {
     if (!state.currentId) return;
+    const serverId = state.currentId;
+    const serverName = state.current && state.current.name;
     const err = $('#proxy-err'); err.className = 'err'; err.textContent = '';
     const proxyId = action === 'attach' ? $('#proxy-select').value : null;
     if (action === 'attach' && !proxyId) { err.textContent = 'Выберите прокси.'; return; }
     const name = action === 'attach' ? ($('#proxy-select').selectedOptions[0] || {}).textContent : '';
     const q = action === 'attach'
-      ? 'Подключить сервер «' + (state.current && state.current.name) + '» к прокси «' + name + '»?\nСервер перейдёт в proxy-режим (online-mode выключится).'
+      ? 'Подключить сервер «' + serverName + '» к прокси «' + name + '»?\nСервер перейдёт в proxy-режим (online-mode выключится).'
       : 'Отключить сервер от прокси? Вернётся обычный режим (online-mode включится).';
     if (!await confirmDialog(q, { title: 'Прокси', yesText: action === 'attach' ? 'Подключить' : 'Отключить', danger: action === 'detach' })) return;
     try {
-      const r = await API.proxyLinkSet(state.currentId, proxyId, action);
+      const r = await API.proxyLinkSet(serverId, proxyId, action);
       showToast(r.attachedTo ? 'Сервер подключён к прокси. Перезапустите сервер и прокси.' : 'Сервер отключён от прокси. Перезапустите сервер.', 'ok');
-      renderProxyCard();
-    } catch (e) { err.className = 'err'; err.textContent = e.message; showToast(e.message); }
+      if (state.currentId === serverId) renderProxyCard();
+    } catch (e) {
+      if (state.currentId === serverId) { err.className = 'err'; err.textContent = e.message; }
+      showToast(e.message);
+    }
   }
 
   // ---------- ядро сервера (повторное скачивание / своё ядро) ----------
@@ -3054,25 +3530,29 @@
     if (!card) return;
     const srv = state.current || {};
     const isCustom = srv.type === 'custom';
-    // карточка доступна тем, кто может ставить ядро или создавать серверы
-    const canManage = can('server.install') || can('server.create');
+    // повторная установка и загрузка своего jar защищены одним правом установки ядра
+    const canManage = can('server.install');
     card.classList.toggle('hidden', !canManage);
     $('#core-current').textContent = (CORE_NAMES[srv.type] || srv.type || '—') + ' ' + (srv.version || '–');
     // «скачать заново» — только для скачиваемых ядер (не для своего jar)
     $('#core-redownload').classList.toggle('hidden', isCustom || !can('server.install'));
-    $('#core-upload-btn').classList.toggle('hidden', !can('server.create'));
+    $('#core-upload-btn').classList.toggle('hidden', !can('server.install'));
   }
 
   async function redownloadCore() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
     const srv = state.current || {};
+    if (isRestoring(srv)) { showToast('Дождитесь завершения восстановления бэкапа.'); return; }
     if (srv.status === 'running' || srv.status === 'starting') { showToast('Сначала остановите сервер'); return; }
     const ok = await confirmDialog(
       'Скачать ядро ' + (CORE_NAMES[srv.type] || srv.type) + ' ' + (srv.version || '') + ' заново? Текущий файл ядра будет заменён.',
       { title: 'Скачать ядро заново', yesText: 'Скачать', danger: false });
     if (!ok) return;
     await guard(async () => {
-      state.current = await API.download(state.currentId);
+      const updated = await API.download(serverId);
+      if (state.currentId !== serverId) return;
+      state.current = updated;
       renderServerHead();
       renderCoreCard();
       showToast('Скачивание ядра началось — следите в консоли/шапке.', 'ok');
@@ -3081,14 +3561,18 @@
 
   async function uploadCore(file) {
     if (!file || !state.currentId) return;
+    const serverId = state.currentId;
     if (!/\.jar$/i.test(file.name)) { showToast('Нужен файл ядра .jar'); return; }
     const srv = state.current || {};
+    if (isRestoring(srv)) { showToast('Дождитесь завершения восстановления бэкапа.'); return; }
     if (srv.status === 'running' || srv.status === 'starting') { showToast('Сначала остановите сервер'); return; }
     if (!(await confirmDialog('Заменить ядро сервера файлом «' + file.name + '»? Версия определится автоматически.',
       { title: 'Своё ядро', yesText: 'Загрузить', danger: false }))) return;
     await guard(async () => {
       showToast('Загружаю ядро…', 'ok');
-      state.current = await API.coreUpload(state.currentId, file);
+      const updated = await API.coreUpload(serverId, file);
+      if (state.currentId !== serverId) return;
+      state.current = updated;
       renderServerHead();
       renderCoreCard();
       loadServers();
@@ -3136,11 +3620,14 @@
 
   async function uploadServerIcon(file) {
     if (!file || !state.currentId) return;
+    const serverId = state.currentId;
     await guard(async () => {
       const blob = await resizeIcon(file);
-      await API.iconUpload(state.currentId, blob);
+      await API.iconUpload(serverId, blob);
       showToast('Иконка сервера обновлена (64×64).', 'ok');
-      state.current = await API.server(state.currentId);
+      const updated = await API.server(serverId);
+      if (state.currentId !== serverId) return;
+      state.current = updated;
       renderServerHead();
       renderIconCard();
       loadServers();
@@ -3149,11 +3636,14 @@
 
   async function removeServerIcon() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
     if (!(await confirmDialog('Убрать иконку сервера?', { title: 'Иконка', yesText: 'Убрать' }))) return;
     await guard(async () => {
-      await API.iconDelete(state.currentId);
+      await API.iconDelete(serverId);
       showToast('Иконка убрана.', 'ok');
-      state.current = await API.server(state.currentId);
+      const updated = await API.server(serverId);
+      if (state.currentId !== serverId) return;
+      state.current = updated;
       renderServerHead();
       renderIconCard();
       loadServers();
@@ -3167,8 +3657,10 @@
     if (!card) return;
     card.classList.toggle('hidden', !can('settings.edit'));
     if (!can('settings.edit') || !state.currentId) return;
+    const serverId = state.currentId;
     try {
-      const info = await API.resourcePack(state.currentId);
+      const info = await API.resourcePack(serverId);
+      if (state.currentId !== serverId) return;
       const stateEl = $('#rp-state');
       if (info.has) {
         stateEl.textContent = 'Текстурпак задан · ' + fmtBytes(info.size) +
@@ -3186,25 +3678,31 @@
 
   async function uploadResourcePack(file) {
     if (!file || !state.currentId) return;
+    const serverId = state.currentId;
     if (!/\.zip$/i.test(file.name)) { showToast('Нужен .zip-архив текстурпака'); return; }
     const required = $('#rp-require').classList.contains('on');
     await guard(async () => {
       $('#rp-state').textContent = 'Загрузка текстурпака…';
-      await API.resourcePackUpload(state.currentId, file, required);
+      await API.resourcePackUpload(serverId, file, required);
       showToast('Текстурпак применён. Перезапустите сервер, чтобы он раздавался игрокам.', 'ok');
-      loadRpCard();
-      loadSettings();
+      if (state.currentId === serverId) {
+        loadRpCard();
+        loadSettings();
+      }
     });
   }
 
   async function removeResourcePack() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
     if (!(await confirmDialog('Убрать текстурпак с сервера?', { title: 'Текстурпак', yesText: 'Убрать' }))) return;
     await guard(async () => {
-      await API.resourcePackDelete(state.currentId);
+      await API.resourcePackDelete(serverId);
       showToast('Текстурпак убран.', 'ok');
-      loadRpCard();
-      loadSettings();
+      if (state.currentId === serverId) {
+        loadRpCard();
+        loadSettings();
+      }
     });
   }
 
@@ -3231,7 +3729,7 @@
         install: (id, pid) => API.pluginInstall(id, pid),
         details: (id, pid) => API.pluginDetails(id, pid),
         list: (id) => API.pluginsList(id),
-        del: (id, f) => API.pluginDelete(id, f),
+        del: (id, f, withData) => API.pluginDelete(id, f, withData),
         toggle: (id, f) => API.pluginToggle(id, f),
       },
     },
@@ -3268,6 +3766,7 @@
 
   function loadContent(kind) {
     const cfg = CONTENT[kind];
+    const serverId = state.currentId;
     const srv = state.current || {};
     const info = $(cfg.els.info);
     if (info) {
@@ -3276,12 +3775,18 @@
     }
     setContentCollapsed(kind, isContentCollapsed(kind));
     contentNav[kind].offset = 0;
+    contentNav[kind].hits = [];
+    contentNav[kind].baseNames = [];
+    contentNav[kind].seq++; // отменить ответ поиска от ранее открытого сервера
     // установленные грузим первыми (нужны их имена, чтобы помечать «Установлена» в каталоге)
-    loadInstalledContent(kind).then(() => doContentSearch(kind, true));
+    loadInstalledContent(kind, serverId).then(() => {
+      if (state.currentId === serverId) doContentSearch(kind, true);
+    });
   }
 
   async function doContentSearch(kind, reset) {
     if (!state.currentId) return;
+    const serverId = state.currentId;
     const cfg = CONTENT[kind];
     const nav = contentNav[kind];
     if (reset) nav.offset = 0;
@@ -3290,17 +3795,17 @@
     $(cfg.els.pager).classList.add('hidden');
     const seq = ++nav.seq;
     try {
-      const data = await cfg.api.search(state.currentId, {
+      const data = await cfg.api.search(serverId, {
         q: $(cfg.els.q).value.trim(),
         category: $(cfg.els.cat).value,
         sort: $(cfg.els.sort).value,
         offset: nav.offset || 0,
       });
-      if (seq !== nav.seq) return;
-      renderContentResults(kind, data.hits || []);
+      if (seq !== nav.seq || state.currentId !== serverId) return;
+      renderContentResults(kind, data.hits || [], serverId);
       updateContentPager(kind, data);
     } catch (e) {
-      if (seq !== nav.seq) return;
+      if (seq !== nav.seq || state.currentId !== serverId) return;
       nav.hits = [];
       box.innerHTML = '';
       const er = document.createElement('div');
@@ -3354,7 +3859,7 @@
     for (let p = start; p < end; p++) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'mc-btn sm pg' + (p === cur ? ' sel' : '');
+      b.className = 'mc-btn sm pg' + (p === cur ? ' primary sel' : '');
       b.textContent = String(p + 1);
       b.addEventListener('click', () => contentGoToPage(kind, p));
       el.appendChild(b);
@@ -3382,7 +3887,7 @@
     if (res && res.scrollIntoView) res.scrollIntoView({ block: 'nearest' });
   }
 
-  function renderContentResults(kind, hits) {
+  function renderContentResults(kind, hits, serverId) {
     const cfg = CONTENT[kind];
     contentNav[kind].hits = hits;
     const box = $(cfg.els.results);
@@ -3400,7 +3905,7 @@
       card.className = 'pl-card';
       card.style.cursor = 'pointer';
       card.title = 'Открыть описание';
-      card.addEventListener('click', () => openContentModal(kind, h));
+      card.addEventListener('click', () => openContentModal(kind, h, serverId));
 
       const icon = document.createElement('img');
       icon.className = 'pl-icon';
@@ -3446,7 +3951,7 @@
         btn.className = 'mc-btn sm primary pl-install';
         btn.appendChild(picon('download'));
         btn.appendChild(document.createTextNode(' Установить'));
-        btn.addEventListener('click', (ev) => { ev.stopPropagation(); installContent(kind, h, btn); });
+        btn.addEventListener('click', (ev) => { ev.stopPropagation(); installContent(kind, h, btn, serverId); });
         card.appendChild(btn);
       }
 
@@ -3465,13 +3970,15 @@
       .trim();
   }
   // модалка каталога: полное описание + картинки (Modrinth)
-  async function openContentModal(kind, hit) {
+  async function openContentModal(kind, hit, serverId) {
     const cfg = CONTENT[kind];
+    const modalSeq = (state.contentModalSeq = (state.contentModalSeq || 0) + 1);
     $('#cm-title').textContent = hit.title || '';
     $('#cm-body').innerHTML = '<div class="muted">Загрузка…</div>';
     $('#content-modal').classList.remove('hidden');
     let d = null;
-    try { d = await cfg.api.details(state.currentId, hit.projectId); } catch (e) { /* */ }
+    try { d = await cfg.api.details(serverId, hit.projectId); } catch (e) { /* */ }
+    if (state.currentId !== serverId || modalSeq !== state.contentModalSeq) return;
     if (!d) { $('#cm-body').innerHTML = '<div class="muted">Не удалось загрузить описание.</div>'; return; }
     const wrap = document.createElement('div');
     if (d.iconUrl) { const ic = document.createElement('img'); ic.src = d.iconUrl; ic.alt = ''; ic.style.cssText = 'width:56px;height:56px;border-radius:8px;float:left;margin:0 12px 8px 0'; wrap.appendChild(ic); }
@@ -3495,8 +4002,14 @@
       const ib = document.createElement('button'); ib.className = 'mc-btn primary'; ib.style.marginTop = '14px';
       ib.appendChild(picon('download')); ib.appendChild(document.createTextNode(' Установить'));
       ib.addEventListener('click', async () => {
+        if (!isCurrentServerView(serverId, kind) || $('#content-modal').classList.contains('hidden')) return;
         ib.disabled = true; ib.textContent = 'Скачиваю…';
-        try { await cfg.api.install(state.currentId, hit.projectId); showToast(cap(cfg.word) + ' установлен. Перезапустите сервер.', 'ok'); $('#content-modal').classList.add('hidden'); loadInstalledContent(kind); }
+        try {
+          await cfg.api.install(serverId, hit.projectId);
+          showToast(cap(cfg.word) + ' установлен. Перезапустите сервер.', 'ok');
+          $('#content-modal').classList.add('hidden');
+          if (state.currentId === serverId) loadInstalledContent(kind, serverId);
+        }
         catch (e) { showToast(e.message); ib.disabled = false; ib.textContent = 'Установить'; }
       });
       wrap.appendChild(ib);
@@ -3504,14 +4017,15 @@
     $('#cm-body').innerHTML = ''; $('#cm-body').appendChild(wrap);
   }
 
-  async function installContent(kind, hit, btn) {
+  async function installContent(kind, hit, btn, serverId) {
     const cfg = CONTENT[kind];
+    if (!isCurrentServerView(serverId, kind)) return;
     btn.disabled = true;
     btn.textContent = 'Скачиваю…';
     try {
-      const r = await cfg.api.install(state.currentId, hit.projectId);
+      const r = await cfg.api.install(serverId, hit.projectId);
       showToast(cap(cfg.word) + ' «' + hit.title + '» установлен (' + r.version + '). Перезапустите сервер.', 'ok');
-      loadInstalledContent(kind);
+      if (state.currentId === serverId) loadInstalledContent(kind, serverId);
     } catch (e) {
       showToast(e.message);
     } finally {
@@ -3522,17 +4036,20 @@
     }
   }
 
-  async function loadInstalledContent(kind) {
-    if (!state.currentId) return;
+  async function loadInstalledContent(kind, requestedServerId) {
+    const serverId = requestedServerId || state.currentId;
+    if (!serverId) return;
     const cfg = CONTENT[kind];
     const box = $(cfg.els.installed);
     try {
-      const data = await cfg.api.list(state.currentId);
+      const data = await cfg.api.list(serverId);
+      if (state.currentId !== serverId) return;
       contentNav[kind].baseNames = data.baseNames || [];
-      renderInstalledContent(kind, data.installed || []);
+      renderInstalledContent(kind, data.installed || [], serverId);
       // обновляем пометки «Установлен» в открытом каталоге
-      if (contentNav[kind].hits && contentNav[kind].hits.length) renderContentResults(kind, contentNav[kind].hits);
+      if (contentNav[kind].hits && contentNav[kind].hits.length) renderContentResults(kind, contentNav[kind].hits, serverId);
     } catch (e) {
+      if (state.currentId !== serverId) return;
       box.innerHTML = '';
       const er = document.createElement('div');
       er.className = 'files-empty';
@@ -3541,7 +4058,7 @@
     }
   }
 
-  function renderInstalledContent(kind, list) {
+  function renderInstalledContent(kind, list, serverId) {
     const cfg = CONTENT[kind];
     const box = $(cfg.els.installed);
     box.innerHTML = '';
@@ -3583,9 +4100,9 @@
       if (canDelete) {
         const del = document.createElement('button');
         del.className = 'mc-btn sm danger';
-        del.title = 'Удалить ' + cfg.word + ' и его настройки';
+        del.title = kind === 'plugins' ? 'Удалить плагин (с выбором данных)' : 'Удалить мод';
         del.appendChild(picon('trash'));
-        del.addEventListener('click', () => deleteContent(kind, p));
+        del.addEventListener('click', () => deleteContent(kind, p, serverId));
         actions.appendChild(del);
       }
       // переключатель вкл/выкл, справа от корзины
@@ -3594,7 +4111,7 @@
         tog.className = 'mc-toggle pl-tog' + (p.disabled ? '' : ' on');
         tog.innerHTML = '<div class="fill"></div><div class="knob"><div class="face"></div></div>';
         tog.title = p.disabled ? 'Включить ' + cfg.word : 'Выключить ' + cfg.word;
-        tog.addEventListener('click', () => toggleContent(kind, p));
+        tog.addEventListener('click', () => toggleContent(kind, p, serverId));
         actions.appendChild(tog);
       }
       row.appendChild(actions);
@@ -3602,8 +4119,9 @@
     }
   }
 
-  async function editContent(kind, item) {
+  async function editContent(kind, item, requestedServerId) {
     const cfg = CONTENT[kind];
+    const serverId = requestedServerId || state.currentId;
     const ok = await confirmDialog(
       'Сейчас откроется вкладка «Файлы» в папке ' + cfg.folder + '/ — там лежит ' + cfg.word + ' «' + baseFileName(item.name) + '» и его настройки' +
       (kind === 'mods' ? ' (конфиги модов обычно в папке config/).' : ' (папка с конфигом плагина появляется после первого запуска сервера).'),
@@ -3614,8 +4132,9 @@
     switchTab('files');
   }
 
-  async function toggleContent(kind, item) {
+  async function toggleContent(kind, item, requestedServerId) {
     const cfg = CONTENT[kind];
+    const serverId = requestedServerId || state.currentId;
     const disabling = !item.disabled;
     const nm = baseFileName(item.name);
     const ok = await confirmDialog(
@@ -3627,31 +4146,100 @@
     );
     if (!ok) return;
     await guard(async () => {
-      await cfg.api.toggle(state.currentId, item.name);
+      await cfg.api.toggle(serverId, item.name);
       showToast(cap(cfg.word) + (disabling ? ' выключен.' : ' включён.') + ' Перезапустите сервер.', 'ok');
-      loadInstalledContent(kind);
+      if (state.currentId === serverId) loadInstalledContent(kind, serverId);
     });
   }
 
-  async function deleteContent(kind, item) {
+  async function deleteContent(kind, item, requestedServerId) {
     const cfg = CONTENT[kind];
+    const serverId = requestedServerId || state.currentId;
     const name = typeof item === 'string' ? item : item.name;
-    if (!(await confirmDialog('Удалить ' + cfg.word + ' «' + baseFileName(name) + '»?\nБудут стёрты сам файл и его директория с настройками. Это необратимо.',
+    if (!(await confirmDialog('Удалить ' + cfg.word + ' «' + baseFileName(name) + '»?\n' +
+      (kind === 'plugins'
+        ? 'На следующем шаге выберите, сохранять ли папку данных плагина.'
+        : 'Будут удалены файл мода и безопасно найденные связанные настройки/конфиги. Это необратимо.'),
       { title: 'Удаление', yesText: 'Удалить' }))) return;
+    let withData = false;
+    if (kind === 'plugins') {
+      const choice = await pluginDeleteChoice(baseFileName(name));
+      if (choice == null) return;
+      withData = choice;
+    }
     await guard(async () => {
-      await cfg.api.del(state.currentId, name);
-      showToast(cap(cfg.word) + ' удалён. Перезапустите сервер.', 'ok');
-      loadInstalledContent(kind);
+      const result = await cfg.api.del(serverId, name, withData);
+      const removed = result && Array.isArray(result.removedFolders) ? result.removedFolders : [];
+      const failed = result && Array.isArray(result.failedFolders) ? result.failedFolders : [];
+      const suffix = failed.length
+        ? ' Не удалось удалить связанные данные: ' + failed.join(', ') + '. Проверьте права доступа и занятые файлы.'
+        : (kind === 'plugins' && withData
+          ? (removed.length ? ' Удалены папки данных: ' + removed.join(', ') + '.' : ' Подходящая папка данных не найдена.')
+          : '');
+      showToast(cap(cfg.word) + ' удалён.' + suffix + ' Перезапустите сервер.', failed.length ? undefined : 'ok');
+      if (state.currentId === serverId) loadInstalledContent(kind, serverId);
+    });
+  }
+
+  function pluginDeleteChoice(name) {
+    const context = captureDialogContext();
+    return new Promise((resolve) => {
+      if (!sameDialogContext(context)) { resolve(null); return; }
+      if (cancelPluginDeleteChoice) cancelPluginDeleteChoice();
+      const root = $('#plugin-delete-root');
+      $('#plugin-delete-text').textContent = 'Что удалить у плагина «' + name + '»?\nПапку данных можно сохранить, чтобы не потерять настройки.';
+      root.classList.remove('hidden');
+      let done = false;
+      const onKeydown = (event) => { if (event.key === 'Escape') finish(null); };
+      const finish = (value) => {
+        if (done) return;
+        done = true;
+        cancelPluginDeleteChoice = null;
+        root.classList.add('hidden');
+        root.onclick = null;
+        document.removeEventListener('keydown', onKeydown);
+        resolve(value != null && !sameDialogContext(context) ? null : value);
+      };
+      cancelPluginDeleteChoice = () => finish(null);
+      $('#plugin-delete-jar').onclick = () => finish(false);
+      $('#plugin-delete-data').onclick = () => finish(true);
+      $('#plugin-delete-cancel').onclick = () => finish(null);
+      root.onclick = (event) => { if (event.target === root) finish(null); };
+      document.addEventListener('keydown', onKeydown);
     });
   }
 
   function renderSettings(data) {
-    const grid = $('#settings-known');
-    grid.innerHTML = '';
+    const root = $('#settings-known');
+    root.innerHTML = '';
+    state.settingsIsProxy = !!data.proxy;
+    if (state.settingsIsProxy) state.propsMode = 'fields';
+    const modebar = $('#props-modebar');
+    if (modebar) modebar.classList.toggle('hidden', state.settingsIsProxy);
     const properties = data.properties || {};
     state.maxPlayers = parseInt(properties['max-players'], 10) || null;
 
-    grid.appendChild(makeField('Имя сервера (в панели)', 'text', '__name', data.name || ''));
+    const makeGroup = (title) => {
+      const card = document.createElement('section');
+      card.className = 'mc-card inset settings-group';
+      const heading = document.createElement('div');
+      heading.className = 'section-title';
+      heading.textContent = title;
+      const grid = document.createElement('div');
+      grid.className = 'form-grid settings-group-grid';
+      card.appendChild(heading);
+      card.appendChild(grid);
+      root.appendChild(card);
+      return grid;
+    };
+    const groups = {
+      main: makeGroup('Основное'),
+      world: makeGroup('Мир и игровой процесс'),
+      network: makeGroup('Сеть и доступ'),
+      resources: makeGroup('Системные ресурсы'),
+    };
+
+    groups.main.appendChild(makeField('Имя сервера (в панели)', 'text', '__name', data.name || ''));
 
     const memWrap = document.createElement('div');
     memWrap.className = 'opt-card slider-block';
@@ -3665,7 +4253,7 @@
     memSlider.className = 'mc-slider';
     memWrap.appendChild(memLabel);
     memWrap.appendChild(memSlider);
-    grid.appendChild(memWrap);
+    groups.resources.appendChild(memWrap);
     state.memSettingsSlider = mkSlider(memSlider, {
       min: 1024, max: state.maxMemMb, step: 512,
       value: parseInt(data.memoryMb, 10) || 2048,
@@ -3684,7 +4272,7 @@
     cpuSlider.className = 'mc-slider';
     cpuWrap.appendChild(cpuLabel);
     cpuWrap.appendChild(cpuSlider);
-    grid.appendChild(cpuWrap);
+    groups.resources.appendChild(cpuWrap);
     state.cpuSettingsSlider = mkSlider(cpuSlider, {
       min: 10, max: 100, step: 5,
       value: parseInt(data.cpuPercent, 10) || 100,
@@ -3715,7 +4303,7 @@
     }
     javaSel.value = data.javaPath || '';
     javaWrap.appendChild(javaSel);
-    grid.appendChild(javaWrap);
+    groups.resources.appendChild(javaWrap);
     state.javaSelectEl = javaSel;
     enhanceSelect(javaSel);
 
@@ -3726,11 +4314,18 @@
       const def = PROPERTY_DEFS[key] || autoDef(key, properties[key]);
       const field = makeField(def.label, def.type, key, properties[key], def.options);
       field.title = key + '=' + properties[key];
-      grid.appendChild(field);
+      const group = WORLD_PROPERTY_KEYS.has(key) ? groups.world
+        : NETWORK_PROPERTY_KEYS.has(key) ? groups.network
+          : RESOURCE_PROPERTY_KEYS.has(key) ? groups.resources : groups.main;
+      group.appendChild(field);
     }
 
+    Object.values(groups).forEach((group) => {
+      if (!group.children.length && group.parentElement) group.parentElement.remove();
+    });
+
     // белый список: показать карточку и повесить реакцию на свитч
-    const wlRow = grid.querySelector('[data-prop-key="white-list"]');
+    const wlRow = root.querySelector('[data-prop-key="white-list"]');
     if (wlRow) wlRow.addEventListener('click', () => setTimeout(updateWlVisibility, 0));
     updateWlVisibility();
   }
@@ -3781,46 +4376,75 @@
 
   async function loadRawProps() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
+    const seq = (state.rawPropsSeq = (state.rawPropsSeq || 0) + 1);
+    const textarea = $('#settings-raw');
+    textarea.disabled = true;
+    textarea.value = 'Загрузка server.properties…';
     try {
-      const data = await API.fileGet(state.currentId, 'server.properties');
-      $('#settings-raw').value = (data && typeof data.content === 'string') ? data.content : '';
+      const data = await API.fileGet(serverId, 'server.properties');
+      if (serverId !== state.currentId || seq !== state.rawPropsSeq) return false;
+      textarea.value = (data && typeof data.content === 'string') ? data.content : '';
+      return true;
     } catch (e) {
-      $('#settings-raw').value = '';
+      if (serverId !== state.currentId || seq !== state.rawPropsSeq) return false;
+      textarea.value = '';
       showToast('server.properties пока нет — создастся при первом запуске сервера.');
+      return true;
+    } finally {
+      if (serverId === state.currentId && seq === state.rawPropsSeq) textarea.disabled = false;
     }
   }
 
   // переключение по кнопкам «Поля» / «Файл»
-  function switchPropsMode(mode) {
+  async function switchPropsMode(mode) {
+    if (state.settingsIsProxy) return;
     if ((state.propsMode || 'fields') === mode) return;
+    if (isSettingsDirty()) {
+      const leave = await confirmDialog(
+        'В текущем режиме есть несохранённые изменения. Переключить режим и потерять их?',
+        { title: 'Несохранённые изменения', yesText: 'Переключить без сохранения', danger: true });
+      if (!leave) return;
+    }
+    state.settingsBaseline = null;
     state.propsMode = mode;
     if (mode === 'fields') {
-      loadSettings(); // перечитать актуальные значения из файла и перерисовать поля (сбросит baseline)
+      await loadSettings(); // перечитать актуальные значения из файла и перерисовать поля (сбросит baseline)
     } else {
       applyPropsModeUI();
-      Promise.resolve(loadRawProps()).then(markSettingsClean); // baseline после загрузки текста
+      const loaded = await loadRawProps();
+      if (loaded && (state.propsMode || 'fields') === 'raw') markSettingsClean();
     }
   }
 
   async function saveSettingsRaw() {
+    if (state.settingsIsProxy) { showToast('У этого прокси нет server.properties.'); return; }
+    if (state.settingsLoading) { showToast('Дождитесь загрузки настроек сервера.'); return; }
+    const serverId = state.currentId;
+    if (!serverId) return;
+    if (state.settingsLoadedServerId !== serverId) { showToast('Сначала загрузите настройки этого сервера.'); return; }
     const server = state.current || {};
     const isRunning = server.status === 'running' || server.status === 'starting';
+    const content = $('#settings-raw').value;
+    const jarFile = $('#launch-jar') ? $('#launch-jar').value : undefined;
+    const launchCmd = $('#launch-cmd') ? $('#launch-cmd').value : undefined;
     const ok = await confirmDialog(
       'Сохранить server.properties сервера «' + (server.name || '') + '»?' +
       (isRunning ? '\nСервер сейчас работает — изменения применятся после перезапуска.' : ''),
       { title: 'Сохранение server.properties', yesText: 'Сохранить', danger: false });
     if (!ok) return;
-    const content = $('#settings-raw').value;
     await guard(async () => {
-      await API.fileSave(state.currentId, 'server.properties', content);
-      // бэкенд синхронизирует порт панели из server.properties — обновим карточку и список
-      state.current = await API.server(state.currentId);
+      // Один запрос атомарно сохраняет сам файл и синхронизирует порт в реестре.
+      const updated = await API.saveProperties(serverId, { rawContent: content, jarFile, launchCmd });
+      if (state.currentId !== serverId) return;
+      state.current = updated;
       renderServerHead();
       showToast(isRunning
         ? 'server.properties сохранён. Перезапустите сервер, чтобы применить.'
         : 'server.properties сохранён.', 'ok');
       loadServers();
-      Promise.resolve(loadRawProps()).then(markSettingsClean); // перечитать + сброс baseline
+      const loaded = await loadRawProps();
+      if (loaded) markSettingsClean(); // перечитать + сброс baseline
     });
   }
 
@@ -3833,9 +4457,11 @@
     if (on) guard(loadWhitelist);
   }
 
-  async function loadWhitelist() {
-    if (!state.currentId) return;
-    const data = await API.whitelist(state.currentId);
+  async function loadWhitelist(requestedServerId) {
+    const serverId = requestedServerId || state.currentId;
+    if (!serverId) return;
+    const data = await API.whitelist(serverId);
+    if (state.currentId !== serverId) return;
     const chips = $('#wl-chips');
     chips.innerHTML = '';
     if (!data.entries.length) {
@@ -3859,8 +4485,10 @@
       x.addEventListener('click', async () => {
         if (await confirmDialog('Убрать «' + name + '» из белого списка?', { title: 'Белый список', yesText: 'Убрать' })) {
           await guard(async () => {
-            await API.whitelistChange(state.currentId, 'remove', name);
-            setTimeout(() => guard(loadWhitelist), 600);
+            await API.whitelistChange(serverId, 'remove', name);
+            setTimeout(() => {
+              if (state.currentId === serverId) guard(() => loadWhitelist(serverId));
+            }, 600);
           });
         }
       });
@@ -3870,16 +4498,20 @@
   }
 
   async function addToWhitelist() {
+    const serverId = state.currentId;
+    if (!serverId) return;
     const input = $('#wl-input');
     const name = input.value.trim();
     if (!name) return;
     await guard(async () => {
-      const res = await API.whitelistChange(state.currentId, 'add', name);
+      const res = await API.whitelistChange(serverId, 'add', name);
       showToast(res.via === 'command'
         ? 'Команда whitelist add отправлена серверу.'
         : '«' + name + '» добавлен в whitelist.json.', 'ok');
-      input.value = '';
-      setTimeout(() => guard(loadWhitelist), 600);
+      if (state.currentId === serverId) input.value = '';
+      setTimeout(() => {
+        if (state.currentId === serverId) guard(() => loadWhitelist(serverId));
+      }, 600);
     });
   }
 
@@ -3929,18 +4561,14 @@
 
   async function saveSettings(event) {
     event.preventDefault();
+    if (state.settingsLoading) { showToast('Дождитесь загрузки настроек сервера.'); return; }
     if (!state.currentId) return;
+    if (state.settingsLoadedServerId !== state.currentId) { showToast('Сначала загрузите настройки этого сервера.'); return; }
     if ((state.propsMode || 'fields') === 'raw') return saveSettingsRaw();
 
+    const serverId = state.currentId;
     const server = state.current || {};
     const isRunning = server.status === 'running' || server.status === 'starting';
-    const ok = await confirmDialog(
-      'Сохранить изменения настроек сервера «' + (server.name || '') + '»?' +
-      (isRunning ? '\nСервер сейчас работает — изменения применятся после перезапуска.' : ''),
-      { title: 'Сохранение настроек', yesText: 'Сохранить', danger: false }
-    );
-    if (!ok) return;
-
     const properties = {};
     let name = null;
     const memoryMb = state.memSettingsSlider ? state.memSettingsSlider.value : null;
@@ -3956,8 +4584,17 @@
       else properties[key] = value;
     }
 
+    const ok = await confirmDialog(
+      'Сохранить изменения настроек сервера «' + (server.name || '') + '»?' +
+      (isRunning ? '\nСервер сейчас работает — изменения применятся после перезапуска.' : ''),
+      { title: 'Сохранение настроек', yesText: 'Сохранить', danger: false }
+    );
+    if (!ok) return;
+
     await guard(async () => {
-      state.current = await API.saveProperties(state.currentId, { properties, name, memoryMb, cpuPercent, javaPath, jarFile, launchCmd });
+      const updated = await API.saveProperties(serverId, { properties, name, memoryMb, cpuPercent, javaPath, jarFile, launchCmd });
+      if (state.currentId !== serverId) return;
+      state.current = updated;
       renderServerHead();
       showToast(isRunning
         ? 'Сохранено. Перезапустите сервер, чтобы применить изменения.'
@@ -3973,46 +4610,67 @@
     return base ? base + '/' + name : name;
   }
 
-  let filesSig = ''; // сигнатура последнего листинга — чтобы авто-синк не дёргал DOM зря
+  let filesSig = ''; // включает сервер+путь: одинаковые списки разных папок не равны
+  function filesSignature(serverId, filesPath, entries) {
+    return serverId + '\n' + filesPath + '\n' + JSON.stringify(entries);
+  }
   async function loadFiles() {
     if (!state.currentId) return;
-    await guard(async () => {
-      const data = await API.files(state.currentId, state.filesPath);
-      const entries = data.entries || [];
-      filesSig = JSON.stringify(entries);
-      renderFiles(entries);
-    });
+    const serverId = state.currentId;
+    const filesPath = state.filesPath;
+    const seq = (state.filesSeq = (state.filesSeq || 0) + 1);
+    state.filesLoading = true;
+    try {
+      await guard(async () => {
+        const data = await API.files(serverId, filesPath);
+        if (serverId !== state.currentId || filesPath !== state.filesPath || seq !== state.filesSeq) return;
+        const entries = data.entries || [];
+        filesSig = filesSignature(serverId, filesPath, entries);
+        renderFiles(entries, serverId, filesPath);
+      });
+    } finally {
+      if (seq === state.filesSeq) state.filesLoading = false;
+    }
   }
   /* Автосинхронизация списка файлов: пока открыта вкладка «Файлы» (браузер, не редактор),
      тихо перечитываем текущую папку и перерисовываем ТОЛЬКО при изменениях (с сохранением
      прокрутки) — чтобы не перезагружать вкладку вручную. */
   async function syncFiles() {
-    if (state.screen !== 'server' || state.currentTab !== 'files' || state.editorPath || !state.currentId) return;
+    if (state.screen !== 'server' || state.currentTab !== 'files' || state.editorPath || !state.currentId || state.filesLoading) return;
     if ($('#files-browser').classList.contains('hidden')) return;
+    const serverId = state.currentId;
+    const filesPath = state.filesPath;
+    const generation = state.filesSeq || 0;
+    const seq = (state.filesSyncSeq = (state.filesSyncSeq || 0) + 1);
     try {
-      const data = await API.files(state.currentId, state.filesPath);
+      const data = await API.files(serverId, filesPath);
+      if (serverId !== state.currentId || filesPath !== state.filesPath || generation !== (state.filesSeq || 0) ||
+          seq !== state.filesSyncSeq || state.filesLoading) return;
       const entries = data.entries || [];
-      const sig = JSON.stringify(entries);
+      const sig = filesSignature(serverId, filesPath, entries);
       if (sig === filesSig) return; // ничего не поменялось
       filesSig = sig;
       const list = $('#files-list');
       const scroll = list ? list.scrollTop : 0;
-      renderFiles(entries);
+      renderFiles(entries, serverId, filesPath);
       if (list) list.scrollTop = scroll;
     } catch (e) { /* авто-синк молчит: не спамим тостами */ }
   }
 
-  function renderFiles(entries) {
-    $('#files-path').textContent =
-      (state.rootPath ? state.rootPath + '\\' : '') + 'servers\\' + state.currentId +
-      (state.filesPath ? '\\' + state.filesPath.replace(/\//g, '\\') : '');
+  function renderFiles(entries, serverId, filesPath) {
+    const base = serverBasePath(state.current);
+    const separator = state.platform === 'win32' ? '\\' : '/';
+    const relative = filesPath ? filesPath.replace(/[\\/]+/g, separator) : '';
+    $('#files-path').textContent = base
+      ? nativePathJoin(base, filesPath ? [filesPath] : [])
+      : ('Корень сервера' + (relative ? separator + relative : ''));
 
     // кнопка «Скачать» в тулбаре — текущая папка целиком архивом (ZIP)
     const dlFolder = $('#btn-download-folder');
     if (dlFolder) {
       dlFolder.classList.toggle('perm-hidden', !can('files.read'));
-      dlFolder.href = API.folderDownloadUrl(state.currentId, state.filesPath);
-      const segs = state.filesPath ? state.filesPath.split('/') : [];
+      dlFolder.href = API.folderDownloadUrl(serverId, filesPath);
+      const segs = filesPath ? filesPath.split('/') : [];
       const folderName = (segs.length ? segs[segs.length - 1]
         : ((state.current && state.current.name) || 'server')) + '.zip';
       dlFolder.setAttribute('download', folderName);
@@ -4024,10 +4682,14 @@
     const rootLink = document.createElement('a');
     rootLink.appendChild(picon('folder'));
     rootLink.appendChild(document.createTextNode(' корень'));
-    rootLink.addEventListener('click', () => { state.filesPath = ''; loadFiles(); });
+    rootLink.addEventListener('click', () => {
+      if (state.currentId !== serverId) return;
+      state.filesPath = '';
+      loadFiles();
+    });
     crumbs.appendChild(rootLink);
-    if (state.filesPath) {
-      const parts = state.filesPath.split('/');
+    if (filesPath) {
+      const parts = filesPath.split('/');
       let acc = '';
       for (let i = 0; i < parts.length; i++) {
         acc = joinPath(acc, parts[i]);
@@ -4044,7 +4706,11 @@
           const link = document.createElement('a');
           link.textContent = parts[i];
           const target = acc;
-          link.addEventListener('click', () => { state.filesPath = target; loadFiles(); });
+          link.addEventListener('click', () => {
+            if (state.currentId !== serverId) return;
+            state.filesPath = target;
+            loadFiles();
+          });
           crumbs.appendChild(link);
         }
       }
@@ -4060,6 +4726,7 @@
       return;
     }
     for (const entry of entries) {
+      const rel = joinPath(filesPath, entry.name);
       const row = document.createElement('div');
       row.className = 'mc-row file-row';
 
@@ -4089,11 +4756,10 @@
       };
       // скачать на ПК: файл — как есть, папка — архивом ZIP (ссылка, чтобы браузер скачал)
       if (can('files.read')) {
-        const rel = joinPath(state.filesPath, entry.name);
         const dlName = entry.dir ? entry.name + '.zip' : entry.name;
         const dl = document.createElement('a');
         dl.className = 'mc-btn sm';
-        dl.href = entry.dir ? API.folderDownloadUrl(state.currentId, rel) : API.fileDownloadUrl(state.currentId, rel);
+        dl.href = entry.dir ? API.folderDownloadUrl(serverId, rel) : API.fileDownloadUrl(serverId, rel);
         dl.title = entry.dir ? 'Скачать папку архивом (ZIP)' : 'Скачать файл на ПК';
         dl.setAttribute('download', dlName);
         dl.appendChild(picon('download'));
@@ -4101,11 +4767,11 @@
         dl.addEventListener('click', (event) => { event.stopPropagation(); beginDownloadFeedback(dlName); });
         actions.appendChild(dl);
       }
-      if (!entry.dir && /\.(zip|jar)$/i.test(entry.name) && can('files.write')) {
-        actions.appendChild(mkBtn('box', 'Распаковать архив', 'accent', () => extractEntry(entry)));
+      if (!entry.dir && /\.zip$/i.test(entry.name) && can('files.write')) {
+        actions.appendChild(mkBtn('box', 'Распаковать архив', 'accent', () => extractEntry(serverId, rel, entry)));
       }
-      if (can('files.write')) actions.appendChild(mkBtn('edit', 'Переименовать', '', () => renameEntry(entry)));
-      if (can('files.delete')) actions.appendChild(mkBtn('trash', 'Удалить', 'danger', () => deleteEntry(entry)));
+      if (can('files.write')) actions.appendChild(mkBtn('edit', 'Переименовать', '', () => renameEntry(serverId, rel, entry)));
+      if (can('files.delete')) actions.appendChild(mkBtn('trash', 'Удалить', 'danger', () => deleteEntry(serverId, rel, entry)));
 
       row.appendChild(ic);
       row.appendChild(nameEl);
@@ -4113,11 +4779,12 @@
       row.appendChild(actions);
 
       row.addEventListener('click', () => {
+        if (state.currentId !== serverId) return;
         if (entry.dir) {
-          state.filesPath = joinPath(state.filesPath, entry.name);
+          state.filesPath = rel;
           loadFiles();
         } else {
-          openFileEditor(joinPath(state.filesPath, entry.name));
+          openFileEditor(serverId, rel);
         }
       });
       list.appendChild(row);
@@ -4215,35 +4882,41 @@
     return cm;
   }
 
-  async function openFileEditor(relPath) {
+  async function openFileEditor(serverId, relPath) {
+    const openSeq = (state.editorOpenSeq = (state.editorOpenSeq || 0) + 1);
     // на рабочем столе в игре редактор — отдельное окно; но сначала проверяем,
     // что файл вообще редактируем — иначе породим мёртвое пустое окно
     if (EMBED && !EMBED_EDITOR && window.parent !== window) {
       await guard(async () => {
-        const data = await API.fileGet(state.currentId, relPath);
+        const data = await API.fileGet(serverId, relPath);
+        if (state.currentId !== serverId || openSeq !== state.editorOpenSeq) return;
         if (data.binary) {
           showToast('Этот файл нельзя открыть в редакторе: ' + (data.reason || 'двоичный') + ' (' + fmtBytes(data.size) + ')');
           return;
         }
         window.parent.postMessage({
-          cg: 'open', what: 'editor', id: state.currentId,
+          cg: 'open', what: 'editor', id: serverId,
           path: relPath, title: relPath.split('/').pop(),
         }, location.origin);
       });
       return;
     }
     await guard(async () => {
-      const data = await API.fileGet(state.currentId, relPath);
+      const data = await API.fileGet(serverId, relPath);
+      if (state.currentId !== serverId || openSeq !== state.editorOpenSeq) return;
       if (data.binary) {
         showToast('Этот файл нельзя открыть в редакторе: ' + (data.reason || 'двоичный') + ' (' + fmtBytes(data.size) + ')');
         return;
       }
       state.editorPath = relPath;
+      state.editorServerId = serverId;
       $('#editor-name').textContent = relPath;
       $('#files-browser').classList.add('hidden');
       $('#file-editor').classList.remove('hidden');
 
       await loadCodeMirror(); // подтянуть CodeMirror при первом открытии (иначе fallback на textarea)
+      if (state.currentId !== serverId || state.editorServerId !== serverId ||
+          state.editorPath !== relPath || openSeq !== state.editorOpenSeq) return;
       const cm = ensureEditor();
       if (cm) {
         $('#editor-cm').classList.remove('hidden');
@@ -4268,6 +4941,8 @@
       return;
     }
     state.editorPath = null;
+    state.editorServerId = null;
+    state.editorOpenSeq = (state.editorOpenSeq || 0) + 1;
     $('#file-editor').classList.add('hidden');
     $('#files-browser').classList.remove('hidden');
     loadFiles();
@@ -4275,44 +4950,48 @@
 
   async function saveFileEditor() {
     if (!state.editorPath) return;
-    const ok = await confirmDialog('Сохранить изменения в файле «' + state.editorPath + '»?',
-      { title: 'Сохранение файла', yesText: 'Сохранить', danger: false });
-    if (!ok) return;
+    const serverId = state.editorServerId || state.currentId;
+    const relPath = state.editorPath;
     const content = state.cm && !$('#editor-cm').classList.contains('hidden')
       ? state.cm.getValue()
       : $('#editor-text').value;
+    const ok = await confirmDialog('Сохранить изменения в файле «' + relPath + '»?',
+      { title: 'Сохранение файла', yesText: 'Сохранить', danger: false });
+    if (!ok || state.currentId !== serverId) return;
     await guard(async () => {
-      await API.fileSave(state.currentId, state.editorPath, content);
+      await API.fileSave(serverId, relPath, content);
       showToast('Файл сохранён.', 'ok');
     });
   }
 
   async function createEntry(type) {
+    const serverId = state.currentId;
+    const filesPath = state.filesPath;
     const title = type === 'dir' ? 'Имя новой папки' : 'Имя нового файла';
     const name = await promptDialog(title, '', type === 'dir' ? 'datapacks' : 'config.yml');
     if (!name) return;
     if (/[\\/]/.test(name)) { showToast('Имя не должно содержать / и \\'); return; }
     await guard(async () => {
-      await API.filesCreate(state.currentId, joinPath(state.filesPath, name), type);
+      await API.filesCreate(serverId, joinPath(filesPath, name), type);
       showToast((type === 'dir' ? 'Папка' : 'Файл') + ' «' + name + '» создан(а).', 'ok');
-      loadFiles();
+      if (state.currentId === serverId && state.filesPath === filesPath) loadFiles();
     });
   }
 
-  async function renameEntry(entry) {
+  async function renameEntry(serverId, relPath, entry) {
+    const parentPath = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
     const newName = await promptDialog('Новое имя для «' + entry.name + '»', entry.name);
     if (!newName || newName === entry.name) return;
     if (/[\\/]/.test(newName)) { showToast('Имя не должно содержать / и \\'); return; }
     await guard(async () => {
-      await API.filesRename(state.currentId,
-        joinPath(state.filesPath, entry.name),
-        joinPath(state.filesPath, newName));
+      await API.filesRename(serverId, relPath, joinPath(parentPath, newName));
       showToast('Переименовано.', 'ok');
-      loadFiles();
+      if (state.currentId === serverId && state.filesPath === parentPath) loadFiles();
     });
   }
 
-  async function deleteEntry(entry) {
+  async function deleteEntry(serverId, relPath, entry) {
+    const parentPath = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
     const ok = await confirmDialog(
       'Удалить ' + (entry.dir ? 'папку' : 'файл') + ' «' + entry.name + '»?' +
       (entry.dir ? '\nВсё содержимое папки будет стёрто.' : '') + '\nЭто действие необратимо.',
@@ -4320,23 +4999,25 @@
     );
     if (!ok) return;
     await guard(async () => {
-      await API.fileDelete(state.currentId, joinPath(state.filesPath, entry.name));
+      await API.fileDelete(serverId, relPath);
       showToast('Удалено.', 'ok');
-      loadFiles();
+      if (state.currentId === serverId && state.filesPath === parentPath) loadFiles();
     });
   }
 
   async function uploadFile(file) {
     if (!file) return;
+    const serverId = state.currentId;
+    const filesPath = state.filesPath;
     await guard(async () => {
-      await API.upload(state.currentId, joinPath(state.filesPath, file.name), file);
+      await API.upload(serverId, joinPath(filesPath, file.name), file);
       showToast('Файл «' + file.name + '» загружен (' + fmtBytes(file.size) + ').', 'ok');
-      loadFiles();
+      if (state.currentId === serverId && state.filesPath === filesPath) loadFiles();
     });
   }
 
   // загрузка набора файлов (в т.ч. с вложенными путями папки) — один итог, одно обновление
-  async function uploadMany(items) {
+  async function uploadMany(serverId, filesPath, items) {
     // items: [{ file, rel }] — rel относительно текущей папки (может содержать '/')
     if (!items || !items.length) return;
     let ok = 0;
@@ -4344,7 +5025,7 @@
     await guard(async () => {
       for (const it of items) {
         try {
-          await API.upload(state.currentId, joinPath(state.filesPath, it.rel), it.file);
+          await API.upload(serverId, joinPath(filesPath, it.rel), it.file);
           ok++;
         } catch (e) { if (!failName) failName = it.rel; }
       }
@@ -4355,22 +5036,23 @@
       } else {
         showToast('Не удалось загрузить: «' + failName + '».');
       }
-      loadFiles();
+      if (state.currentId === serverId && state.filesPath === filesPath) loadFiles();
     });
   }
 
-  async function extractEntry(entry) {
+  async function extractEntry(serverId, relPath, entry) {
+    const parentPath = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
     const ok = await confirmDialog(
       'Распаковать архив «' + entry.name + '»?\nСодержимое появится в новой папке рядом с архивом.',
       { title: 'Распаковка архива', yesText: 'Распаковать', danger: false });
     if (!ok) return;
     await guard(async () => {
-      const r = await API.filesExtract(state.currentId, joinPath(state.filesPath, entry.name));
+      const r = await API.filesExtract(serverId, relPath);
       let msg = 'Архив распакован в папку «' + (r.folder || '') + '» (файлов: ' + (r.count || 0) + ').';
       if (r.skipped) msg += ' Пропущено записей: ' + r.skipped + '.';
       if (r.tooLarge) msg += ' Из них слишком больших (> 512 МБ): ' + r.tooLarge + '.';
       showToast(msg, r.tooLarge ? '' : 'ok');
-      loadFiles();
+      if (state.currentId === serverId && state.filesPath === parentPath) loadFiles();
     });
   }
 
@@ -4404,13 +5086,26 @@
     bar.style.right = right + 'px';
   }
 
-  async function switchTab(tab) {
+  async function switchTab(tab, skipSettingsPrompt) {
+    if (!tabAllowed(tab, state.current)) tab = firstAllowedTab(state.current);
+    // Повторный клик по активной вкладке не должен заново загружать форму и
+    // стирать несохранённые значения настроек.
+    if (tab === state.currentTab) return true;
     // предупреждение о несохранённых изменениях при уходе со вкладки «Настройки»
-    if (state.currentTab === 'settings' && tab !== 'settings' && isSettingsDirty()) {
+    if (!skipSettingsPrompt && state.currentTab === 'settings' && tab !== 'settings' && isSettingsDirty()) {
       const leave = await confirmDialog(
         'На вкладке «Настройки» есть несохранённые изменения. Выйти без сохранения?',
         { title: 'Несохранённые изменения', yesText: 'Выйти без сохранения', danger: true });
-      if (!leave) return; // остаёмся на вкладке настроек, подсветка не менялась
+      if (!leave) return false; // остаёмся на вкладке настроек, подсветка не менялась
+      discardSettingsChanges();
+    }
+    // При отзыве console.view уже открытый SSE не закроется сам: авторизация
+    // проверялась в момент подключения. Не сохраняем и скрытый вывод за период
+    // без прав; обычное переключение вкладок владельцем поток не прерывает.
+    if (state.currentTab === 'console' && tab !== 'console' && !can('console.view')) {
+      if (state.sse) { state.sse.close(); state.sse = null; }
+      const consoleEl = $('#console');
+      if (consoleEl) consoleEl.textContent = '';
     }
     state.currentTab = tab;
     if (state.currentId) {
@@ -4430,7 +5125,10 @@
     $('#tab-info').classList.toggle('hidden', tab !== 'info');
     if (tab !== 'logs') stopLogLive();
     if (tab === 'settings') loadSettings();
-    if (tab === 'console') loadStats();
+    if (tab === 'console') {
+      loadStats();
+      if (!state.sse && state.currentId && !isRestoring(state.current) && can('console.view')) connectConsole(state.currentId);
+    }
     if (tab === 'plugins') loadContent('plugins');
     if (tab === 'mods') loadContent('mods');
     if (tab === 'players') fetchPlayTimes();
@@ -4451,20 +5149,25 @@
         loadFiles();
       }
     }
+    return true;
   }
 
   // ---------- бэкапы ----------
 
   async function loadBackups() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
     await guard(async () => {
-      const data = await API.backups(state.currentId);
-      renderBackups(data.backups || []);
+      const data = await API.backups(serverId);
+      if (state.currentId !== serverId) return;
+      renderBackups(data.backups || [], serverId, state.current);
     });
   }
 
-  function renderBackups(list) {
+  function renderBackups(list, serverId, server) {
     const box = $('#bk-list');
+    const restoring = isRestoring(server);
+    const canRestoreNow = !!(server && ['stopped', 'no-jar', 'error'].includes(server.status));
     box.innerHTML = '';
     if (!list.length) {
       const empty = document.createElement('div');
@@ -4489,7 +5192,7 @@
       actions.className = 'file-actions';
       const dl = document.createElement('a');
       dl.className = 'mc-btn sm';
-      dl.href = API.backupDownloadUrl(state.currentId, b.name);
+      dl.href = API.backupDownloadUrl(serverId, b.name);
       dl.title = 'Скачать';
       dl.appendChild(picon('download'));
       actions.appendChild(dl);
@@ -4497,16 +5200,18 @@
         const rest = document.createElement('button');
         rest.className = 'mc-btn sm accent';
         rest.title = 'Восстановить';
+        rest.disabled = restoring || !canRestoreNow;
         rest.appendChild(picon('reload'));
-        rest.addEventListener('click', () => restoreBackup(b));
+        rest.addEventListener('click', () => restoreBackup(serverId, b));
         actions.appendChild(rest);
       }
       if (can('backups.delete')) {
         const del = document.createElement('button');
         del.className = 'mc-btn sm danger';
         del.title = 'Удалить';
+        del.disabled = restoring;
         del.appendChild(picon('trash'));
-        del.addEventListener('click', () => deleteBackup(b));
+        del.addEventListener('click', () => deleteBackup(serverId, b));
         actions.appendChild(del);
       }
       row.appendChild(ic);
@@ -4519,25 +5224,29 @@
 
   async function createBackup() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
+    if (isRestoring(state.current)) { showToast('Дождитесь завершения восстановления бэкапа.'); return; }
     const btn = $('#bk-create-btn');
     btn.disabled = true;
     const label = $('#bk-label').value.trim();
     try {
       showToast('Создаю бэкап…', 'ok');
-      await API.backupCreate(state.currentId, label);
-      $('#bk-label').value = '';
+      await API.backupCreate(serverId, label);
+      if (state.currentId === serverId) $('#bk-label').value = '';
       showToast('Бэкап создан.', 'ok');
-      loadBackups();
+      if (state.currentId === serverId) loadBackups();
     } catch (e) {
       showToast(e.message);
     } finally {
-      btn.disabled = false;
+      if (state.currentId === serverId) btn.disabled = isRestoring(state.current);
     }
   }
 
-  async function restoreBackup(b) {
-    const server = state.current || {};
-    if (server.status === 'running' || server.status === 'starting' || server.status === 'stopping') {
+  async function restoreBackup(serverId, b) {
+    const server = state.servers.find((item) => item.id === serverId) ||
+      (state.currentId === serverId ? state.current : null) || {};
+    if (isRestoring(server)) { showToast('Восстановление уже выполняется.'); return; }
+    if (!['stopped', 'no-jar', 'error'].includes(server.status)) {
       showToast('Сначала остановите сервер — восстановление только на остановленном.');
       return;
     }
@@ -4547,23 +5256,33 @@
       { title: 'Восстановление бэкапа', yesText: 'Восстановить' }
     );
     if (!ok) return;
+    const serverIndex = state.servers.findIndex((item) => item.id === serverId);
+    if (serverIndex >= 0) state.servers[serverIndex] = Object.assign({}, state.servers[serverIndex], { status: 'restoring', restoring: true });
+    if (state.currentId === serverId) {
+      state.current = Object.assign({}, state.current, { status: 'restoring', restoring: true });
+      renderServerHead();
+    }
     await guard(async () => {
-      showToast('Восстанавливаю…', 'ok');
-      await API.backupRestore(state.currentId, b.name);
+      showToast('Восстанавливаю бэкап…', 'ok');
+      await API.backupRestore(serverId, b.name);
       showToast('Бэкап восстановлен.', 'ok');
-      loadBackups();
-      refreshServer();
     });
+    if (state.currentId === serverId) {
+      await refreshServer();
+    }
   }
 
-  async function deleteBackup(b) {
+  async function deleteBackup(serverId, b) {
+    const server = state.servers.find((item) => item.id === serverId) ||
+      (state.currentId === serverId ? state.current : null);
+    if (isRestoring(server)) { showToast('Нельзя удалять бэкапы во время восстановления.'); return; }
     const ok = await confirmDialog('Удалить бэкап «' + b.name.replace(/\.tar\.gz$/, '') + '»? Это действие необратимо.',
       { title: 'Удаление бэкапа' });
     if (!ok) return;
     await guard(async () => {
-      await API.backupDelete(state.currentId, b.name);
+      await API.backupDelete(serverId, b.name);
       showToast('Бэкап удалён.', 'ok');
-      loadBackups();
+      if (state.currentId === serverId) loadBackups();
     });
   }
 
@@ -4828,15 +5547,20 @@
     updateJavaInstallUI(); // нужная мажорная java зависит от ядра/версии
   }
 
-  // список серверов с галочками (все включены) для привязки к прокси
+  // Один backend может принадлежать только одному прокси: повторная привязка
+  // дала бы противоречивые конфиги и сломала оставшийся прокси при удалении.
   function buildBackendsList() {
     const box = $('#backends-list');
     box.innerHTML = '';
-    const compat = (state.servers || []).filter((s) => BACKEND_OK.includes(s.type));
+    const linked = new Set((state.servers || []).filter((s) => PROXY_TYPES.includes(s.type))
+      .flatMap((s) => (s.proxyServers || []).map((item) => item.id)));
+    const compat = (state.servers || []).filter((s) => BACKEND_OK.includes(s.type) && !linked.has(s.id));
     if (!compat.length) {
       const e = document.createElement('span');
       e.className = 'hint';
-      e.textContent = 'Нет подходящих серверов. Сначала создайте Paper/Purpur/Folia/Mohist — потом прокси.';
+      e.textContent = (state.servers || []).some((s) => BACKEND_OK.includes(s.type))
+        ? 'Все подходящие серверы уже подключены к другим прокси. Сначала отвяжите нужный backend.'
+        : 'Нет подходящих серверов. Сначала создайте Paper/Purpur/Folia/Mohist — потом прокси.';
       box.appendChild(e);
       return;
     }
@@ -4863,8 +5587,12 @@
 
   async function loadLogs() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
+    const seq = (state.logsListSeq = (state.logsListSeq || 0) + 1);
     await guard(async () => {
-      const data = await API.logs(state.currentId);
+      const data = await API.logs(serverId);
+      if (state.screen !== 'server' || state.currentTab !== 'logs' ||
+          state.currentId !== serverId || seq !== state.logsListSeq) return;
       const sel = $('#logs-file');
       const prev = sel.value;
       sel.innerHTML = '';
@@ -4890,10 +5618,15 @@
 
   async function loadLogContent() {
     const name = $('#logs-file').value;
-    if (!name) return;
+    const serverId = state.currentId;
+    if (!serverId || !name) return;
+    const seq = (state.logContentSeq = (state.logContentSeq || 0) + 1);
     state.logName = name;
     await guard(async () => {
-      const data = await API.log(state.currentId, name);
+      const data = await API.log(serverId, name);
+      if (state.screen !== 'server' || state.currentTab !== 'logs' ||
+          state.currentId !== serverId || $('#logs-file').value !== name ||
+          seq !== state.logContentSeq) return;
       state.logContent = data.content || '';
       $('#logs-meta').textContent = (data.truncated ? 'Показаны последние 5 МБ · ' : '') +
         state.logContent.split('\n').length + ' строк';
@@ -4904,8 +5637,11 @@
   // поиск сразу по всем лог-файлам сервера (latest.log + архивные .log.gz)
   async function searchAllLogs() {
     if (!state.currentId) return;
+    const serverId = state.currentId;
     const q = $('#logs-query').value.trim();
     if (q.length < 2) { showToast('Введите минимум 2 символа для поиска по всем логам'); return; }
+    const seq = (state.logSearchSeq = (state.logSearchSeq || 0) + 1);
+    state.logContentSeq = (state.logContentSeq || 0) + 1;
     // выключаем live — иначе автообновление активного лога каждые 3 с затирает
     // результаты поиска по всем логам (это и выглядело как «ничего не найдено»)
     stopLogLive();
@@ -4913,13 +5649,19 @@
     await guard(async () => {
       let data;
       try {
-        data = await API.logsSearch(state.currentId, q);
+        data = await API.logsSearch(serverId, q);
       } catch (e) {
+        if (state.screen !== 'server' || state.currentTab !== 'logs' ||
+            state.currentId !== serverId || $('#logs-query').value.trim() !== q ||
+            seq !== state.logSearchSeq) return;
         $('#logs-meta').textContent = '';
         $('#logs-view').textContent = 'Поиск по всем логам недоступен: ' + e.message +
           (e.status === 404 ? ' (обновите панель этого сервера до свежей версии).' : '');
         return;
       }
+      if (state.screen !== 'server' || state.currentTab !== 'logs' ||
+          state.currentId !== serverId || $('#logs-query').value.trim() !== q ||
+          seq !== state.logSearchSeq) return;
       const matches = (data && data.matches) || [];
       const view = $('#logs-view');
       view.innerHTML = '';
@@ -5069,31 +5811,41 @@
       if (!ctx) return;
       if (ctx.kind === 'files') {
         // читаем структуру папок синхронно из живого события, затем показываем подтверждение
-        collectDropEntries(e.dataTransfer).then((items) => { if (items.length) openDropConfirm(items); });
+        const serverId = state.currentId;
+        const filesPath = state.filesPath;
+        const context = captureDialogContext();
+        const collectSeq = (state.dropCollectSeq = (state.dropCollectSeq || 0) + 1);
+        collectDropEntries(e.dataTransfer).then((items) => {
+          if (collectSeq !== state.dropCollectSeq || !sameDialogContext(context) ||
+              !isCurrentServerView(serverId, 'files') || state.filesPath !== filesPath) return;
+          if (items.length) openDropConfirm(items, serverId, filesPath);
+        });
       } else {
         const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
-        if (files.length) dropContentJars(ctx, files);
+        if (files.length) dropContentJars(ctx, files, state.currentId);
       }
     });
   }
 
   // авто-установка .jar в plugins/ или mods/ перетаскиванием — без захода в «Файлы»
-  async function dropContentJars(ctx, files) {
+  async function dropContentJars(ctx, files, serverId) {
     const jars = files.filter((f) => /\.jar$/i.test(f.name));
     if (!jars.length) { showToast('Перетащите файл .jar'); return; }
     let ok = 0;
     for (const f of jars) {
-      try { await API.upload(state.currentId, ctx.folder + '/' + f.name, f); ok++; }
+      try { await API.upload(serverId, ctx.folder + '/' + f.name, f); ok++; }
       catch (e) { showToast('Не удалось добавить ' + f.name + ': ' + e.message); }
     }
     if (ok) showToast((ok > 1 ? ok + ' файла(ов) добавлено' : 'Добавлено: ' + jars[0].name) + '. Перезапустите сервер, чтобы применить.', 'ok');
-    loadContent(ctx.kind); // обновить список установленных
+    if (state.currentId === serverId) loadContent(ctx.kind); // обновить список установленных
   }
 
-  function openDropConfirm(items) {
+  function openDropConfirm(items, serverId, filesPath) {
+    if (!isCurrentServerView(serverId, 'files') || state.filesPath !== filesPath) return;
+    const context = captureDialogContext();
     // items: [{ file, rel }] — rel может содержать '/' для файлов из вложенных папок
     const folderCount = items.filter((it) => it.rel.indexOf('/') >= 0).length;
-    $('#dropconfirm-path').textContent = 'Папка назначения: ' + (state.filesPath || 'корень') +
+    $('#dropconfirm-path').textContent = 'Папка назначения: ' + (filesPath || 'корень') +
       (folderCount ? ' · с сохранением структуры папок' : '');
     const box = $('#dropconfirm-list');
     box.innerHTML = '';
@@ -5115,7 +5867,9 @@
     $('#dropconfirm-root').classList.remove('hidden');
     $('#dropconfirm-ok').onclick = async () => {
       $('#dropconfirm-root').classList.add('hidden');
-      await uploadMany(items);
+      if (!sameDialogContext(context) || !isCurrentServerView(serverId, 'files') ||
+          state.filesPath !== filesPath) return;
+      await uploadMany(serverId, filesPath, items);
     };
     $('#dropconfirm-cancel').onclick = () => $('#dropconfirm-root').classList.add('hidden');
   }
@@ -5125,6 +5879,7 @@
   async function deleteServer(id) {
     const server = state.servers.find((s) => s.id === id) || state.current;
     if (!server) return;
+    if (isRestoring(server)) { showToast('Нельзя удалить сервер во время восстановления бэкапа.'); return; }
     const ok = await confirmDialog(
       server.inPlace
         ? 'Убрать сервер «' + server.name + '» из панели?\nЭто импорт «на месте» — файлы в вашей папке НЕ удаляются, панель лишь перестанет им управлять.'
@@ -5195,11 +5950,20 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') menuToggle(false);
     });
-    $$('#app-menu .menu-item[data-menu]').forEach((item) => item.addEventListener('click', () => {
+    $$('#app-menu .menu-item[data-menu]').forEach((item) => item.addEventListener('click', async () => {
       menuToggle(false);
       const action = item.dataset.menu;
+      const leavesServer = ['home', 'create', 'proxy', 'remote', 'logout'].includes(action);
+      if (leavesServer && state.screen === 'server' && state.currentTab === 'settings' && isSettingsDirty()) {
+        const leave = await confirmDialog(
+          'На вкладке «Настройки» есть несохранённые изменения. Выйти без сохранения?',
+          { title: 'Несохранённые изменения', yesText: 'Выйти без сохранения', danger: true });
+        if (!leave) return;
+        discardSettingsChanges();
+      }
       if (action === 'home') { showScreen('list'); guard(loadServers); }
       if (action === 'create') {
+        if (!can('server.create', null)) return;
         showScreen('create');
         suggestPort();
         loadVersions();
@@ -5372,6 +6136,7 @@
           'На вкладке «Настройки» есть несохранённые изменения. Выйти без сохранения?',
           { title: 'Несохранённые изменения', yesText: 'Выйти без сохранения', danger: true });
         if (!leave) return;
+        discardSettingsChanges();
       }
       showScreen('list');
       guard(loadServers);
@@ -5382,39 +6147,57 @@
 
     $$('.mc-tab').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
-    $('#btn-start').addEventListener('click', () => guard(async () => {
-      state.current = await API.start(state.currentId);
-      renderServerHead();
-    }));
+    $('#btn-start').addEventListener('click', () => {
+      const serverId = state.currentId;
+      if (!serverId) return;
+      guard(async () => {
+        const updated = await API.start(serverId);
+        if (state.currentId !== serverId) return;
+        state.current = updated;
+        renderServerHead();
+      });
+    });
     $('#btn-stop').addEventListener('click', async () => {
+      const serverId = state.currentId;
+      if (!serverId) return;
       const name = state.current ? state.current.name : '';
       const online = state.current && state.current.players.length;
       if (await confirmDialog('Остановить сервер «' + name + '»?' +
             (online ? '\nСейчас онлайн: ' + online + ' игрок(ов) — они будут отключены.' : ''),
             { title: 'Остановка сервера', yesText: 'Остановить' })) {
-        guard(() => API.stop(state.currentId));
+        guard(() => API.stop(serverId));
       }
     });
     $('#btn-restart').addEventListener('click', async () => {
+      const serverId = state.currentId;
+      if (!serverId) return;
       const name = state.current ? state.current.name : '';
       if (await confirmDialog('Перезапустить сервер «' + name + '»?',
             { title: 'Перезапуск', yesText: 'Перезапустить', danger: false })) {
-        guard(() => API.restart(state.currentId));
+        guard(() => API.restart(serverId));
       }
     });
     $('#btn-kill').addEventListener('click', async () => {
+      const serverId = state.currentId;
+      if (!serverId) return;
       const orphaned = state.current && state.current.status === 'orphaned';
       const text = orphaned
         ? 'Завершить процесс сервера, оставшийся от прошлого запуска панели? Несохранённые данные мира могут быть потеряны.'
         : 'Убить процесс сервера? Несохранённые данные мира могут быть потеряны.';
       if (await confirmDialog(text, { title: 'Принудительное завершение' })) {
-        guard(() => API.kill(state.currentId));
+        guard(() => API.kill(serverId));
       }
     });
-    $('#btn-redownload').addEventListener('click', () => guard(async () => {
-      state.current = await API.download(state.currentId);
-      renderServerHead();
-    }));
+    $('#btn-redownload').addEventListener('click', () => {
+      const serverId = state.currentId;
+      if (!serverId) return;
+      guard(async () => {
+        const updated = await API.download(serverId);
+        if (state.currentId !== serverId) return;
+        state.current = updated;
+        renderServerHead();
+      });
+    });
 
     $('#btn-send').addEventListener('click', sendCommand);
     const cmdInput = $('#command-input');
@@ -5448,21 +6231,35 @@
       event.target.value = '';
       uploadFile(file);
     });
-    $('#btn-upload-dir').addEventListener('click', () => $('#upload-dir-input').click());
+    let uploadDirectoryContext = null;
+    $('#btn-upload-dir').addEventListener('click', () => {
+      if (!isCurrentServerView(state.currentId, 'files')) return;
+      uploadDirectoryContext = {
+        serverId: state.currentId,
+        filesPath: state.filesPath,
+        dialog: captureDialogContext(),
+      };
+      $('#upload-dir-input').click();
+    });
     $('#upload-dir-input').addEventListener('change', (event) => {
+      const uploadContext = uploadDirectoryContext;
+      uploadDirectoryContext = null;
       // при webkitdirectory каждый File несёт webkitRelativePath (папка/подпапка/файл)
       let items = Array.from(event.target.files).map((f) => ({
         file: f,
         rel: (f.webkitRelativePath || f.name).replace(/\\/g, '/'),
       }));
       event.target.value = '';
+      if (!uploadContext || !sameDialogContext(uploadContext.dialog) ||
+          !isCurrentServerView(uploadContext.serverId, 'files') ||
+          state.filesPath !== uploadContext.filesPath) return;
       // тот же кап, что и у перетаскивания — иначе огромная папка (мир на десятки
       // тысяч файлов) синхронно построит столько же DOM-строк и подвесит вкладку
       if (items.length > 5000) {
         showToast('Слишком много файлов — загружаются первые 5000.');
         items = items.slice(0, 5000);
       }
-      if (items.length) openDropConfirm(items);
+      if (items.length) openDropConfirm(items, uploadContext.serverId, uploadContext.filesPath);
     });
     $('#btn-editor-save').addEventListener('click', saveFileEditor);
     $('#btn-editor-close').addEventListener('click', closeFileEditor);
@@ -5550,6 +6347,19 @@
   initCycleButtons(document);
   mkToggle($('#toggle-online'), true);
   mkToggle($('#toggle-pvp'), true);
+  try { state.consoleAutoscroll = localStorage.getItem('cgConsoleAutoScroll') !== '0'; }
+  catch (e) { state.consoleAutoscroll = true; }
+  mkToggle($('#console-autoscroll'), state.consoleAutoscroll);
+  $('#console-autoscroll').addEventListener('click', () => {
+    state.consoleAutoscroll = $('#console-autoscroll').classList.contains('on');
+    try { localStorage.setItem('cgConsoleAutoScroll', state.consoleAutoscroll ? '1' : '0'); }
+    catch (e) { /* приватный режим не должен ломать консоль */ }
+    if (state.consoleAutoscroll) {
+      const consoleEl = $('#console');
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+      updateConsoleJump();
+    }
+  });
   state.memCreateSlider = mkSlider($('#mem-create'), {
     min: 1024, max: state.maxMemMb, step: 512, value: 2048,
     format: fmtMem, labelEl: $('#mem-create-val'), onChange: updateMemHint,
