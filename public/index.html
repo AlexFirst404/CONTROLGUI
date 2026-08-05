@@ -544,10 +544,16 @@
 
       <div class="console-tools">
         <div class="console-meta" id="console-meta"></div>
-        <label class="console-autoscroll-row">
-          <span class="mc-toggle" id="console-autoscroll"></span>
-          <span>Автопрокрутка</span>
-        </label>
+        <div class="console-toggle-tools">
+          <label class="console-autoscroll-row">
+            <span class="mc-toggle" id="console-hide-warn"></span>
+            <span>Скрывать WARN</span>
+          </label>
+          <label class="console-autoscroll-row">
+            <span class="mc-toggle" id="console-autoscroll"></span>
+            <span>Автопрокрутка</span>
+          </label>
+        </div>
       </div>
 
       <div class="console-wrap">
@@ -577,22 +583,6 @@
       <div class="mc-card form-panel hidden" id="settings-loading">
         <div class="inv-loading"><div class="mc-loader"></div><div class="load-note">Загрузка настроек сервера…</div></div>
       </div>
-      <div class="settings-area-title" id="settings-integrations-title">Интеграции</div>
-      <div class="mc-card form-panel hidden" id="proxy-card">
-        <div class="section-title"><i class="pi" data-ic="cellular-signal-3"></i> Подключение к прокси (Velocity / BungeeCord)</div>
-        <div class="hint" id="proxy-info" style="margin:0 0 10px"></div>
-        <div id="proxy-attached" class="hidden" style="margin:0 0 10px">
-          <span class="hint" style="margin:0">Подключён к прокси: <b id="proxy-attached-name">—</b></span>
-        </div>
-        <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap">
-          <select class="fld" id="proxy-select" style="flex:1;min-width:180px"></select>
-          <button type="button" class="mc-btn sm primary" id="proxy-attach"><i class="pi" data-ic="check"></i> Подключить</button>
-          <button type="button" class="mc-btn sm danger hidden" id="proxy-detach"><i class="pi" data-ic="close"></i> Отключить</button>
-        </div>
-        <div class="hint" style="margin:8px 0 0">Подключение переведёт этот сервер в proxy-режим (online-mode выключится, добавится <code>spigot.yml: bungeecord</code>) и пропишет его в конфиг прокси. Применяется после перезапуска сервера и прокси.</div>
-        <div class="err" id="proxy-err"></div>
-      </div>
-
       <div class="settings-area-title">Ресурсы и запуск</div>
       <div class="mc-card form-panel" id="core-card">
         <div class="section-title">Ядро сервера</div>
@@ -687,6 +677,22 @@
         <div class="hint">Изменения применяются после перезапуска сервера.</div>
         <button type="submit" id="settings-save-btn" class="mc-btn primary settings-save-fixed"><i class="pi" data-ic="save"></i> Сохранить настройки</button>
       </form>
+
+      <div class="settings-area-title" id="settings-integrations-title">Интеграции</div>
+      <div class="mc-card form-panel hidden" id="proxy-card">
+        <div class="section-title"><i class="pi" data-ic="cellular-signal-3"></i> Подключение к прокси (Velocity / BungeeCord)</div>
+        <div class="hint" id="proxy-info" style="margin:0 0 10px"></div>
+        <div id="proxy-attached" class="hidden" style="margin:0 0 10px">
+          <span class="hint" style="margin:0">Подключён к прокси: <b id="proxy-attached-name">—</b></span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap">
+          <select class="fld" id="proxy-select" style="flex:1;min-width:180px"></select>
+          <button type="button" class="mc-btn sm primary" id="proxy-attach"><i class="pi" data-ic="check"></i> Подключить</button>
+          <button type="button" class="mc-btn sm danger hidden" id="proxy-detach"><i class="pi" data-ic="close"></i> Отключить</button>
+        </div>
+        <div class="hint" style="margin:8px 0 0">Подключение переведёт этот сервер в proxy-режим (online-mode выключится, добавится <code>spigot.yml: bungeecord</code>) и пропишет его в конфиг прокси. Применяется после перезапуска сервера и прокси.</div>
+        <div class="err" id="proxy-err"></div>
+      </div>
 
       <div class="mc-card form-panel danger-card">
         <div class="danger-title">Опасная зона</div>
@@ -787,7 +793,10 @@
       <div class="mc-card form-panel">
         <div class="bk-head">
           <div class="section-title" style="margin:0">Установленные плагины</div>
-          <button class="mc-btn sm" id="pl-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
+          <div class="installed-tools">
+            <input class="fld" id="pl-installed-query" placeholder="Поиск среди установленных плагинов…" autocomplete="off">
+            <button class="mc-btn sm" id="pl-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
+          </div>
         </div>
         <div class="mc-card inset pl-installed" id="pl-installed"></div>
       </div>
@@ -852,7 +861,10 @@
       <div class="mc-card form-panel">
         <div class="bk-head">
           <div class="section-title" style="margin:0">Установленные моды</div>
-          <button class="mc-btn sm" id="md-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
+          <div class="installed-tools">
+            <input class="fld" id="md-installed-query" placeholder="Поиск среди установленных модов…" autocomplete="off">
+            <button class="mc-btn sm" id="md-refresh" title="Обновить"><i class="pi" data-ic="reload"></i></button>
+          </div>
         </div>
         <div class="mc-card inset pl-installed" id="md-installed"></div>
       </div>

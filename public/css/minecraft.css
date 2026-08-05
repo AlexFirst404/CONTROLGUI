@@ -444,12 +444,14 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .console .ln-error { color: #ff7a6a; }
 .console .ln-cmd { color: #6fb1e8; }
 .console .ln-panel { color: var(--accent-bright); }
+.console.hide-warn .ln-warn { display: none; }
 
 /* строка над консолью: аптайм · TPS · игроки */
 .console-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 8px; color: #9fb0a4; font-size: 12px; letter-spacing: .02em; }
 .console-meta:empty { display: none; }
 .console-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
 .console-tools .console-meta { margin: 0; }
+.console-toggle-tools { display: flex; align-items: center; justify-content: flex-end; gap: 14px; flex-wrap: wrap; }
 .console-autoscroll-row { display: inline-flex; align-items: center; gap: 8px; color: #9fb0a4; font-size: 12px; cursor: pointer; }
 .console-autoscroll-row .mc-toggle { flex: none; }
 
@@ -945,6 +947,9 @@ input[type=password]::-ms-clear { display: none; }
 .pl-inst-actions { display: flex; align-items: center; gap: 7px; flex: none; }
 .pl-inst-actions .mc-btn { margin-bottom: 0; padding: 6px 9px; min-width: 0; }
 .pl-tog { flex: none; }
+.installed-tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex: 1 1 320px; }
+.installed-tools .fld { width: min(380px, 100%); min-width: 150px; }
+.installed-tools .mc-btn { flex: none; margin-bottom: 0; }
 
 /* --------------------------------------------- адрес сервера на карточке --- */
 .srv-card-addr { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
@@ -1047,6 +1052,15 @@ input[type=password]::-ms-clear { display: none; }
 .status-dot.dl { background: #6fb1e8; }
 .srv-card-actions { display: flex; gap: 8px; margin-top: 14px; }
 .srv-card-actions .mc-btn { margin-bottom: 2px; flex: 1; }
+.server-local-card .srv-card-addr { width: fit-content; max-width: 100%; }
+.server-local-card .srv-card-addr code { flex: 0 1 auto; max-width: calc(100% - 42px); }
+.server-local-card .srv-card-actions { width: fit-content; max-width: 100%; flex-wrap: wrap; }
+.server-local-card .srv-card-actions .mc-btn { flex: 0 0 auto; }
+
+/* Контекстное меню карточки собрано только из .mc-card и кнопок UI-кита. */
+.server-context-menu { position: fixed; z-index: 170; width: min(238px, calc(100vw - 16px));
+  padding: 9px; display: flex; flex-direction: column; gap: 7px; box-shadow: 0 12px 32px rgba(0,0,0,.58); }
+.server-context-menu .mc-btn { width: 100%; justify-content: flex-start; margin-bottom: 4px; }
 
 /* ======================= удалённые панели (менеджер подключений) ===========
    Всё на кит-компонентах: .mc-card/.opt-card/.mc-btn/.status-dot/.fld/.err.
@@ -1178,4 +1192,45 @@ input[type=password]::-ms-clear { display: none; }
 @media (max-width: 420px) {
   .stats-row { grid-template-columns: 1fr; }
   .sh-actions .mc-btn { font-size: 12px; padding: 6px 8px; }
+}
+
+/* На вкладках с собственным скроллом страница ровно занимает окно: прокручивается
+   консоль/лог, а не весь экран с шапкой и вкладками. На узком мобильном окне
+   сохраняем обычный поток — там общий скролл действительно необходим. */
+@media (min-width: 641px) {
+  body.server-pane-fit { overflow-y: hidden; }
+  body.server-pane-fit #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+    min-height: 0; padding-bottom: 18px; }
+  body.server-pane-fit #java-alert { flex: none; }
+  body.server-pane-fit #screen-server { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+  body.server-pane-fit #screen-server > .server-head,
+  body.server-pane-fit #screen-server > .progress-wrap,
+  body.server-pane-fit #screen-server > #restore-notice,
+  body.server-pane-fit #screen-server > .tabbar { flex: none; }
+  body.server-pane-fit #tab-console:not(.hidden),
+  body.server-pane-fit #tab-logs:not(.hidden) { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+  body.server-pane-fit #tab-console .console-wrap { flex: 1 1 120px; min-height: 96px; }
+  body.server-pane-fit #tab-console .console { height: 100%; min-height: 0; }
+  body.server-pane-fit #tab-logs > .form-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+  body.server-pane-fit #tab-logs .logs-view { flex: 1 1 120px; height: auto; min-height: 96px; }
+}
+
+@media (min-width: 641px) and (max-height: 640px) {
+  body.server-pane-fit #app { padding-top: 10px; padding-bottom: 10px; }
+  body.server-pane-fit .server-head { flex-wrap: nowrap; padding: 8px 10px; margin-bottom: 8px; }
+  body.server-pane-fit .server-head .sh-left { flex: 1 1 auto; }
+  body.server-pane-fit .server-head .sh-actions { flex: 0 1 auto; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  body.server-pane-fit .tabbar { margin-bottom: 8px; }
+  body.server-pane-fit .stats-row { flex-wrap: nowrap; overflow-x: auto; margin-bottom: 6px; padding-bottom: 2px; }
+  body.server-pane-fit .stats-row .stat-card { flex: 0 0 175px; }
+  body.server-pane-fit .console-tools { margin-bottom: 4px; }
+  body.server-pane-fit .console-input-row { margin-top: 6px; }
+  body.server-pane-fit #tab-console .console-wrap,
+  body.server-pane-fit #tab-logs .logs-view { min-height: 48px; }
+}
+
+@media (max-width: 640px) {
+  .console-toggle-tools { width: 100%; justify-content: space-between; }
+  .installed-tools { flex-basis: 100%; justify-content: stretch; }
+  .installed-tools .fld { width: 100%; }
 }

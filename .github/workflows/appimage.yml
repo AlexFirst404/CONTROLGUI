@@ -10,11 +10,11 @@ on:
       version:
         description: 'Версия (для имени файла)'
         required: true
-        default: '2.3.1'
+        default: '2.3.2'
       release_tag:
         description: 'Тег релиза, куда заливать .AppImage'
         required: true
-        default: 'v2.3.1'
+        default: 'v2.3.2'
 
 permissions:
   contents: write

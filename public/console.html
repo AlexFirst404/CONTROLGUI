@@ -18,7 +18,8 @@
   .pop-head { display: flex; align-items: center; gap: 10px; flex: none; }
   .pop-head .sh-name { font-size: 16px; }
   .pop-head .status-badge { font-size: 11px; }
-  .pop-autoscroll { margin-left: auto; min-height: 40px; }
+  .pop-console-tools { margin-left: auto; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .pop-autoscroll { min-height: 40px; }
   .pop-wrap .console { flex: 1; height: auto; min-height: 0; }
 </style>
 </head>
@@ -28,9 +29,15 @@
     <img class="sh-icon" id="pop-icon" alt="" hidden>
     <div class="sh-name" id="pop-title">Консоль</div>
     <span class="status-badge" id="pop-status"></span>
-    <div class="toggle-row pop-autoscroll">
-      <span class="toggle-label">Автопрокрутка</span>
-      <div class="mc-toggle" id="auto-scroll-toggle" role="switch" aria-label="Автопрокрутка"></div>
+    <div class="pop-console-tools">
+      <div class="toggle-row pop-autoscroll">
+        <span class="toggle-label">Скрывать WARN</span>
+        <div class="mc-toggle" id="hide-warn-toggle" role="switch" aria-label="Скрывать WARN"></div>
+      </div>
+      <div class="toggle-row pop-autoscroll">
+        <span class="toggle-label">Автопрокрутка</span>
+        <div class="mc-toggle" id="auto-scroll-toggle" role="switch" aria-label="Автопрокрутка"></div>
+      </div>
     </div>
   </div>
   <div class="console" id="console"></div>
@@ -52,9 +59,12 @@
   var btnSend = document.getElementById('btn-send');
   var statusEl = document.getElementById('pop-status');
   var autoScrollToggle = document.getElementById('auto-scroll-toggle');
+  var hideWarnToggle = document.getElementById('hide-warn-toggle');
   var commandPlaceholder = input.placeholder;
   var autoScrollKey = 'cgConsoleAutoScroll';
+  var hideWarnKey = 'cgConsoleHideWarn';
   var autoScroll = true;
+  var hideWarn = false;
   var sse = null;
   var restoring = false;
   var canView = false;
@@ -69,6 +79,7 @@
   try {
     var savedAutoScroll = localStorage.getItem(autoScrollKey);
     if (savedAutoScroll !== null) autoScroll = savedAutoScroll === '1';
+    hideWarn = localStorage.getItem(hideWarnKey) === '1';
   } catch (e) { /* приватный режим */ }
 
   function mkToggle(el, initialOn) {
@@ -86,6 +97,13 @@
     autoScroll = autoScrollToggle.classList.contains('on');
     try { localStorage.setItem(autoScrollKey, autoScroll ? '1' : '0'); } catch (e) { /* приватный режим */ }
     if (autoScroll) consoleEl.scrollTop = consoleEl.scrollHeight;
+  });
+  mkToggle(hideWarnToggle, hideWarn);
+  consoleEl.classList.toggle('hide-warn', hideWarn);
+  hideWarnToggle.addEventListener('click', function () {
+    hideWarn = hideWarnToggle.classList.contains('on');
+    consoleEl.classList.toggle('hide-warn', hideWarn);
+    try { localStorage.setItem(hideWarnKey, hideWarn ? '1' : '0'); } catch (e) { /* приватный режим */ }
   });
 
   function appendLine(line) {
