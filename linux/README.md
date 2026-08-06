@@ -17,7 +17,7 @@
 
 ## Установка .deb
 ```sh
-sudo apt install ./controlgui_2.4.0_all.deb
+sudo apt install ./controlgui_2.4.1_all.deb
 ```
 Зависимости ставятся автоматически: **nodejs**; для режима «приложение» —
 **python3-gi** + **WebKitGTK** + **zenity**; для серверов — **Java**;
@@ -25,8 +25,8 @@ sudo apt install ./controlgui_2.4.0_all.deb
 
 ## Запуск AppImage
 ```sh
-chmod +x CONTROLGUI-2.4.0-x86_64.AppImage
-./CONTROLGUI-2.4.0-x86_64.AppImage
+chmod +x CONTROLGUI-2.4.1-x86_64.AppImage
+./CONTROLGUI-2.4.1-x86_64.AppImage
 ```
 Если ругается на FUSE: `--appimage-extract-and-run` (или `sudo apt install libfuse2`).
 Для нативного окна нужны системные `python3-gi` + WebKitGTK (иначе откроется браузер).
@@ -39,12 +39,12 @@ chmod +x CONTROLGUI-2.4.0-x86_64.AppImage
 
 `.deb` (любая ОС, нужен только Node.js):
 ```sh
-node linux/build-deb.js 2.4.0
+node linux/build-deb.js 2.4.1
 ```
 
 `.AppImage` (только Linux x86_64; node и appimagetool скачиваются сами):
 ```sh
-sh linux/build-appimage.sh 2.4.0
+sh linux/build-appimage.sh 2.4.1
 ```
 Готовые `.AppImage` собираются в CI: вкладка **Actions → Build AppImage**.
 

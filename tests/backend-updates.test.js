@@ -74,7 +74,7 @@ test('описание релиза без sha256 отклоняется до с
 test('API обновлений доступен локально и закрыт через удалённый listener', async () => {
   const local = await apiRequest('/api/update', false);
   assert.equal(local.status, 200);
-  assert.equal(JSON.parse(local.body).currentVersion, '2.4.0');
+  assert.equal(JSON.parse(local.body).currentVersion, '2.4.1');
 
   const remote = await apiRequest('/api/update', true);
   assert.equal(remote.status, 403);

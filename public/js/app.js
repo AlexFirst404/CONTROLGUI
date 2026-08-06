@@ -31,10 +31,11 @@
   const BACKEND_OK = ['paper', 'purpur', 'folia', 'mohist', 'custom'];
 
   /* Иконки предметов «как в игре»:
-     1) mc.nerothe.com — пре-рендеренные иконки инвентаря (блоки — изометрия),
-        версия совпадает с версией сервера, с откатом к ближайшей доступной;
-     2) плоские текстуры из InventivetalentDev/minecraft-assets той же версии;
-     3) текстовое имя. */
+     1) ресурсы установленных модов — через локальный API сервера;
+     2) mc.nerothe.com — пре-рендеренные ванильные иконки (блоки — изометрия),
+         версия совпадает с версией сервера, с откатом к ближайшей доступной;
+     3) плоские ванильные текстуры из InventivetalentDev/minecraft-assets;
+     4) текстовое имя. */
   const ICON_RENDER_HOST = 'https://mc.nerothe.com/img/';
   const ICON_TEX_HOST = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/';
   const ICON_VERSION_FALLBACKS = ['1.21.8', '1.21.6', '1.21.5', '1.21.4'];
@@ -3079,6 +3080,17 @@
 
   const ARMOR_SLOTS = [[103, 'Шлем'], [102, 'Нагрудник'], [101, 'Поножи'], [100, 'Ботинки'], [-106, 'Левая рука']];
 
+  /* Старые ответы API содержали ванильный ID без namespace, а модовые ID уже
+     приходили полностью. Единая форма не даёт принять `mod:item` за имя
+     ванильной текстуры и остаётся совместимой с обоими форматами ответа. */
+  function itemIdentity(value) {
+    const raw = String(value || '').trim();
+    const colon = raw.indexOf(':');
+    const namespace = colon > 0 ? raw.slice(0, colon) : 'minecraft';
+    const itemPath = (colon > 0 ? raw.slice(colon + 1) : raw) || 'unknown';
+    return { namespace: namespace, path: itemPath, full: namespace + ':' + itemPath };
+  }
+
   function invCell(item, label, bases, slot) {
     const cell = document.createElement('div');
     cell.className = 'inv-cell' + (item ? '' : ' empty');
@@ -3089,44 +3101,73 @@
       cell.addEventListener('click', () => onInvCellClick(slot));
     }
     if (item) {
-      cell.title = item.id.replace(/_/g, ' ') + (item.count > 1 ? ' ×' + item.count : '');
+      const identity = itemIdentity(item.resourceId || item.id);
+      const iconIdentity = itemIdentity(item.iconId || identity.full);
+      cell.title = prettyItemName(identity.full) + (item.count > 1 ? ' ×' + item.count : '');
       const img = document.createElement('img');
       img.className = 'it-img';
       img.alt = '';
       img.loading = 'lazy';
-      // основной источник — игровой рендер нужной версии (затем полный
-      // рендер-каталог, если папка версии неполная); дальше плоские
-      // текстуры (и грани составных блоков); в самом конце — текст
+      // Модовые ассеты берём только со своего сервера. Для ванильных предметов
+      // сохраняем прежнюю цепочку рендеров и текстур; в самом конце — текст.
       const candidates = [];
-      if (bases && bases.render) candidates.push(bases.render + 'minecraft_' + item.id + '.png');
-      if (bases && bases.render2) candidates.push(bases.render2 + 'minecraft_' + item.id + '.png');
-      const texStart = candidates.length; // с этого индекса идут пиксельные 16x16-текстуры
-      const tex = (bases && bases.tex) || (ICON_TEX_HOST + '1.21.4/assets/minecraft/textures/');
-      candidates.push(
-        tex + 'item/' + item.id + '.png',
-        tex + 'block/' + item.id + '.png',
-        tex + 'block/' + item.id + '_front.png',
-        tex + 'block/' + item.id + '_top.png',
-        tex + 'block/' + item.id + '_side.png'
-      );
+      const localAsset = identity.namespace !== 'minecraft' || iconIdentity.full !== identity.full;
+      if (localAsset) {
+        const serverId = state.invEdit && state.invEdit.serverId;
+        if (serverId) candidates.push({ src: API.itemIconUrl(serverId, iconIdentity.full), pix: true, inspectFrames: true });
+      }
+      // Модовый item_model вправе явно сослаться на ванильную модель. Тогда
+      // локальный override пробуем первым, а обычную ванильную картинку — следом.
+      if (iconIdentity.namespace === 'minecraft') {
+        if (bases && bases.render) candidates.push({ src: bases.render + 'minecraft_' + iconIdentity.path + '.png', pix: false });
+        if (bases && bases.render2) candidates.push({ src: bases.render2 + 'minecraft_' + iconIdentity.path + '.png', pix: false });
+        const tex = (bases && bases.tex) || (ICON_TEX_HOST + '1.21.4/assets/minecraft/textures/');
+        candidates.push(
+          { src: tex + 'item/' + iconIdentity.path + '.png', pix: true },
+          { src: tex + 'block/' + iconIdentity.path + '.png', pix: true },
+          { src: tex + 'block/' + iconIdentity.path + '_front.png', pix: true },
+          { src: tex + 'block/' + iconIdentity.path + '_top.png', pix: true },
+          { src: tex + 'block/' + iconIdentity.path + '_side.png', pix: true }
+        );
+      }
       let attempt = 0;
       // рендеры 64x64 уменьшаем со сглаживанием, пиксель-арт 16x16 — без него
-      const applyMode = () => img.classList.toggle('pix', attempt >= texStart);
-      applyMode();
-      img.src = candidates[attempt];
+      const applyCandidate = () => {
+        const candidate = candidates[attempt];
+        img.classList.toggle('pix', !!candidate.pix);
+        img.classList.remove('first-frame');
+        img.onload = () => {
+          if (candidates[attempt] !== candidate || !candidate.inspectFrames) return;
+          const w = img.naturalWidth;
+          const h = img.naturalHeight;
+          // Произвольный прямоугольник не режем. Первый кадр нужен лишь для
+          // характерной кратной ленты квадратных кадров Minecraft-анимации.
+          const atlas = w > 0 && h > 0 && w !== h &&
+            ((h > w && h % w === 0) || (w > h && w % h === 0));
+          img.classList.toggle('first-frame', atlas);
+        };
+        img.src = candidate.src;
+      };
       img.onerror = () => {
         attempt++;
         if (attempt < candidates.length) {
-          applyMode();
-          img.src = candidates[attempt];
+          applyCandidate();
         } else {
           const it = document.createElement('span');
           it.className = 'it';
-          it.textContent = item.id.replace(/_/g, ' ');
+          it.textContent = prettyItemName(identity.full);
           cell.replaceChild(it, img);
         }
       };
-      cell.appendChild(img);
+      if (candidates.length) {
+        cell.appendChild(img);
+        applyCandidate();
+      } else {
+        const it = document.createElement('span');
+        it.className = 'it';
+        it.textContent = prettyItemName(identity.full);
+        cell.appendChild(it);
+      }
       if (item.count > 1) {
         const cnt = document.createElement('span');
         cnt.className = 'cnt';
@@ -3150,10 +3191,11 @@
   function roman(n) { return (n >= 1 && n <= 10) ? ROMAN[n] : String(n); }
 
   function prettyItemName(id) {
-    // официальное русское название предмета/блока (ru_ru), иначе — из id
-    const ru = window.ITEM_NAMES_RU && window.ITEM_NAMES_RU[id];
+    const identity = itemIdentity(id);
+    // Официальный ru_ru содержит только ванильные ключи без namespace.
+    const ru = identity.namespace === 'minecraft' && window.ITEM_NAMES_RU && window.ITEM_NAMES_RU[identity.path];
     if (ru) return ru;
-    return String(id).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    return identity.path.replace(/[\/_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   let itemTip = null;
@@ -3167,7 +3209,7 @@
 
     const nameEl = document.createElement('div');
     nameEl.className = 'it-name' + (item.name ? ' custom' : '');
-    nameEl.textContent = item.name || prettyItemName(item.id);
+    nameEl.textContent = item.name || prettyItemName(item.resourceId || item.id);
     tip.appendChild(nameEl);
 
     for (const e of item.enchants || []) {
@@ -3205,7 +3247,7 @@
 
     const idEl = document.createElement('div');
     idEl.className = 'it-id';
-    idEl.textContent = 'minecraft:' + item.id;
+    idEl.textContent = itemIdentity(item.resourceId || item.id).full;
     tip.appendChild(idEl);
 
     if (item.nbt) {

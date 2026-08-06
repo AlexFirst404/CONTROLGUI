@@ -66,6 +66,7 @@ window.API = (function () {
     consoleStream: (id) => new EventSource(B('/api/servers/' + id + '/console')),
     stats: (id) => call('GET', '/api/servers/' + id + '/stats'),
     player: (id, name) => call('GET', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),
+    itemIconUrl: (id, itemId) => B('/api/servers/' + id + '/item-icon?item=' + encodeURIComponent(itemId)),
     playerEdit: (id, body) => call('POST', '/api/servers/' + id + '/playeredit', body),
     whitelist: (id) => call('GET', '/api/servers/' + id + '/whitelist'),
     whitelistChange: (id, action, name) => call('POST', '/api/servers/' + id + '/whitelist', { action: action, name: name }),

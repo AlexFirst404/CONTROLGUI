@@ -143,11 +143,12 @@ HTTPS-листенер с самоподписанным сертом (`lib/self
 | `proxy.js` | Velocity/BungeeCord: генерация конфигов, legacy-форвардинг, привязка/отвязка backend'ов (`online-mode=false` + обязательный `server-ip=127.0.0.1` + `spigot.yml bungeecord`), транслит-slug имён; точные снимки конфигов и транзакционный rollback при частичной ошибке, обязательная безопасная отвязка backend'ов перед удалением прокси |
 | `backups.js` | Атомарные `.tar.gz` через системный bsdtar; валидация путей/типов, обязательный before-restore, распаковка в sibling staging и rename-swap с rollback |
 | `modrinth.js` | Поиск/установка плагинов и модов с api.modrinth.com; подбор версии под MC+лоадер, рекурсивная докачка обязательных зависимостей |
+| `modassets.js` | Защищённый индекс `assets/` установленных mod JAR и резолвер иконок предметов: modern/legacy item models, parent/texture aliases, block/direct fallback, bounded LRU |
 | `properties.js` | Парсер/сериализатор `server.properties` (key=value, `#`-комментарии) |
 | `nbt.js` | Простой NBT-**читатель** → JS-значения (для отображения; long теряет точность за 2⁵³) |
 | `nbtedit.js` | Типо-сохраняющий NBT-**редактор** playerdata (узлы `{t,v}`, compound в Map, long как BigInt, raw-байты строк) — правка инвентаря/статов **без потерь** |
 | `snbt.js` | Парсер SNBT (вывод `data get entity`) → JS-объекты |
-| `unzip.js` | ZIP-распаковщик без зависимостей (только zlib). **Вызывающий обязан** сам делать safePath (zip-slip) и лимиты (zip-bomb) |
+| `unzip.js` | ZIP-распаковщик и random-access чтец JAR без зависимостей (только zlib). **Вызывающий обязан** сам делать safePath (zip-slip) и лимиты (zip-bomb) |
 | `selfsigned.js` | Чистый JS X.509 (ASN.1/DER + RSA-SHA256) |
 | `static.js` | Раздача public/ (ETag/304, gzip-кэш, отсев NUL-байта) |
 | `coreinfo.js` | Определение версии MC из server.jar (jar=zip) |

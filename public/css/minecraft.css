@@ -560,6 +560,7 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
    (класс .pix) — чётким пиксель-артом, 48px = ровно 3x без «рваных» пикселей */
 .inv-cell .it-img { width: 48px; height: 48px; object-fit: contain; image-rendering: auto; }
 .inv-cell .it-img.pix { image-rendering: pixelated; }
+.inv-cell .it-img.first-frame { object-fit: cover; object-position: left top; }
 .inv-cell .it { font-size: 10px; line-height: 1.05; color: #232323; text-align: center;
   word-break: break-word; overflow: hidden; max-height: 100%; padding: 1px; }
 .inv-cell .cnt { position: absolute; right: 3px; bottom: 0; font-size: 18px; color: #fff;

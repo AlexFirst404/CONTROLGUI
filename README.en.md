@@ -11,7 +11,7 @@ No cloud, no accounts, no npm dependencies. One Node.js process, a Minecraft-sty
 <br>
 
 [![License](https://img.shields.io/badge/license-GPL--3.0-3b8526?style=flat-square)](LICENSE)
-![Release](https://img.shields.io/badge/release-2.4.0-6cc04a?style=flat-square)
+![Release](https://img.shields.io/badge/release-2.4.1-6cc04a?style=flat-square)
 ![Platforms](https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux-2b2b2b?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/npm%20deps-0-3b8526?style=flat-square)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-2b2b2b?style=flat-square)
@@ -37,7 +37,7 @@ CONTROLGUI creates and runs **real** Minecraft servers — Vanilla, Paper, Purpu
 - 🚀 **Create real servers in two clicks** — Vanilla, Paper, Purpur, Folia, Mohist, Forge + Velocity / BungeeCord proxies. Cores come from official sources; the right Java is installed automatically on all three OSes.
 - 🖥️ **Live console** with command input and contextual completion, configurable auto-scroll/WARN filtering, CPU / RAM / disk / TPS graphs, and log search.
 - 📂 **File manager** with a built-in code editor, uploads (files and whole folders), and safe ZIP extraction.
-- 👥 **Players** — online list, kills and deaths, inventory and stats viewer/editor (own NBT parser), kick / ban / OP / whitelist.
+- 👥 **Players** — online list, kills and deaths, inventory and stats viewer/editor (own NBT parser), modded item icons loaded straight from installed JARs, kick / ban / OP / whitelist.
 - 🧩 **Mods & plugins** — built-in [Modrinth](https://modrinth.com) catalog: search, one-click install with dependencies, enable/disable.
 - 💾 **Backups** — create, restore, download.
 - 🎨 **Resource packs** — upload a pack and the panel serves it to game clients over LAN.
