@@ -11,7 +11,7 @@ No cloud, no accounts, no npm dependencies. One Node.js process, a Minecraft-sty
 <br>
 
 [![License](https://img.shields.io/badge/license-GPL--3.0-3b8526?style=flat-square)](LICENSE)
-![Release](https://img.shields.io/badge/release-2.2.0-6cc04a?style=flat-square)
+![Release](https://img.shields.io/badge/release-2.4.0-6cc04a?style=flat-square)
 ![Platforms](https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux-2b2b2b?style=flat-square)
 ![Dependencies](https://img.shields.io/badge/npm%20deps-0-3b8526?style=flat-square)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-2b2b2b?style=flat-square)
@@ -35,14 +35,15 @@ CONTROLGUI creates and runs **real** Minecraft servers — Vanilla, Paper, Purpu
 ## ✨ Features
 
 - 🚀 **Create real servers in two clicks** — Vanilla, Paper, Purpur, Folia, Mohist, Forge + Velocity / BungeeCord proxies. Cores come from official sources; the right Java is installed automatically on all three OSes.
-- 🖥️ **Live console** with command input and autocomplete, per-server CPU / RAM / disk graphs, and log search.
-- 📂 **File manager** with a built-in code editor, uploads (files and whole folders), zip/jar extraction.
-- 👥 **Players** — online list, inventory and stats viewer/editor (own NBT parser), kick / ban / OP / whitelist.
+- 🖥️ **Live console** with command input and contextual completion, configurable auto-scroll/WARN filtering, CPU / RAM / disk / TPS graphs, and log search.
+- 📂 **File manager** with a built-in code editor, uploads (files and whole folders), and safe ZIP extraction.
+- 👥 **Players** — online list, kills and deaths, inventory and stats viewer/editor (own NBT parser), kick / ban / OP / whitelist.
 - 🧩 **Mods & plugins** — built-in [Modrinth](https://modrinth.com) catalog: search, one-click install with dependencies, enable/disable.
 - 💾 **Backups** — create, restore, download.
 - 🎨 **Resource packs** — upload a pack and the panel serves it to game clients over LAN.
 - 🌐 **Remote access** — multiple users, each with their own servers and permissions. HTTPS + password, one forwarded port, manage from anywhere.
-- 🪟 **Remote panels** *(new in 2.2.0)* — connect to CONTROLGUI on other machines right from the app.
+- 🪟 **Remote panels** — connect to CONTROLGUI on other machines right from the app.
+- ⚙️ **Settings & updates** — dedicated application, interface, and remote-access tabs; releases are checked on GitHub, downloaded with progress, and verified with SHA-256.
 - ⌨️ **Headless / CLI mode** — install on a Linux VPS and manage it from a browser or the built-in terminal UI (TUI) over SSH.
 
 ---
@@ -106,7 +107,7 @@ Flip a switch, add users (each with their own servers and permissions), forward 
 
 ---
 
-## 🪟 Remote panels *(new in 2.2.0)*
+## 🪟 Remote panels
 
 Connect to CONTROLGUI panels on **other computers and servers right from the app** — no browser. Add the address, port, login and password, verify the certificate fingerprint — and the remote panel opens in the same window with automatic login. The connection is protected by certificate pinning; the password never reaches the browser.
 
@@ -124,6 +125,7 @@ Grab an installer from [Releases](https://github.com/AlexFirst404/CONTROLGUI/rel
 |---|---|---|
 | 🪟 **Windows** | `CONTROLGUI-<v>-windows-setup.exe` | Bundles Node.js — nothing else to install |
 | 🍎 **macOS** (Apple Silicon) | `CONTROLGUI-<v>-macos-arm64.pkg` | Bundles Node.js |
+| 🍎 **macOS** (Intel) | `CONTROLGUI-<v>-macos-x64.pkg` | Bundles Node.js |
 | 🐧 **Linux** (Debian/Ubuntu) | `controlgui_<v>_all.deb` | Uses system `nodejs` (≥ 18) |
 | 🐧 **Linux** (any distro) | `CONTROLGUI-<v>-x86_64.AppImage` | Bundles Node.js |
 | 🖥️ **Linux server** (headless) | `controlgui-<v>-linux.tar.gz` | `tar -xzf … && sudo controlgui/install.sh` |

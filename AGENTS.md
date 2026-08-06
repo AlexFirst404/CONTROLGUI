@@ -104,7 +104,7 @@ public/css/minecraft.css — UI-кит (единственный визуаль�
 - Финал: `gh release create <тег>` + `gh release upload` для setup.exe/.deb/.tar.gz.
 
 ### ⚠️ Версия — в ~10 местах, править ВСЕ разом при бампе
-`lib/download.js` (UA, стр. 5) · `lib/api.js` (`app:`, ~стр. 1114) · `linux/build-deb.js` · `linux/build-tarball.js` · `linux/build-appimage.sh` · `mac/build-pkg.sh` · `.github/workflows/pkg.yml` + `appimage.yml` (defaults) · `controlgui.iss` (`MyAppVersion`) · `CONTROLGUI.Desktop.csproj` (`<Version>`). Пропуск одного = рассинхрон версий между артефактами.
+`lib/version.js` (runtime API/UA/updater) · `linux/build-deb.js` · `linux/build-tarball.js` · `linux/build-appimage.sh` · `mac/build-pkg.sh` · `.github/workflows/pkg.yml` + `appimage.yml` (defaults) · `controlgui.iss` (`MyAppVersion`) · `CONTROLGUI.Desktop.csproj` (`<Version>`). Пропуск одного = рассинхрон версий между артефактами.
 
 ## Git
 
