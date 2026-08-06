@@ -19,10 +19,18 @@
 
   <div id="java-alert" class="java-alert hidden"></div>
 
-  <!-- бургер-меню -->
-  <button id="btn-burger" class="mc-btn sm app-burger" title="Меню">
-    <span class="burger-ic" id="burger-ic"><i></i><i></i><i></i></span>
-  </button>
+  <!-- глобальные действия: уведомления → настройки → меню -->
+  <div id="app-global-tools" class="app-global-tools">
+    <button id="notif-bell" class="mc-btn sm sq" title="Уведомления" aria-label="Уведомления"><i class="pi" data-ic="bell"></i></button>
+    <button id="btn-app-settings" class="mc-btn sm sq" title="Настройки" aria-label="Настройки"><i class="pi" data-ic="sliders"></i></button>
+    <button id="btn-burger" class="mc-btn sm sq app-burger" title="Меню" aria-label="Меню">
+      <span class="burger-ic" id="burger-ic"><i></i><i></i><i></i></span>
+    </button>
+  </div>
+  <div id="notif-pop" class="mc-card notif-pop hidden">
+    <div class="notif-pop-head">Уведомления</div>
+    <div id="notif-list"></div>
+  </div>
   <div id="app-scrim" class="app-scrim"></div>
   <nav id="app-menu" class="app-menu">
     <div class="menu-item" data-menu="home"><i class="pi" data-ic="server"></i> Серверы</div>
@@ -56,70 +64,215 @@
     </div>
   </div>
 
-  <!-- НАСТРОЙКИ ПАНЕЛИ (тема, масштаб и т.д.) -->
-  <div id="appset-root" class="modal-wrap hidden">
-    <div class="modal">
-      <div class="modal-head">
-        <span>Настройки панели</span>
-        <button class="mc-btn sm" id="appset-close"><i class="pi" data-ic="close"></i></button>
+  <!-- ЭКРАН: НАСТРОЙКИ ПАНЕЛИ -->
+  <section id="screen-app-settings" class="screen hidden">
+    <div class="app-settings-head">
+      <button class="mc-btn sm" id="appset-back" title="К серверам"><i class="pi" data-ic="chevron-left"></i></button>
+      <div>
+        <h1 class="mc-title app-settings-title">Настройки</h1>
+        <p class="hint app-settings-subtitle">Параметры панели, приложения и удалённого доступа</p>
       </div>
-      <div class="modal-body">
+    </div>
+
+    <nav class="mc-card tabbar appset-tabbar" id="appset-tabs">
+      <button class="mc-tab sel" data-appset-tab="remote"><i class="pi" data-ic="lock"></i> Удалённый доступ</button>
+      <button class="mc-tab" data-appset-tab="application"><i class="pi" data-ic="app-window"></i> Приложение</button>
+      <button class="mc-tab" data-appset-tab="interface"><i class="pi" data-ic="sliders"></i> Интерфейс</button>
+      <span class="tab-ind" id="appset-tab-ind"></span>
+    </nav>
+
+    <div class="appset-pane" id="appset-pane-remote">
+      <div class="mc-card app-settings-card hidden" id="ra-local-note">
+        <div class="section-title"><i class="pi" data-ic="lock"></i> Только на этом компьютере</div>
+        <p class="hint">Параметры входящих подключений доступны только владельцу в локальной панели.</p>
+      </div>
+
+      <!-- УДАЛЁННЫЙ ДОСТУП: HTTPS + пользователи с правами по серверам -->
+      <div class="mc-card app-settings-card" id="ra-card">
+        <div class="section-title"><i class="pi" data-ic="lock"></i> Удалённый доступ</div>
+        <span class="hint app-settings-lead">Управляйте серверами с других устройств и через интернет. Добавьте пользователей, выдайте им серверы и права, включите доступ и пробросьте порт на роутере. Подключение защищено HTTPS и закреплением сертификата.</span>
+
+        <div class="opt-card toggle-row">
+          <span class="toggle-label">Включить удалённый доступ</span>
+          <div class="mc-toggle" id="ra-toggle"></div>
+        </div>
+
+        <div class="opt-card app-setting-gap">
+          <div class="ra-users-head">
+            <span class="opt-label">Пользователи и доступ</span>
+            <button class="mc-btn sm primary ra-btn" id="ra-user-add"><i class="pi" data-ic="plus"></i> Добавить</button>
+          </div>
+          <div class="app-setting-inner-gap" id="ra-users"></div>
+        </div>
+
+        <div class="opt-card app-setting-gap">
+          <label class="opt-label ra-label" for="ra-port">Порт HTTPS (пробросьте его на роутере)</label>
+          <div class="ra-row">
+            <input class="fld ra-port" id="ra-port" type="number" min="1" max="65535">
+            <button class="mc-btn sm ra-btn" id="ra-port-save"><i class="pi" data-ic="check"></i> Применить</button>
+          </div>
+        </div>
+
+        <div id="ra-info" class="opt-card app-setting-gap hidden">
+          <div class="ra-state" id="ra-state"></div>
+          <div class="hint app-setting-copy" id="ra-addr"></div>
+          <div class="hint ra-fp app-setting-copy" id="ra-fp"></div>
+          <button class="mc-btn sm ra-btn app-setting-button-gap" id="ra-cert-regen"><i class="pi" data-ic="reload"></i> Перевыпустить сертификат</button>
+        </div>
+        <div class="err" id="ra-err"></div>
+      </div>
+    </div>
+
+    <div class="appset-pane hidden" id="appset-pane-application">
+      <div class="mc-card app-settings-card hidden" id="appset-local-only-note">
+        <div class="section-title"><i class="pi" data-ic="lock"></i> Только на этом компьютере</div>
+        <p class="hint">Системные параметры приложения и установка обновлений недоступны через удалённый вход.</p>
+      </div>
+
+      <div class="mc-card app-settings-card local-app-setting" id="launchmode-card">
+        <div class="section-title"><i class="pi" data-ic="app-window"></i> Запуск приложения</div>
         <div class="mc-label" id="launchmode-label">Как открывать панель
           <div class="seg-btns" id="launchmode-btns">
             <button type="button" class="mc-btn sm seg" data-mode="app"><i class="pi" data-ic="app-window"></i> Приложение</button>
             <button type="button" class="mc-btn sm seg" data-mode="browser"><i class="pi" data-ic="open"></i> Браузер</button>
           </div>
-          <span class="hint" style="margin:6px 0 0">Применится при следующем запуске установленного приложения (.exe / .deb / .AppImage).</span>
+          <span class="hint app-setting-note">Применится при следующем запуске установленного приложения (.exe / .deb / .AppImage).</span>
         </div>
-        <div class="opt-card slider-block" style="margin-top:14px">
-          <span class="opt-label">Размер интерфейса: <span class="slider-val" id="set-scale-val"></span></span>
-          <div class="mc-slider" id="set-scale"></div>
-        </div>
-        <div class="opt-card toggle-row" style="margin-top:14px">
-          <span class="toggle-label">Графики на вкладке «Консоль»</span>
-          <div class="mc-toggle" id="set-graphs"></div>
-        </div>
-        <div class="opt-card toggle-row" style="margin-top:14px" id="set-tray-row">
+        <div class="opt-card toggle-row app-setting-gap" id="set-tray-row">
           <span class="toggle-label">Сворачивать в трей (Windows)
-            <span class="hint" style="display:block;margin:2px 0 0">Кнопки «Свернуть»/«Закрыть» прячут окно в системный трей. Выключено — обычное сворачивание на панель задач, закрытие = выход.</span>
+            <span class="hint app-setting-note">«Свернуть» и «Закрыть» прячут окно в системный трей. Если выключено, закрытие завершает приложение.</span>
           </span>
           <div class="mc-toggle" id="set-tray"></div>
         </div>
-        <div class="hint" style="margin-bottom:0">Применяется сразу и сохраняется в этом браузере/приложении.</div>
+      </div>
 
-        <!-- УДАЛЁННЫЙ ДОСТУП: HTTPS + пользователи с правами по серверам -->
-        <div id="ra-card" style="margin-top:20px">
-          <div class="section-title" style="margin:0 0 6px"><i class="pi" data-ic="lock"></i> Удалённый доступ</div>
-          <span class="hint" style="display:block;margin:0 0 12px">Управляйте серверами с других устройств и через интернет. Добавьте пользователей — каждому можно выдать свои серверы и права, — включите доступ и пробросьте порт на роутере. Подключение по HTTPS с самоподписанным сертификатом (браузер один раз предупредит — это нормально).</span>
+      <div class="mc-card app-settings-card local-app-setting hidden" id="update-card">
+        <div class="app-settings-card-head">
+          <div>
+            <div class="section-title"><i class="pi" data-ic="download"></i> Обновления CONTROLGUI</div>
+            <div class="hint app-settings-lead">Проверка официальных релизов GitHub и безопасная установка подходящего пакета для этой системы.</div>
+          </div>
+          <button class="mc-btn sm" id="update-check-btn"><i class="pi" data-ic="reload"></i> Проверить</button>
+        </div>
+        <div class="opt-card update-version-grid">
+          <span class="label-dim">Установлено</span><strong id="update-current">—</strong>
+          <span class="label-dim">Доступно</span><strong id="update-latest">—</strong>
+        </div>
+        <div class="opt-card toggle-row app-setting-gap">
+          <span class="toggle-label">Автоматически проверять обновления при запуске</span>
+          <div class="mc-toggle" id="set-update-auto-check"></div>
+        </div>
+        <div class="progress-wrap hidden app-update-progress" id="update-progress-wrap">
+          <div class="progress-label" id="update-progress-label">Подготовка…</div>
+          <div class="mc-progress"><div class="mc-progress-fill" id="update-progress-fill"></div></div>
+        </div>
+        <div class="update-state" id="update-state">Проверка ещё не выполнялась.</div>
+        <div class="err" id="update-error"></div>
+        <div class="btn-row btn-row-left app-update-actions">
+          <button class="mc-btn primary hidden" id="update-download-btn"><i class="pi" data-ic="download"></i> Скачать обновление</button>
+          <button class="mc-btn accent hidden" id="update-install-btn"><i class="pi" data-ic="reload"></i> <span id="update-install-label">Установить и перезапустить</span></button>
+        </div>
+      </div>
+    </div>
 
+    <div class="appset-pane hidden" id="appset-pane-interface">
+      <div class="mc-card app-settings-card">
+        <div class="section-title"><i class="pi" data-ic="image"></i> Оформление</div>
+        <div class="mc-label">Цвет интерфейса
+          <div class="seg-btns" id="set-theme-btns">
+            <button type="button" class="mc-btn sm seg" data-theme="theme-lime">Лаймовый</button>
+            <button type="button" class="mc-btn sm seg" data-theme="theme-blue">Синий</button>
+          </div>
+        </div>
+        <div class="opt-card slider-block app-setting-gap">
+          <span class="opt-label">Размер интерфейса: <span class="slider-val" id="set-scale-val"></span></span>
+          <div class="mc-slider" id="set-scale"></div>
+        </div>
+        <div class="app-settings-grid app-setting-gap">
           <div class="opt-card toggle-row">
-            <span class="toggle-label">Включить удалённый доступ</span>
-            <div class="mc-toggle" id="ra-toggle"></div>
+            <span class="toggle-label">Анимация фоновой сетки</span>
+            <div class="mc-toggle" id="set-bg-anim"></div>
           </div>
+          <div class="opt-card toggle-row">
+            <span class="toggle-label">Уменьшить движения и переходы</span>
+            <div class="mc-toggle" id="set-reduced-motion"></div>
+          </div>
+          <div class="opt-card toggle-row">
+            <span class="toggle-label">Компактные отступы</span>
+            <div class="mc-toggle" id="set-compact"></div>
+          </div>
+          <div class="opt-card toggle-row">
+            <span class="toggle-label">Всплывающие уведомления</span>
+            <div class="mc-toggle" id="set-toast-notifications"></div>
+          </div>
+        </div>
+      </div>
 
-          <div class="opt-card" style="margin-top:12px">
-            <div class="ra-users-head">
-              <span class="opt-label" style="margin:0">Пользователи и доступ</span>
-              <button class="mc-btn sm primary ra-btn" id="ra-user-add"><i class="pi" data-ic="plus"></i> Добавить</button>
-            </div>
-            <div id="ra-users" style="margin-top:10px"></div>
+      <div class="mc-card app-settings-card">
+        <div class="section-title"><i class="pi" data-ic="terminal-sharp"></i> Консоль</div>
+        <div class="app-settings-grid">
+          <div class="opt-card toggle-row">
+            <span class="toggle-label">Автопрокрутка к новым сообщениям</span>
+            <div class="mc-toggle" id="console-autoscroll"></div>
           </div>
+          <div class="opt-card toggle-row">
+            <span class="toggle-label">Скрывать строки WARN</span>
+            <div class="mc-toggle" id="console-hide-warn"></div>
+          </div>
+          <div class="opt-card toggle-row">
+            <span class="toggle-label">Переносить длинные строки</span>
+            <div class="mc-toggle" id="set-console-wrap"></div>
+          </div>
+        </div>
+        <div class="opt-card slider-block app-setting-gap">
+          <span class="opt-label">Размер текста консоли: <span class="slider-val" id="set-console-font-val"></span></span>
+          <div class="mc-slider" id="set-console-font"></div>
+        </div>
+        <p class="hint app-setting-note">Эти параметры действуют и в отдельном окне консоли.</p>
+      </div>
 
-          <div class="opt-card" style="margin-top:12px">
-            <label class="opt-label ra-label" for="ra-port">Порт HTTPS (пробросьте его на роутере)</label>
-            <div class="ra-row">
-              <input class="fld ra-port" id="ra-port" type="number" min="1" max="65535">
-              <button class="mc-btn sm ra-btn" id="ra-port-save"><i class="pi" data-ic="check"></i> Применить</button>
-            </div>
-          </div>
+      <div class="mc-card app-settings-card">
+        <div class="section-title"><i class="pi" data-ic="chart-bar"></i> Графики консоли</div>
+        <p class="hint app-settings-lead">Отключите ненужные карточки, чтобы освободить место по высоте.</p>
+        <div class="app-settings-grid graph-settings-grid">
+          <div class="opt-card toggle-row"><span class="toggle-label">Процессор</span><div class="mc-toggle" id="set-graph-cpu" data-graph-setting="cpu"></div></div>
+          <div class="opt-card toggle-row"><span class="toggle-label">Память</span><div class="mc-toggle" id="set-graph-ram" data-graph-setting="ram"></div></div>
+          <div class="opt-card toggle-row"><span class="toggle-label">Чтение</span><div class="mc-toggle" id="set-graph-read" data-graph-setting="read"></div></div>
+          <div class="opt-card toggle-row"><span class="toggle-label">Запись</span><div class="mc-toggle" id="set-graph-write" data-graph-setting="write"></div></div>
+          <div class="opt-card toggle-row"><span class="toggle-label">Игроки</span><div class="mc-toggle" id="set-graph-players" data-graph-setting="players"></div></div>
+          <div class="opt-card toggle-row"><span class="toggle-label">TPS</span><div class="mc-toggle" id="set-graph-tps" data-graph-setting="tps"></div></div>
+        </div>
+        <div class="btn-row btn-row-left app-setting-gap">
+          <button class="mc-btn sm" id="set-interface-reset"><i class="pi" data-ic="reload"></i> Сбросить настройки интерфейса</button>
+        </div>
+      </div>
+    </div>
+  </section>
 
-          <div id="ra-info" class="opt-card hidden" style="margin-top:12px">
-            <div class="ra-state" id="ra-state"></div>
-            <div class="hint" id="ra-addr" style="margin:8px 0 0"></div>
-            <div class="hint ra-fp" id="ra-fp" style="margin:8px 0 0"></div>
-            <button class="mc-btn sm ra-btn" id="ra-cert-regen" style="margin-top:10px"><i class="pi" data-ic="reload"></i> Перевыпустить сертификат</button>
+  <!-- МОДАЛКА ОБНОВЛЕНИЯ -->
+  <div id="update-modal" class="modal-wrap hidden">
+    <div class="modal update-modal">
+      <div class="modal-head">
+        <span>Доступно обновление</span>
+        <button class="mc-btn sm" id="update-modal-close"><i class="pi" data-ic="close"></i></button>
+      </div>
+      <div class="modal-body update-modal-body">
+        <div class="update-hero">
+          <span class="mc-card inset update-hero-icon"><i class="pi" data-ic="download"></i></span>
+          <div>
+            <div class="section-title" id="update-modal-title">Новая версия CONTROLGUI</div>
+            <div class="hint app-settings-lead" id="update-modal-summary">Обновление готово к загрузке.</div>
           </div>
-          <div class="err" id="ra-err" style="margin-top:8px"></div>
+        </div>
+        <div class="progress-wrap hidden app-update-progress" id="update-modal-progress-wrap">
+          <div class="progress-label" id="update-modal-progress-label">Подготовка…</div>
+          <div class="mc-progress"><div class="mc-progress-fill" id="update-modal-progress-fill"></div></div>
+        </div>
+        <div class="err" id="update-modal-error"></div>
+        <div class="btn-row update-modal-actions">
+          <button class="mc-btn primary" id="update-modal-download"><i class="pi" data-ic="download"></i> Скачать</button>
+          <button class="mc-btn accent hidden" id="update-modal-install"><i class="pi" data-ic="reload"></i> <span id="update-modal-install-label">Установить и перезапустить</span></button>
+          <button class="mc-btn" id="update-modal-later">Позже</button>
         </div>
       </div>
     </div>
@@ -492,7 +645,7 @@
     <!-- Вкладка: консоль -->
     <div class="tab-pane" id="tab-console">
       <div class="stats-row" id="stats-row">
-        <div class="mc-card stat-card">
+        <div class="mc-card stat-card" data-graph="cpu">
           <div class="stat-top">
             <i class="pi stat-ic" data-ic="cpu"></i>
             <span class="stat-name">Процессор</span>
@@ -500,7 +653,7 @@
           </div>
           <canvas class="stat-graph" id="graph-cpu"></canvas>
         </div>
-        <div class="mc-card stat-card">
+        <div class="mc-card stat-card" data-graph="ram">
           <div class="stat-top">
             <i class="pi stat-ic" data-ic="memory-stick-sharp"></i>
             <span class="stat-name">Память</span>
@@ -508,7 +661,7 @@
           </div>
           <canvas class="stat-graph" id="graph-ram"></canvas>
         </div>
-        <div class="mc-card stat-card">
+        <div class="mc-card stat-card" data-graph="read">
           <div class="stat-top">
             <i class="pi stat-ic" data-ic="download"></i>
             <span class="stat-name">Чтение (диск+сеть)</span>
@@ -516,7 +669,7 @@
           </div>
           <canvas class="stat-graph" id="graph-read"></canvas>
         </div>
-        <div class="mc-card stat-card">
+        <div class="mc-card stat-card" data-graph="write">
           <div class="stat-top">
             <i class="pi stat-ic" data-ic="upload"></i>
             <span class="stat-name">Запись (диск+сеть)</span>
@@ -524,7 +677,7 @@
           </div>
           <canvas class="stat-graph" id="graph-write"></canvas>
         </div>
-        <div class="mc-card stat-card">
+        <div class="mc-card stat-card" data-graph="players">
           <div class="stat-top">
             <i class="pi stat-ic" data-ic="users"></i>
             <span class="stat-name">Игроки</span>
@@ -532,7 +685,7 @@
           </div>
           <canvas class="stat-graph" id="graph-players"></canvas>
         </div>
-        <div class="mc-card stat-card" id="stat-card-tps">
+        <div class="mc-card stat-card" id="stat-card-tps" data-graph="tps">
           <div class="stat-top">
             <i class="pi stat-ic" data-ic="zap"></i>
             <span class="stat-name">TPS (тики/сек)</span>
@@ -542,19 +695,7 @@
         </div>
       </div>
 
-      <div class="console-tools">
-        <div class="console-meta" id="console-meta"></div>
-        <div class="console-toggle-tools">
-          <label class="console-autoscroll-row">
-            <span class="mc-toggle" id="console-hide-warn"></span>
-            <span>Скрывать WARN</span>
-          </label>
-          <label class="console-autoscroll-row">
-            <span class="mc-toggle" id="console-autoscroll"></span>
-            <span>Автопрокрутка</span>
-          </label>
-        </div>
-      </div>
+      <div class="console-meta" id="console-meta"></div>
 
       <div class="console-wrap">
         <div class="java-alert console-lock hidden" id="console-lock">
@@ -996,12 +1137,6 @@
 
   <div id="toast-root" class="toast-root"></div>
 
-  <!-- колокол уведомлений (правый нижний угол) + история последних 10; стили в ките (.notif-*) -->
-  <button id="notif-bell" class="mc-btn sm notif-bell" title="Уведомления"><i class="pi" data-ic="bell"></i></button>
-  <div id="notif-pop" class="mc-card notif-pop hidden">
-    <div class="notif-pop-head">Уведомления</div>
-    <div id="notif-list"></div>
-  </div>
 </div>
 
 <script src="js/itemnames-ru.js"></script>

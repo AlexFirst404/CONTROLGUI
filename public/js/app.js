@@ -148,6 +148,7 @@
     currentId: null,
     current: null,
     currentTab: 'console',
+    appSettingsTab: 'remote',
     sse: null,
     pollTimer: null,
     history: [],
@@ -177,6 +178,12 @@
     consoleAutoscroll: true,
     consoleHideWarn: false,
     sugContext: null,
+    updateInfo: null,
+    updatePollTimer: null,
+    updatePollBusy: false,
+    updatePollFailures: 0,
+    updatePromptedVersion: null,
+    updateNotifiedVersion: null,
   };
 
   // ---------- права ----------
@@ -241,10 +248,16 @@
     const createMenu = $('[data-menu="create"]');
     if (createMenu) createMenu.classList.toggle('hidden', !canCreate);
     // вкладки сервера (по любому из соответствующих прав)
-    $$('.mc-tab').forEach((btn) => {
+    $$('#screen-server .mc-tab').forEach((btn) => {
       const tab = btn.dataset.tab;
       btn.classList.toggle('hidden', !tabAllowed(tab));
     });
+    const localOnly = !!state.remoteSession;
+    const launchCard = $('#launchmode-card'); if (launchCard) launchCard.classList.toggle('hidden', localOnly);
+    const localNote = $('#appset-local-only-note'); if (localNote) localNote.classList.toggle('hidden', !localOnly);
+    const raCard = $('#ra-card'); if (raCard && localOnly) raCard.classList.add('hidden');
+    const raNote = $('#ra-local-note'); if (raNote) raNote.classList.toggle('hidden', !localOnly);
+    const updateCard = $('#update-card'); if (updateCard && localOnly) updateCard.classList.add('hidden');
     // файловый тулбар по правам
     const fb = (sel, ok) => { const el = $(sel); if (el) el.classList.toggle('perm-hidden', !ok); };
     fb('#btn-new-file', can('files.write'));
@@ -289,25 +302,59 @@
 
   const notifHistory = []; // последние уведомления (для колокольчика, до 10)
   let notifPopupOpen = false;
-  function showToast(message, type) {
-    const el = document.createElement('div');
-    el.className = 'toast ' + (type === 'ok' ? 'toast-ok' : 'toast-error');
-    el.textContent = message;
-    $('#toast-root').appendChild(el);
-    setTimeout(() => el.remove(), 6000);
-    notifHistory.unshift({ message: String(message), type: type === 'ok' ? 'ok' : 'err', at: Date.now() });
+  function addNotification(message, type, options) {
+    const opts = options || {};
+    const id = opts.id ? String(opts.id) : null;
+    if (id) {
+      const old = notifHistory.findIndex((item) => item.id === id);
+      if (old >= 0) notifHistory.splice(old, 1);
+    }
+    notifHistory.unshift({
+      id: id,
+      message: String(message),
+      type: type === 'ok' ? 'ok' : 'err',
+      at: Date.now(),
+      actionLabel: opts.actionLabel || '',
+      action: typeof opts.action === 'function' ? opts.action : null,
+    });
     if (notifHistory.length > 10) notifHistory.length = 10;
     if (notifPopupOpen) renderNotifHistory();
   }
+  function showToast(message, type) {
+    if (!document.body.classList.contains('hide-toast-notifications')) {
+      const el = document.createElement('div');
+      el.className = 'toast ' + (type === 'ok' ? 'toast-ok' : 'toast-error');
+      el.textContent = message;
+      $('#toast-root').appendChild(el);
+      setTimeout(() => el.remove(), 6000);
+    }
+    addNotification(message, type);
+  }
   function renderNotifHistory() {
     const list = $('#notif-list'); if (!list) return;
-    if (!notifHistory.length) { list.innerHTML = '<div class="muted" style="padding:8px;font-size:12px">Пока нет уведомлений.</div>'; return; }
     list.innerHTML = '';
+    if (!notifHistory.length) {
+      const empty = document.createElement('div');
+      empty.className = 'hint notif-empty';
+      empty.textContent = 'Пока нет уведомлений.';
+      list.appendChild(empty);
+      return;
+    }
     for (const n of notifHistory) {
       const d = document.createElement('div'); d.className = 'notif-item ' + (n.type === 'ok' ? 'ok' : 'err');
       const t = document.createElement('span'); t.className = 'nt-time'; t.textContent = new Date(n.at).toLocaleTimeString('ru-RU');
       const m = document.createElement('span'); m.textContent = n.message;
       d.appendChild(t); d.appendChild(m); list.appendChild(d);
+      if (n.action && n.actionLabel) {
+        const action = document.createElement('button');
+        action.className = 'mc-btn sm';
+        action.textContent = n.actionLabel;
+        action.addEventListener('click', () => {
+          toggleNotifPopup(false);
+          n.action();
+        });
+        d.appendChild(action);
+      }
     }
   }
   function toggleNotifPopup(open) {
@@ -634,22 +681,93 @@
   // ---------- настройки панели (тема, масштаб и т.д.) ----------
 
   const APPSET_KEY = 'controlgui-settings';
-  const APPSET_DEFAULTS = { theme: 'theme-lime', scale: 100, bgAnim: true, graphs: true };
+  const GRAPH_KEYS = ['cpu', 'ram', 'read', 'write', 'players', 'tps'];
+  const APPSET_DEFAULTS = {
+    theme: 'theme-lime',
+    scale: 100,
+    bgAnim: true,
+    reducedMotion: false,
+    compactMode: false,
+    toastNotifications: true,
+    consoleAutoscroll: true,
+    consoleHideWarn: false,
+    consoleWrap: true,
+    consoleFontSize: 13,
+    hiddenGraphs: [],
+    autoUpdateCheck: true,
+  };
+
+  function clampNumber(value, min, max, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
+  }
 
   function loadAppSettings() {
-    try { return Object.assign({}, APPSET_DEFAULTS, JSON.parse(localStorage.getItem(APPSET_KEY)) || {}); }
-    catch (e) { return Object.assign({}, APPSET_DEFAULTS); }
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(APPSET_KEY)) || {}; }
+    catch (e) { saved = {}; }
+    const settings = Object.assign({}, APPSET_DEFAULTS, saved);
+    settings.theme = settings.theme === 'theme-blue' ? 'theme-blue' : 'theme-lime';
+    settings.scale = Math.round(clampNumber(settings.scale, 80, 140, 100) / 5) * 5;
+    settings.consoleFontSize = Math.round(clampNumber(settings.consoleFontSize, 11, 18, 13));
+    settings.hiddenGraphs = Array.isArray(settings.hiddenGraphs)
+      ? settings.hiddenGraphs.filter((key, i, all) => GRAPH_KEYS.includes(key) && all.indexOf(key) === i)
+      : [];
+    // Старый общий флаг «Графики» превращаем в шесть независимых настроек.
+    if (saved.graphs === false && !Object.prototype.hasOwnProperty.call(saved, 'hiddenGraphs')) {
+      settings.hiddenGraphs = GRAPH_KEYS.slice();
+    }
+    delete settings.graphs;
+    try {
+      if (!Object.prototype.hasOwnProperty.call(saved, 'consoleAutoscroll')) {
+        settings.consoleAutoscroll = localStorage.getItem('cgConsoleAutoScroll') !== '0';
+      }
+      if (!Object.prototype.hasOwnProperty.call(saved, 'consoleHideWarn')) {
+        settings.consoleHideWarn = localStorage.getItem('cgConsoleHideWarn') === '1';
+      }
+    } catch (e) { /* приватный режим не должен ломать настройки */ }
+    return settings;
   }
 
   function saveAppSettings(settings) {
-    try { localStorage.setItem(APPSET_KEY, JSON.stringify(settings)); } catch (e) { /* приватный режим */ }
+    try {
+      localStorage.setItem(APPSET_KEY, JSON.stringify(settings));
+      // Отдельное окно консоли и старые версии читают эти ключи напрямую.
+      localStorage.setItem('cgConsoleAutoScroll', settings.consoleAutoscroll === false ? '0' : '1');
+      localStorage.setItem('cgConsoleHideWarn', settings.consoleHideWarn === true ? '1' : '0');
+    } catch (e) { /* приватный режим */ }
+  }
+
+  function syncStatsRowVisibility() {
+    const row = $('#stats-row');
+    if (!row) return;
+    const visible = Array.from(row.querySelectorAll('.stat-card')).some((card) =>
+      !card.classList.contains('hidden') && !card.classList.contains('graph-pref-hidden'));
+    row.classList.toggle('hidden', !visible);
+  }
+
+  function applyGraphPreferences(settings) {
+    const hidden = new Set(settings.hiddenGraphs || []);
+    $$('#stats-row .stat-card[data-graph]').forEach((card) => {
+      card.classList.toggle('graph-pref-hidden', hidden.has(card.dataset.graph));
+    });
+    syncStatsRowVisibility();
   }
 
   function applyAppSettings(settings) {
     document.body.classList.remove('theme-lime', 'theme-blue');
     document.body.classList.add(settings.theme === 'theme-blue' ? 'theme-blue' : 'theme-lime');
     document.body.classList.toggle('no-bganim', settings.bgAnim === false);
-    document.body.classList.toggle('hide-graphs', settings.graphs === false);
+    document.body.classList.toggle('reduce-motion', settings.reducedMotion === true);
+    document.body.classList.toggle('compact-ui', settings.compactMode === true);
+    document.body.classList.toggle('hide-toast-notifications', settings.toastNotifications === false);
+    document.body.classList.toggle('console-nowrap', settings.consoleWrap === false);
+    document.body.style.setProperty('--console-font-size', settings.consoleFontSize + 'px');
+    state.consoleAutoscroll = settings.consoleAutoscroll !== false;
+    state.consoleHideWarn = settings.consoleHideWarn === true;
+    const consoleEl = $('#console');
+    if (consoleEl) consoleEl.classList.toggle('hide-warn', state.consoleHideWarn);
+    applyGraphPreferences(settings);
     if (EMBED) {
       // В моде масштаб интерфейса нельзя применять зумом body окна-настроек —
       // это масштабирует только саму страницу настроек внутри iframe, а не весь
@@ -664,21 +782,22 @@
   }
 
   let appSettings = loadAppSettings();
+  saveAppSettings(appSettings); // завершить миграцию и обновить legacy-ключи
   let scaleSlider = null;
+  let consoleFontSlider = null;
 
   function changeAppSettings(patch) {
     appSettings = Object.assign({}, appSettings, patch);
     saveAppSettings(appSettings);
     applyAppSettings(appSettings);
+    syncAppSettingsControls();
   }
 
   function setLaunchModeBtns(mode) {
     $$('#launchmode-btns .seg').forEach((b) => b.classList.toggle('sel', b.dataset.mode === mode));
   }
 
-  function openAppSettings() {
-    // текущий режим открытия (читается лаунчером при следующем старте)
-    API.launchMode().then((r) => setLaunchModeBtns(r && r.mode ? r.mode : 'app')).catch(() => {});
+  function ensureAppSettingsControls() {
     if (!scaleSlider) {
       scaleSlider = mkSlider($('#set-scale'), {
         min: 80, max: 140, step: 5, value: appSettings.scale,
@@ -690,11 +809,335 @@
     } else {
       scaleSlider.set(appSettings.scale);
     }
-    $('#set-graphs').classList.toggle('on', appSettings.graphs !== false);
-    API.trayMinimize().then((r) => $('#set-tray').classList.toggle('on', !!(r && r.enabled))).catch(() => {});
-    refreshRemoteAccessCard();
-    $('#appset-root').classList.remove('hidden');
-    setTimeout(() => scaleSlider.refresh(), 30);
+    if (!consoleFontSlider) {
+      consoleFontSlider = mkSlider($('#set-console-font'), {
+        min: 11, max: 18, step: 1, value: appSettings.consoleFontSize,
+        format: (v) => v + ' px', labelEl: $('#set-console-font-val'),
+        onChange: (v) => { if (v !== appSettings.consoleFontSize) changeAppSettings({ consoleFontSize: v }); },
+      });
+    } else {
+      consoleFontSlider.set(appSettings.consoleFontSize);
+    }
+  }
+
+  function syncAppSettingsControls() {
+    $$('#set-theme-btns .seg').forEach((b) => b.classList.toggle('sel', b.dataset.theme === appSettings.theme));
+    const toggle = (id, on) => { const el = $(id); if (el) el.classList.toggle('on', !!on); };
+    toggle('#set-bg-anim', appSettings.bgAnim !== false);
+    toggle('#set-reduced-motion', appSettings.reducedMotion === true);
+    toggle('#set-compact', appSettings.compactMode === true);
+    toggle('#set-toast-notifications', appSettings.toastNotifications !== false);
+    toggle('#console-autoscroll', appSettings.consoleAutoscroll !== false);
+    toggle('#console-hide-warn', appSettings.consoleHideWarn === true);
+    toggle('#set-console-wrap', appSettings.consoleWrap !== false);
+    toggle('#set-update-auto-check', appSettings.autoUpdateCheck !== false);
+    $$('[data-graph-setting]').forEach((el) =>
+      el.classList.toggle('on', !(appSettings.hiddenGraphs || []).includes(el.dataset.graphSetting)));
+    if (scaleSlider) scaleSlider.set(appSettings.scale);
+    if (consoleFontSlider) consoleFontSlider.set(appSettings.consoleFontSize);
+  }
+
+  function moveAppSettingsTabIndicator(animate) {
+    const bar = $('#appset-tab-ind');
+    const active = $('#appset-tabs .mc-tab.sel');
+    if (!bar || !active) return;
+    const inset = 10;
+    const width = bar.parentElement.scrollWidth;
+    const left = active.offsetLeft + inset;
+    const right = width - (active.offsetLeft + active.offsetWidth - inset);
+    bar.style.width = 'auto';
+    bar.style.transition = animate === false ? 'none' : 'left .24s cubic-bezier(.3,0,.2,1), right .24s cubic-bezier(.3,0,.2,1)';
+    bar.style.left = left + 'px';
+    bar.style.right = right + 'px';
+  }
+
+  function switchAppSettingsTab(tab, push) {
+    const allowed = ['remote', 'application', 'interface'];
+    if (!allowed.includes(tab)) tab = state.remoteSession ? 'interface' : 'remote';
+    state.appSettingsTab = tab;
+    $$('#appset-tabs .mc-tab').forEach((btn) => btn.classList.toggle('sel', btn.dataset.appsetTab === tab));
+    $('#appset-pane-remote').classList.toggle('hidden', tab !== 'remote');
+    $('#appset-pane-application').classList.toggle('hidden', tab !== 'application');
+    $('#appset-pane-interface').classList.toggle('hidden', tab !== 'interface');
+    moveAppSettingsTabIndicator(true);
+    if (push !== false && state.screen === 'app-settings') pushHash('#settings/' + tab);
+    if (tab === 'remote' && state.me && !state.remoteSession) refreshRemoteAccessCard();
+    if (tab === 'application' && state.me && !state.remoteSession) refreshUpdateStatus({ announce: false });
+  }
+
+  function openAppSettings(tab) {
+    ensureAppSettingsControls();
+    syncAppSettingsControls();
+    const remembered = state.remoteSession && state.appSettingsTab === 'remote' ? 'interface' : state.appSettingsTab;
+    const target = ['remote', 'application', 'interface'].includes(tab)
+      ? tab : (remembered || (state.remoteSession ? 'interface' : 'remote'));
+    state.appSettingsTab = target;
+    showScreen('app-settings');
+    switchAppSettingsTab(target, false);
+    if (state.me && !state.remoteSession) {
+      // Эти параметры принадлежат машине с панелью, а не удалённому браузеру.
+      API.launchMode().then((r) => setLaunchModeBtns(r && r.mode ? r.mode : 'app')).catch(() => {});
+      API.trayMinimize().then((r) => $('#set-tray').classList.toggle('on', !!(r && r.enabled))).catch(() => {});
+      refreshRemoteAccessCard();
+    }
+    setTimeout(() => {
+      if (scaleSlider) scaleSlider.refresh();
+      if (consoleFontSlider) consoleFontSlider.refresh();
+      moveAppSettingsTabIndicator(false);
+    }, 30);
+  }
+
+  // ---------- обновления приложения (официальные релизы GitHub) ----------
+
+  function updatesSupported() {
+    return !!(window.API && typeof API.updateStatus === 'function' &&
+      typeof API.updateCheck === 'function' && typeof API.updateDownload === 'function' &&
+      typeof API.updateInstall === 'function' && typeof API.updateDismiss === 'function');
+  }
+
+  function updatesAllowed() {
+    return updatesSupported() && !!state.me && !state.remoteSession;
+  }
+
+  function updateBusy(phase) {
+    return phase === 'checking' || phase === 'downloading' || phase === 'launching' || phase === 'installing';
+  }
+
+  function updateReady(info) {
+    return !!(info && (info.downloaded || info.phase === 'downloaded'));
+  }
+
+  function updateInstallLabel(mode) {
+    if (mode === 'package-manager') return 'Установить';
+    if (mode === 'open') return 'Открыть установщик';
+    if (mode === 'manual') return 'Показать расположение файла';
+    return 'Установить и перезапустить';
+  }
+
+  function updatePhaseText(info) {
+    const phase = (info && info.phase) || 'idle';
+    if (phase === 'checking') return 'Проверяю официальный релиз GitHub…';
+    if (phase === 'available') return 'Доступна новая версия. Её можно скачать сейчас или позже.';
+    if (phase === 'downloading') return 'Загружаю и проверяю пакет обновления…';
+    if (phase === 'downloaded') return 'Пакет скачан и готов к установке.';
+    if (phase === 'launching') return 'Подготавливаю запуск системного установщика…';
+    if (phase === 'installing') return 'Запускаю установщик и перезапуск приложения…';
+    if (phase === 'error') return 'Не удалось подготовить обновление.';
+    return info && info.available ? 'Доступна новая версия.' : 'Установлена актуальная версия.';
+  }
+
+  function normalizedUpdateProgress(info) {
+    const done = Number(info && info.downloadedBytes) || 0;
+    const total = Number(info && info.totalBytes) || 0;
+    let progress = Number(info && info.progress);
+    if (Number.isFinite(progress)) progress = progress <= 1 ? progress * 100 : progress;
+    else progress = total ? done / total * 100 : 0;
+    if (info && info.phase === 'downloaded') progress = 100;
+    return Math.max(0, Math.min(100, progress));
+  }
+
+  function updateProgressLabel(info) {
+    const done = Number(info && info.downloadedBytes) || 0;
+    const total = Number(info && info.totalBytes) || 0;
+    const percent = normalizedUpdateProgress(info);
+    if (info && (info.phase === 'launching' || info.phase === 'installing')) return 'Запуск установки…';
+    if (!total) return 'Загрузка: ' + Math.round(percent) + '%';
+    return 'Загрузка: ' + fmtBytes(done) + ' из ' + fmtBytes(total) + ' · ' + Math.round(percent) + '%';
+  }
+
+  function setUpdateProgress(wrapSel, fillSel, labelSel, info) {
+    const wrap = $(wrapSel); const fill = $(fillSel); const label = $(labelSel);
+    if (!wrap || !fill || !label) return;
+    const visible = !!info && (info.phase === 'downloading' || info.phase === 'downloaded' ||
+      info.phase === 'launching' || info.phase === 'installing');
+    wrap.classList.toggle('hidden', !visible);
+    fill.style.width = normalizedUpdateProgress(info) + '%';
+    label.textContent = updateProgressLabel(info || {});
+  }
+
+  function renderUpdateStatus(info) {
+    state.updateInfo = info || null;
+    const card = $('#update-card');
+    if (!card) return;
+    const supported = updatesAllowed();
+    card.classList.toggle('hidden', !supported);
+    if (!supported) return;
+    info = info || { phase: 'idle' };
+    $('#update-current').textContent = info.currentVersion || state.appVersion || '—';
+    $('#update-latest').textContent = info.latestVersion || (info.available ? 'не определена' : '—');
+    $('#update-state').textContent = updatePhaseText(info);
+    $('#update-error').textContent = info.phase === 'error' ? (info.error || 'Неизвестная ошибка обновления.') : '';
+    setUpdateProgress('#update-progress-wrap', '#update-progress-fill', '#update-progress-label', info);
+
+    const busy = updateBusy(info.phase);
+    const ready = updateReady(info);
+    const canDownload = !!info.canDownload && !!info.asset && !ready && !updateBusy(info.phase);
+    $('#update-check-btn').disabled = busy;
+    $('#update-download-btn').classList.toggle('hidden', !canDownload);
+    $('#update-download-btn').disabled = busy;
+    $('#update-install-btn').classList.toggle('hidden', !ready);
+    $('#update-install-btn').disabled = info.phase === 'launching' || info.phase === 'installing';
+    $('#update-install-label').textContent = updateInstallLabel(info.installMode);
+
+    $('#update-modal-title').textContent = info.releaseName ||
+      (info.latestVersion ? 'CONTROLGUI ' + info.latestVersion : 'Новая версия CONTROLGUI');
+    const notes = String(info.notes || '').trim();
+    $('#update-modal-summary').textContent = notes
+      ? notes.slice(0, 900) + (notes.length > 900 ? '…' : '')
+      : updatePhaseText(info);
+    $('#update-modal-error').textContent = info.phase === 'error' ? (info.error || 'Не удалось обновить приложение.') : '';
+    setUpdateProgress('#update-modal-progress-wrap', '#update-modal-progress-fill', '#update-modal-progress-label', info);
+    $('#update-modal-download').classList.toggle('hidden', !canDownload);
+    $('#update-modal-download').disabled = busy;
+    $('#update-modal-install').classList.toggle('hidden', !ready);
+    $('#update-modal-install').disabled = info.phase === 'launching' || info.phase === 'installing';
+    $('#update-modal-install-label').textContent = updateInstallLabel(info.installMode);
+  }
+
+  function openUpdateModal() {
+    if (!updatesAllowed() || !state.updateInfo || !state.updateInfo.available) return;
+    renderUpdateStatus(state.updateInfo);
+    $('#update-modal').classList.remove('hidden');
+  }
+
+  function maybeAnnounceUpdate(info) {
+    if (!info || !info.available || !info.latestVersion || info.dismissed || state.remoteSession || EMBED) return;
+    if (state.updateNotifiedVersion !== info.latestVersion) {
+      state.updateNotifiedVersion = info.latestVersion;
+      addNotification('Доступно обновление CONTROLGUI ' + info.latestVersion + '.', 'ok', {
+        id: 'update:' + info.latestVersion,
+        actionLabel: 'Открыть',
+        action: openUpdateModal,
+      });
+    }
+    if (state.screen === 'list' && state.updatePromptedVersion !== info.latestVersion) {
+      state.updatePromptedVersion = info.latestVersion;
+      openUpdateModal();
+    }
+  }
+
+  async function refreshUpdateStatus(options) {
+    const opts = options || {};
+    if (!updatesAllowed()) {
+      const card = $('#update-card'); if (card) card.classList.add('hidden');
+      return null;
+    }
+    try {
+      const info = await API.updateStatus();
+      renderUpdateStatus(info);
+      if (opts.announce !== false) maybeAnnounceUpdate(info);
+      return info;
+    } catch (e) {
+      if (opts.manual) showToast('Не удалось получить состояние обновлений: ' + e.message);
+      const err = $('#update-error'); if (err) err.textContent = e.message;
+      return null;
+    }
+  }
+
+  function stopUpdatePolling() {
+    if (state.updatePollTimer) clearInterval(state.updatePollTimer);
+    state.updatePollTimer = null;
+    state.updatePollBusy = false;
+    state.updatePollFailures = 0;
+  }
+
+  function startUpdatePolling() {
+    if (state.updatePollTimer || !updatesAllowed()) return;
+    state.updatePollTimer = setInterval(async () => {
+      if (state.updatePollBusy) return;
+      state.updatePollBusy = true;
+      try {
+        const info = await refreshUpdateStatus({ announce: false });
+        if (!info) {
+          // Один ECONNRESET не должен замораживать прогресс: прекращаем опрос
+          // только после трёх подряд потерь связи (при установке панель штатно уйдёт).
+          state.updatePollFailures++;
+          if (state.updatePollFailures >= 3) stopUpdatePolling();
+        } else {
+          state.updatePollFailures = 0;
+        }
+        if (info && !updateBusy(info.phase)) {
+          stopUpdatePolling();
+        }
+      } finally {
+        state.updatePollBusy = false;
+      }
+    }, 700);
+  }
+
+  async function checkForUpdates(manual) {
+    if (!updatesAllowed()) return;
+    renderUpdateStatus(Object.assign({}, state.updateInfo || {}, { phase: 'checking', error: null }));
+    try {
+      const info = await API.updateCheck(!!manual);
+      renderUpdateStatus(info);
+      maybeAnnounceUpdate(info);
+      if (manual && !info.available) showToast('Установлена актуальная версия CONTROLGUI.', 'ok');
+    } catch (e) {
+      const latest = await refreshUpdateStatus({ announce: false });
+      if (!latest) renderUpdateStatus(Object.assign({}, state.updateInfo || {}, { phase: 'error', error: e.message }));
+      if (manual) showToast('Не удалось проверить обновления: ' + e.message);
+    }
+  }
+
+  async function downloadUpdate() {
+    if (!updatesAllowed()) return;
+    renderUpdateStatus(Object.assign({}, state.updateInfo || {}, { phase: 'downloading', error: null, progress: 0 }));
+    startUpdatePolling();
+    try {
+      const info = await API.updateDownload();
+      if (info) renderUpdateStatus(Object.assign({}, state.updateInfo || {}, info));
+      startUpdatePolling();
+    } catch (e) {
+      stopUpdatePolling();
+      const latest = await refreshUpdateStatus({ announce: false });
+      if (!latest) renderUpdateStatus(Object.assign({}, state.updateInfo || {}, { phase: 'error', error: e.message }));
+      showToast('Не удалось скачать обновление: ' + e.message);
+    }
+  }
+
+  async function installUpdate() {
+    if (!updatesAllowed() || !updateReady(state.updateInfo)) return;
+    renderUpdateStatus(Object.assign({}, state.updateInfo || {}, { phase: 'launching', error: null }));
+    try {
+      const result = await API.updateInstall();
+      const message = result && result.message ? result.message : 'Установщик обновления запущен.';
+      showToast(message, 'ok');
+      if (result && result.manual) {
+        renderUpdateStatus(Object.assign({}, state.updateInfo || {}, { phase: 'downloaded' }));
+      } else {
+        const status = await refreshUpdateStatus({ announce: false });
+        if ((status && (status.phase === 'launching' || status.phase === 'installing')) ||
+            (result && (result.phase === 'launching' || result.phase === 'installing'))) {
+          startUpdatePolling();
+        }
+      }
+    } catch (e) {
+      const latest = await refreshUpdateStatus({ announce: false });
+      if (!latest) renderUpdateStatus(Object.assign({}, state.updateInfo || {}, { phase: 'error', error: e.message }));
+      showToast('Не удалось запустить установку: ' + e.message);
+    }
+  }
+
+  async function dismissUpdatePrompt() {
+    const info = state.updateInfo;
+    $('#update-modal').classList.add('hidden');
+    if (!info || !info.latestVersion || !updatesAllowed()) return;
+    try {
+      await API.updateDismiss(info.latestVersion);
+      info.dismissed = true;
+      renderUpdateStatus(info);
+    } catch (e) { /* закрытие модалки не должно зависеть от сети */ }
+  }
+
+  async function initUpdates() {
+    if (!updatesAllowed()) {
+      const card = $('#update-card'); if (card) card.classList.add('hidden');
+      return;
+    }
+    const info = await refreshUpdateStatus({ announce: true });
+    if (info && updateBusy(info.phase)) startUpdatePolling();
+    if (appSettings.autoUpdateCheck !== false) await checkForUpdates(false);
   }
 
   // ---------- удалённый доступ (HTTPS + пароль) ----------
@@ -706,8 +1149,14 @@
   async function refreshRemoteAccessCard() {
     const card = $('#ra-card');
     if (!card) return;
+    if (state.remoteSession) {
+      card.classList.add('hidden');
+      const note = $('#ra-local-note'); if (note) note.classList.remove('hidden');
+      return;
+    }
     try { raStatus = await API.remoteAccess(); } catch (e) { card.classList.add('hidden'); return; }
     card.classList.remove('hidden');
+    const note = $('#ra-local-note'); if (note) note.classList.add('hidden');
     $('#ra-toggle').classList.toggle('on', !!raStatus.enabled);
     const portEl = $('#ra-port');
     if (portEl && document.activeElement !== portEl) portEl.value = raStatus.port;
@@ -1273,6 +1722,7 @@
     $('#screen-server').classList.toggle('hidden', name !== 'server');
     $('#screen-proxy').classList.toggle('hidden', name !== 'proxy');
     $('#screen-remote').classList.toggle('hidden', name !== 'remote');
+    $('#screen-app-settings').classList.toggle('hidden', name !== 'app-settings');
     // бургер-меню — на всех экранах
     $('#btn-burger').classList.remove('hidden');
     if (name === 'create') updateJavaInstallUI();
@@ -1289,7 +1739,9 @@
     else if (name === 'create') pushHash('#create');
     else if (name === 'proxy') pushHash('#proxy');
     else if (name === 'remote') pushHash('#remote');
+    else if (name === 'app-settings') pushHash('#settings/' + (state.appSettingsTab || 'remote'));
     syncServerPaneHeight();
+    if (name === 'list' && state.updateInfo) maybeAnnounceUpdate(state.updateInfo);
   }
 
   function syncServerPaneHeight() {
@@ -1325,6 +1777,11 @@
       } else if (hash === '#remote') {
         if (state.remoteSession) { showScreen('list'); return; }
         if (state.screen !== 'remote') { showScreen('remote'); loadRemoteConns(); }
+      } else if (/^#settings(?:\/(remote|application|interface))?$/.test(hash)) {
+        const match = hash.match(/^#settings(?:\/(remote|application|interface))?$/);
+        const tab = (match && match[1]) || (state.remoteSession ? 'interface' : 'remote');
+        if (state.screen !== 'app-settings') openAppSettings(tab);
+        else switchAppSettingsTab(tab, false);
       } else if (hash.indexOf('#server=') === 0) {
         const rest = hash.slice(8);
         const id = rest.split('/tab/')[0].split('/player/')[0];
@@ -1380,7 +1837,8 @@
         if (state.memCreateSlider) state.memCreateSlider.setRange(1024, state.maxMemMb);
       }
       if (state.cpuCreateSlider) state.cpuCreateSlider.refresh(); // обновить «N ядер» в подписи
-      $('#about-version').textContent = String(st.app || '').replace('CONTROLGUI', '').trim();
+      state.appVersion = String(st.app || '').replace('CONTROLGUI', '').trim();
+      $('#about-version').textContent = state.appVersion;
       state.javaAvailable = !!(st.java && st.java.available);
       const alert = $('#java-alert');
       if (state.javaAvailable) {
@@ -1475,6 +1933,7 @@
     setInterval(syncFiles, 4000);         // автосинхронизация вкладки «Файлы»
     routeInitialHash();
     if (EMBED === 'settings') openAppSettings(); // окно настроек панели
+    guard(initUpdates);
   }
   function routeInitialHash() {
     if (location.hash === '#create') {
@@ -1488,6 +1947,11 @@
       showScreen('remote'); openRcEditor(null); // диплинк «добавить панель»
     } else if (location.hash === '#proxy') {
       showScreen('proxy'); renderProxyViz();
+    } else if (/^#settings(?:\/(remote|application|interface))?$/.test(location.hash)) {
+      const match = location.hash.match(/^#settings(?:\/(remote|application|interface))?$/);
+      const tab = (match && match[1]) || (state.remoteSession ? 'interface' : 'remote');
+      if (location.hash === '#settings') history.replaceState(null, '', '#settings/' + tab);
+      openAppSettings(tab);
     } else if (location.hash.startsWith('#server=')) {
       const rest = location.hash.slice(8);
       const playerSplit = rest.split('/player/');
@@ -2145,6 +2609,9 @@
     const grid = $('#info-grid');
     const running = server.status === 'running' || server.status === 'starting';
     const uptime = (running && server.startedAt) ? fmtDuration(Date.now() - server.startedAt) : '—';
+    const createdDate = server.createdAt ? new Date(server.createdAt) : null;
+    const createdText = createdDate && Number.isFinite(createdDate.getTime())
+      ? createdDate.toLocaleString('ru-RU') : '—';
     const ramLine = fmtMem(server.memoryMb) + ' выделено' + (state.totalMemMb ? ' · всего в системе ' + fmtMem(state.totalMemMb) : '');
     const cpuLine = (state.cpuModel ? state.cpuModel : 'CPU') + (state.cores ? ' · ' + state.cores + ' ' + coreWord(state.cores) : '') +
       (server.cpuPercent != null && server.cpuPercent < 100 ? ' · лимит ' + server.cpuPercent + '%' : '');
@@ -2155,7 +2622,7 @@
       ['Процессор', cpuLine],
       ['Java', server.javaPath ? server.javaPath : (state.javaVersion ? state.javaVersion + ' (авто)' : '—')],
       ['Система', platformName(state.platform)],
-      ['Создан', new Date(server.createdAt).toLocaleString('ru-RU')],
+      ['Создан', createdText],
     ];
     grid.innerHTML = '';
     const addKey = (label) => {
@@ -2274,9 +2741,11 @@
     if (!server || !serverId) return;
     const seq = (state.statsSeq = (state.statsSeq || 0) + 1);
     const active = server.status === 'running' || server.status === 'starting' || server.status === 'stopping';
-    // TPS-карточку показываем только у ядер, поддерживающих команду tps (Paper-совместимые)
-    const paperTps = ['paper', 'purpur', 'folia', 'mohist'].includes(server.type);
-    if ($('#stat-card-tps')) $('#stat-card-tps').classList.toggle('hidden', !paperTps);
+    // Новые backend-версии сообщают поддержку по реальному ответу ядра; fallback
+    // сохраняет TPS при подключении к более старой удалённой панели.
+    const supportsTps = server.tpsSupported === true || ['paper', 'purpur', 'folia', 'mohist'].includes(server.type);
+    if ($('#stat-card-tps')) $('#stat-card-tps').classList.toggle('hidden', !supportsTps);
+    syncStatsRowVisibility();
     if (!active) {
       ['#stat-cpu', '#stat-ram', '#stat-read', '#stat-write', '#stat-players', '#stat-tps'].forEach((id) => { $(id).textContent = '—'; });
       ['#graph-cpu', '#graph-ram', '#graph-read', '#graph-write', '#graph-players', '#graph-tps'].forEach((id) => sparkline(id, [], 1));
@@ -2303,7 +2772,7 @@
       sparkline('#graph-read', pts.map((p) => p.readBps), null);
       sparkline('#graph-write', pts.map((p) => p.writeBps), null);
       sparkline('#graph-players', pts.map((p) => p.players || 0), Math.max(state.maxPlayers || 0, 5));
-      if (paperTps) {
+      if (supportsTps) {
         const curTps = (last && last.tps != null) ? last.tps : (server.tps != null ? parseFloat(server.tps) : null);
         $('#stat-tps').textContent = curTps != null ? curTps.toFixed(1) + ' / 20' : 'сбор…';
         // null-точки (до первого замера) заполняем последним известным — линия непрерывна
@@ -5226,7 +5695,7 @@
      в сторону цели и плавно сжимается, скорость нелинейная. */
   function moveTabIndicator(animate) {
     const bar = $('#tab-ind');
-    const active = document.querySelector('.mc-tab.sel');
+    const active = $('#screen-server .mc-tab.sel');
     if (!bar || !active) return;
     const inset = 10; // отступ черты от краёв кнопки (как у кита)
     const barParentWidth = bar.parentElement.scrollWidth;
@@ -5274,7 +5743,7 @@
     if (state.currentId) {
       pushHash('#server=' + state.currentId + '/tab/' + tab);
     }
-    $$('.mc-tab').forEach((btn) => btn.classList.toggle('sel', btn.dataset.tab === tab));
+    $$('#screen-server .mc-tab').forEach((btn) => btn.classList.toggle('sel', btn.dataset.tab === tab));
     moveTabIndicator(state.tabIndReady === true);
     state.tabIndReady = true;
     $('#tab-console').classList.toggle('hidden', tab !== 'console');
@@ -6110,15 +6579,29 @@
     // бургер-меню
     const menuToggle = (open) => {
       const want = open != null ? open : !$('#app-menu').classList.contains('open');
+      if (want) toggleNotifPopup(false);
       $('#app-menu').classList.toggle('open', want);
       $('#app-scrim').classList.toggle('open', want);
       $('#burger-ic').classList.toggle('open', want);
     };
     $('#btn-burger').addEventListener('click', () => menuToggle());
+    $('#btn-app-settings').addEventListener('click', async () => {
+      menuToggle(false);
+      toggleNotifPopup(false);
+      if (state.screen === 'server' && state.currentTab === 'settings' && isSettingsDirty()) {
+        const leave = await confirmDialog(
+          'На вкладке «Настройки» есть несохранённые изменения. Выйти без сохранения?',
+          { title: 'Несохранённые изменения', yesText: 'Выйти без сохранения', danger: true });
+        if (!leave) return;
+        discardSettingsChanges();
+      }
+      openAppSettings();
+    });
     $('#app-scrim').addEventListener('click', () => menuToggle(false));
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         menuToggle(false);
+        if (!$('#update-modal').classList.contains('hidden')) dismissUpdatePrompt();
         closeServerContextMenu();
       }
     });
@@ -6134,7 +6617,7 @@
     $$('#app-menu .menu-item[data-menu]').forEach((item) => item.addEventListener('click', async () => {
       menuToggle(false);
       const action = item.dataset.menu;
-      const leavesServer = ['home', 'create', 'proxy', 'remote', 'logout'].includes(action);
+      const leavesServer = ['home', 'create', 'proxy', 'remote', 'settings', 'logout'].includes(action);
       if (leavesServer && state.screen === 'server' && state.currentTab === 'settings' && isSettingsDirty()) {
         const leave = await confirmDialog(
           'На вкладке «Настройки» есть несохранённые изменения. Выйти без сохранения?',
@@ -6330,7 +6813,7 @@
     // кнопка «назад» браузера/окна — навигация внутри панели, без выхода из аккаунта
     window.addEventListener('popstate', routeFromHash);
 
-    $$('.mc-tab').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+    $$('#screen-server .mc-tab').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
     $('#btn-start').addEventListener('click', () => {
       const serverId = state.currentId;
@@ -6463,22 +6946,39 @@
       if (event.key === 'Enter') { event.preventDefault(); addToWhitelist(); }
     });
 
-    // настройки панели
-    $('#appset-close').addEventListener('click', () => $('#appset-root').classList.add('hidden'));
-    $('#appset-root').addEventListener('click', (event) => {
-      if (event.target === $('#appset-root')) $('#appset-root').classList.add('hidden');
-    });
+    // полноценный экран настроек панели
+    $('#appset-back').addEventListener('click', () => { showScreen('list'); guard(loadServers); });
+    $$('#appset-tabs .mc-tab').forEach((btn) =>
+      btn.addEventListener('click', () => switchAppSettingsTab(btn.dataset.appsetTab, true)));
     // колокол уведомлений: история последних 10
-    if ($('#notif-bell')) $('#notif-bell').addEventListener('click', (e) => { e.stopPropagation(); toggleNotifPopup(); });
+    if ($('#notif-bell')) $('#notif-bell').addEventListener('click', (e) => {
+      e.stopPropagation();
+      menuToggle(false);
+      toggleNotifPopup();
+    });
     document.addEventListener('click', (e) => {
       const pop = $('#notif-pop'); const bell = $('#notif-bell');
       if (notifPopupOpen && pop && !pop.contains(e.target) && bell && !bell.contains(e.target)) toggleNotifPopup(false);
+    });
+    window.addEventListener('storage', (event) => {
+      if (![APPSET_KEY, 'cgConsoleAutoScroll', 'cgConsoleHideWarn'].includes(event.key)) return;
+      const wasAutoScroll = state.consoleAutoscroll;
+      appSettings = loadAppSettings();
+      applyAppSettings(appSettings);
+      syncAppSettingsControls();
+      _accentBright = null;
+      if (!wasAutoScroll && state.consoleAutoscroll) {
+        const consoleEl = $('#console');
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+      if (state.screen === 'server' && state.currentTab === 'console') loadStats();
     });
     // модалка описания плагина/мода: закрытие по крестику / клику вне / Esc
     if ($('#cm-close')) $('#cm-close').addEventListener('click', () => $('#content-modal').classList.add('hidden'));
     if ($('#content-modal')) $('#content-modal').addEventListener('click', (e) => { if (e.target.id === 'content-modal') $('#content-modal').classList.add('hidden'); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const cm = $('#content-modal'); if (cm) cm.classList.add('hidden'); const pw = $('#pw-modal'); if (pw) pw.classList.add('hidden'); } });
     $$('#launchmode-btns .seg').forEach((b) => b.addEventListener('click', async () => {
+      if (state.remoteSession) return;
       const mode = b.dataset.mode;
       const cur = $('#launchmode-btns .seg.sel');
       if (cur && cur.dataset.mode === mode) return; // режим уже выбран
@@ -6493,13 +6993,82 @@
         showToast('Режим переключён на «' + label + '»…', 'ok');
       } catch (e) { showToast(e.message); }
     }));
-    mkToggle($('#set-graphs'), appSettings.graphs !== false);
-    $('#set-graphs').addEventListener('click', () =>
-      changeAppSettings({ graphs: $('#set-graphs').classList.contains('on') }));
+
+    $$('#set-theme-btns .seg').forEach((button) => button.addEventListener('click', () => {
+      changeAppSettings({ theme: button.dataset.theme === 'theme-blue' ? 'theme-blue' : 'theme-lime' });
+      // Графики перерисовываются сразу новым акцентным цветом.
+      _accentBright = null;
+      if (state.screen === 'server' && state.currentTab === 'console') loadStats();
+    }));
+
+    const bindSettingToggle = (selector, initialOn, onChange) => {
+      const el = $(selector);
+      mkToggle(el, initialOn);
+      el.addEventListener('click', () => onChange(el.classList.contains('on')));
+    };
+    bindSettingToggle('#set-bg-anim', appSettings.bgAnim !== false, (on) => changeAppSettings({ bgAnim: on }));
+    bindSettingToggle('#set-reduced-motion', appSettings.reducedMotion === true, (on) => changeAppSettings({ reducedMotion: on }));
+    bindSettingToggle('#set-compact', appSettings.compactMode === true, (on) => changeAppSettings({ compactMode: on }));
+    bindSettingToggle('#set-toast-notifications', appSettings.toastNotifications !== false, (on) => changeAppSettings({ toastNotifications: on }));
+    bindSettingToggle('#set-console-wrap', appSettings.consoleWrap !== false, (on) => changeAppSettings({ consoleWrap: on }));
+    bindSettingToggle('#console-autoscroll', appSettings.consoleAutoscroll !== false, (on) => {
+      changeAppSettings({ consoleAutoscroll: on });
+      if (on) {
+        const consoleEl = $('#console');
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+        updateConsoleJump();
+      }
+    });
+    bindSettingToggle('#console-hide-warn', appSettings.consoleHideWarn === true, (on) => {
+      changeAppSettings({ consoleHideWarn: on });
+      updateConsoleJump();
+    });
+    bindSettingToggle('#set-update-auto-check', appSettings.autoUpdateCheck !== false, (on) =>
+      changeAppSettings({ autoUpdateCheck: on }));
+    $$('[data-graph-setting]').forEach((el) => {
+      const key = el.dataset.graphSetting;
+      mkToggle(el, !(appSettings.hiddenGraphs || []).includes(key));
+      el.addEventListener('click', () => {
+        const hidden = new Set(appSettings.hiddenGraphs || []);
+        if (el.classList.contains('on')) hidden.delete(key); else hidden.add(key);
+        changeAppSettings({ hiddenGraphs: GRAPH_KEYS.filter((name) => hidden.has(name)) });
+      });
+    });
+    $('#set-interface-reset').addEventListener('click', async () => {
+      const ok = await confirmDialog('Вернуть стандартное оформление, графики и параметры консоли?',
+        { title: 'Сброс интерфейса', yesText: 'Сбросить' });
+      if (!ok) return;
+      changeAppSettings({
+        theme: APPSET_DEFAULTS.theme,
+        scale: APPSET_DEFAULTS.scale,
+        bgAnim: APPSET_DEFAULTS.bgAnim,
+        reducedMotion: APPSET_DEFAULTS.reducedMotion,
+        compactMode: APPSET_DEFAULTS.compactMode,
+        toastNotifications: APPSET_DEFAULTS.toastNotifications,
+        consoleAutoscroll: APPSET_DEFAULTS.consoleAutoscroll,
+        consoleHideWarn: APPSET_DEFAULTS.consoleHideWarn,
+        consoleWrap: APPSET_DEFAULTS.consoleWrap,
+        consoleFontSize: APPSET_DEFAULTS.consoleFontSize,
+        hiddenGraphs: [],
+      });
+      showToast('Настройки интерфейса сброшены.', 'ok');
+    });
+
     mkToggle($('#set-tray'), false);
     $('#set-tray').addEventListener('click', () => {
+      if (state.remoteSession) return;
       const on = $('#set-tray').classList.contains('on');
       API.setTrayMinimize(on).catch((e) => { $('#set-tray').classList.toggle('on', !on); showToast(e.message); });
+    });
+    $('#update-check-btn').addEventListener('click', () => checkForUpdates(true));
+    $('#update-download-btn').addEventListener('click', downloadUpdate);
+    $('#update-install-btn').addEventListener('click', installUpdate);
+    $('#update-modal-download').addEventListener('click', downloadUpdate);
+    $('#update-modal-install').addEventListener('click', installUpdate);
+    $('#update-modal-later').addEventListener('click', dismissUpdatePrompt);
+    $('#update-modal-close').addEventListener('click', dismissUpdatePrompt);
+    $('#update-modal').addEventListener('click', (event) => {
+      if (event.target === $('#update-modal')) dismissUpdatePrompt();
     });
     // карточка удалённого доступа в настройках панели
     bindRemoteAccessCard();
@@ -6515,12 +7084,14 @@
           moveTabIndicator(false);
           if (state.currentTab === 'console') loadStats();
         }
+        if (state.screen === 'app-settings') moveAppSettingsTabIndicator(false);
       }, 200);
     });
     // после загрузки пиксельного шрифта ширины вкладок меняются — поправляем черту
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => {
         if (state.screen === 'server') moveTabIndicator(false);
+        if (state.screen === 'app-settings') moveAppSettingsTabIndicator(false);
       });
     }
   }
@@ -6532,30 +7103,6 @@
   initCycleButtons(document);
   mkToggle($('#toggle-online'), true);
   mkToggle($('#toggle-pvp'), true);
-  try { state.consoleAutoscroll = localStorage.getItem('cgConsoleAutoScroll') !== '0'; }
-  catch (e) { state.consoleAutoscroll = true; }
-  try { state.consoleHideWarn = localStorage.getItem('cgConsoleHideWarn') === '1'; }
-  catch (e) { state.consoleHideWarn = false; }
-  mkToggle($('#console-autoscroll'), state.consoleAutoscroll);
-  $('#console-autoscroll').addEventListener('click', () => {
-    state.consoleAutoscroll = $('#console-autoscroll').classList.contains('on');
-    try { localStorage.setItem('cgConsoleAutoScroll', state.consoleAutoscroll ? '1' : '0'); }
-    catch (e) { /* приватный режим не должен ломать консоль */ }
-    if (state.consoleAutoscroll) {
-      const consoleEl = $('#console');
-      consoleEl.scrollTop = consoleEl.scrollHeight;
-      updateConsoleJump();
-    }
-  });
-  mkToggle($('#console-hide-warn'), state.consoleHideWarn);
-  $('#console').classList.toggle('hide-warn', state.consoleHideWarn);
-  $('#console-hide-warn').addEventListener('click', () => {
-    state.consoleHideWarn = $('#console-hide-warn').classList.contains('on');
-    $('#console').classList.toggle('hide-warn', state.consoleHideWarn);
-    try { localStorage.setItem('cgConsoleHideWarn', state.consoleHideWarn ? '1' : '0'); }
-    catch (e) { /* приватный режим не должен ломать консоль */ }
-    updateConsoleJump();
-  });
   state.memCreateSlider = mkSlider($('#mem-create'), {
     min: 1024, max: state.maxMemMb, step: 512, value: 2048,
     format: fmtMem, labelEl: $('#mem-create-val'), onChange: updateMemHint,

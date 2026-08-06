@@ -8,11 +8,19 @@ window.API = (function () {
   async function call(method, url, body) {
     let res;
     try {
-      res = await fetch(B(url), {
-        method: method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
+      const request = () => fetch(B(url), {
+          method: method,
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      try { res = await request(); }
+      catch (firstError) {
+        // Повторяем только чтение: ECONNRESET на застоявшемся keep-alive не должен
+        // ронять экран, а повтор мутации мог бы выполнить действие дважды.
+        if (method !== 'GET') throw firstError;
+        await new Promise((resolve) => setTimeout(resolve, 180));
+        res = await request();
+      }
     } catch (e) {
       throw new Error('Нет связи с панелью. Проверьте, что server.js запущен.');
     }
@@ -78,6 +86,12 @@ window.API = (function () {
     setLaunchMode: (mode) => call('POST', '/api/launch-mode', { mode: mode }),
     trayMinimize: () => call('GET', '/api/tray-minimize'),
     setTrayMinimize: (enabled) => call('POST', '/api/tray-minimize', { enabled: enabled }),
+
+    updateStatus: () => call('GET', '/api/update'),
+    updateCheck: (force) => call('POST', '/api/update/check', { force: force !== false }),
+    updateDownload: () => call('POST', '/api/update/download'),
+    updateInstall: () => call('POST', '/api/update/install'),
+    updateDismiss: (version) => call('POST', '/api/update/dismiss', { version: version }),
 
     javaInstall: (major) => call('POST', '/api/java/install', { major: major }),
     javaInstallState: () => call('GET', '/api/java/install'),

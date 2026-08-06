@@ -18,8 +18,6 @@
   .pop-head { display: flex; align-items: center; gap: 10px; flex: none; }
   .pop-head .sh-name { font-size: 16px; }
   .pop-head .status-badge { font-size: 11px; }
-  .pop-console-tools { margin-left: auto; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .pop-autoscroll { min-height: 40px; }
   .pop-wrap .console { flex: 1; height: auto; min-height: 0; }
 </style>
 </head>
@@ -29,16 +27,6 @@
     <img class="sh-icon" id="pop-icon" alt="" hidden>
     <div class="sh-name" id="pop-title">Консоль</div>
     <span class="status-badge" id="pop-status"></span>
-    <div class="pop-console-tools">
-      <div class="toggle-row pop-autoscroll">
-        <span class="toggle-label">Скрывать WARN</span>
-        <div class="mc-toggle" id="hide-warn-toggle" role="switch" aria-label="Скрывать WARN"></div>
-      </div>
-      <div class="toggle-row pop-autoscroll">
-        <span class="toggle-label">Автопрокрутка</span>
-        <div class="mc-toggle" id="auto-scroll-toggle" role="switch" aria-label="Автопрокрутка"></div>
-      </div>
-    </div>
   </div>
   <div class="console" id="console"></div>
   <div class="console-input-row">
@@ -58,9 +46,8 @@
   var input = document.getElementById('command-input');
   var btnSend = document.getElementById('btn-send');
   var statusEl = document.getElementById('pop-status');
-  var autoScrollToggle = document.getElementById('auto-scroll-toggle');
-  var hideWarnToggle = document.getElementById('hide-warn-toggle');
   var commandPlaceholder = input.placeholder;
+  var appSettingsKey = 'controlgui-settings';
   var autoScrollKey = 'cgConsoleAutoScroll';
   var hideWarnKey = 'cgConsoleHideWarn';
   var autoScroll = true;
@@ -76,34 +63,44 @@
   input.disabled = true;
   btnSend.disabled = true;
 
-  try {
-    var savedAutoScroll = localStorage.getItem(autoScrollKey);
-    if (savedAutoScroll !== null) autoScroll = savedAutoScroll === '1';
-    hideWarn = localStorage.getItem(hideWarnKey) === '1';
-  } catch (e) { /* приватный режим */ }
-
-  function mkToggle(el, initialOn) {
-    if (initialOn) el.classList.add('on');
-    el.innerHTML = '<div class="fill"></div><div class="knob"><div class="face"></div></div>';
-    el.setAttribute('aria-checked', initialOn ? 'true' : 'false');
-    el.addEventListener('click', function () {
-      el.classList.toggle('on');
-      el.setAttribute('aria-checked', el.classList.contains('on') ? 'true' : 'false');
-    });
+  function readConsolePreferences() {
+    var settings = {};
+    try { settings = JSON.parse(localStorage.getItem(appSettingsKey)) || {}; }
+    catch (e) { settings = {}; }
+    try {
+      if (!Object.prototype.hasOwnProperty.call(settings, 'consoleAutoscroll')) {
+        var savedAutoScroll = localStorage.getItem(autoScrollKey);
+        settings.consoleAutoscroll = savedAutoScroll === null ? true : savedAutoScroll === '1';
+      }
+      if (!Object.prototype.hasOwnProperty.call(settings, 'consoleHideWarn')) {
+        settings.consoleHideWarn = localStorage.getItem(hideWarnKey) === '1';
+      }
+    } catch (e) { /* приватный режим */ }
+    return settings;
   }
 
-  mkToggle(autoScrollToggle, autoScroll);
-  autoScrollToggle.addEventListener('click', function () {
-    autoScroll = autoScrollToggle.classList.contains('on');
-    try { localStorage.setItem(autoScrollKey, autoScroll ? '1' : '0'); } catch (e) { /* приватный режим */ }
-    if (autoScroll) consoleEl.scrollTop = consoleEl.scrollHeight;
-  });
-  mkToggle(hideWarnToggle, hideWarn);
-  consoleEl.classList.toggle('hide-warn', hideWarn);
-  hideWarnToggle.addEventListener('click', function () {
-    hideWarn = hideWarnToggle.classList.contains('on');
+  function applyConsolePreferences() {
+    var settings = readConsolePreferences();
+    var wasAutoScroll = autoScroll;
+    autoScroll = settings.consoleAutoscroll !== false;
+    hideWarn = settings.consoleHideWarn === true;
     consoleEl.classList.toggle('hide-warn', hideWarn);
-    try { localStorage.setItem(hideWarnKey, hideWarn ? '1' : '0'); } catch (e) { /* приватный режим */ }
+    document.body.classList.toggle('console-nowrap', settings.consoleWrap === false);
+    document.body.classList.toggle('reduce-motion', settings.reducedMotion === true);
+    document.body.classList.remove('theme-lime', 'theme-blue');
+    document.body.classList.add(settings.theme === 'theme-blue' ? 'theme-blue' : 'theme-lime');
+    var fontSize = Number(settings.consoleFontSize);
+    if (!isFinite(fontSize)) fontSize = 13;
+    fontSize = Math.max(11, Math.min(18, Math.round(fontSize)));
+    document.body.style.setProperty('--console-font-size', fontSize + 'px');
+    if (autoScroll && !wasAutoScroll) consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+
+  applyConsolePreferences();
+  window.addEventListener('storage', function (event) {
+    if (event.key === appSettingsKey || event.key === autoScrollKey || event.key === hideWarnKey) {
+      applyConsolePreferences();
+    }
   });
 
   function appendLine(line) {
