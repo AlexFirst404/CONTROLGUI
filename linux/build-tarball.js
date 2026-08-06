@@ -10,7 +10,8 @@ const path = require('path');
 const zlib = require('zlib');
 
 const ROOT = path.join(__dirname, '..');
-const VERSION = process.argv[2] || '2.3.2';
+const VERSION = process.argv[2] || '2.4.0';
+const MTIME = 1700000000; // фиксированное время для воспроизводимости сборки
 
 // ---- минимальный ustar-писатель (как в build-deb.js) ----
 function tarHeader(name, size, mode, type) {
@@ -20,7 +21,7 @@ function tarHeader(name, size, mode, type) {
   buf.write('0000000\0', 108, 8);
   buf.write('0000000\0', 116, 8);
   buf.write(size.toString(8).padStart(11, '0') + '\0', 124, 12);
-  buf.write(Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + '\0', 136, 12);
+  buf.write(MTIME.toString(8).padStart(11, '0') + '\0', 136, 12);
   buf.write('        ', 148, 8); // чексумма-заглушка
   buf.write(type || '0', 156, 1);
   buf.write('ustar', 257, 5);
@@ -39,7 +40,9 @@ function addFile(name, data, mode) {
   if (padLen) chunks.push(Buffer.alloc(padLen));
 }
 function addTree(src, dst) {
-  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+  const entries = fs.readdirSync(src, { withFileTypes: true })
+    .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  for (const e of entries) {
     const s = path.join(src, e.name);
     const d = dst + '/' + e.name;
     if (e.isDirectory()) { addDir(d); addTree(s, d); }

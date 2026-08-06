@@ -11,7 +11,7 @@ const path = require('path');
 const zlib = require('zlib');
 
 const ROOT = path.join(__dirname, '..');
-const VERSION = process.argv[2] || '2.3.2';
+const VERSION = process.argv[2] || '2.4.0';
 const MTIME = 1700000000; // фиксированное время для воспроизводимости
 
 // ----------------------------------------------------------------- ustar tar ---
@@ -87,7 +87,9 @@ function makeTree() {
     entries.push({ name: './' + destRel, type: '0', mode, data: fs.readFileSync(srcAbs) });
   }
   function addTree(srcAbs, destRel) {
-    for (const e of fs.readdirSync(srcAbs, { withFileTypes: true })) {
+    const entries = fs.readdirSync(srcAbs, { withFileTypes: true })
+      .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    for (const e of entries) {
       const s = path.join(srcAbs, e.name);
       const d = destRel + '/' + e.name;
       if (e.isDirectory()) addTree(s, d);

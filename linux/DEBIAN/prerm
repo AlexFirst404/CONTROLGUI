@@ -1,13 +1,147 @@
 #!/bin/sh
 set -e
 
-# Остановить запущенную панель перед удалением файлов пакета.
-# Панель — node server.js из /opt/controlgui, слушает порт 8400 по умолчанию.
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k 8400/tcp 2>/dev/null || true
-fi
-if command -v pkill >/dev/null 2>&1; then
-  pkill -f '/opt/controlgui/server.js' 2>/dev/null || true
+# Перед обновлением или удалением нельзя убивать Node через fuser/pkill: в этот
+# момент панель может менять каталог сервера или сохранять мир. Просим её завершиться
+# через локальный API и ограниченно ждём освобождения порта. По таймауту dpkg
+# остановится с понятной ошибкой, оставив работающую панель и её данные нетронутыми.
+if command -v node >/dev/null 2>&1; then
+  node - "${1:-remove}" <<'NODE'
+'use strict';
+const fs = require('fs');
+const http = require('http');
+const net = require('net');
+
+const action = process.argv[2] || 'remove';
+const waitMs = 120000;
+const processPorts = new Set();
+let unresolvedProcessPort = false;
+
+// У установленного .deb команда может работать на нестандартном PORT. На Linux
+// его безопаснее взять из окружения именно процесса /opt/controlgui/server.js,
+// чем угадывать по всем слушающим сокетам или разбирать локализуемый вывод утилит.
+try {
+  for (const pid of fs.readdirSync('/proc')) {
+    if (!/^\d+$/.test(pid)) continue;
+    const base = '/proc/' + pid;
+    let cwd = '';
+    let command = '';
+    try { cwd = fs.realpathSync(base + '/cwd'); } catch (e) { /* процесс уже завершился */ }
+    try { command = fs.readFileSync(base + '/cmdline', 'utf8').replace(/\0/g, ' '); } catch (e) { /* нет доступа */ }
+    if (cwd !== '/opt/controlgui' && !command.includes('/opt/controlgui/server.js')) continue;
+    if (!/(^|\s)server\.js(?:\s|$)/.test(command) && !command.includes('/opt/controlgui/server.js')) continue;
+    let foundPort = false;
+    let environmentRead = false;
+    try {
+      const env = fs.readFileSync(base + '/environ', 'utf8').split('\0');
+      environmentRead = true;
+      const item = env.find((line) => line.startsWith('PORT='));
+      if (item) {
+        const port = Number(item.slice(5));
+        if (Number.isInteger(port) && port > 0 && port < 65536) {
+          processPorts.add(port);
+          foundPort = true;
+        }
+      }
+    } catch (e) { /* ниже безопасно прервём обновление */ }
+    if (!foundPort && environmentRead) processPorts.add(8400);
+    else if (!foundPort) unresolvedProcessPort = true;
+  }
+} catch (e) { unresolvedProcessPort = true; }
+
+// Без процесса из /opt останавливать нечего. Намеренно не опрашиваем 8400 как
+// fallback: там может работать отдельная копия из репозитория или AppImage.
+const ports = processPorts;
+
+function request(port, method, requestPath, headers) {
+  return new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port, path: requestPath, method,
+      headers: headers || {}, timeout: 3000 }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { if (body.length < 65536) body += chunk.toString('utf8'); });
+      res.on('end', () => resolve({ status: res.statusCode || 0, body }));
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+function portOpen(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    let done = false;
+    const finish = (open) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve(open);
+    };
+    socket.setTimeout(500, () => finish(false));
+    socket.on('connect', () => finish(true));
+    socket.on('error', () => finish(false));
+  });
+}
+
+(async () => {
+  if (unresolvedProcessPort) {
+    throw new Error('найден процесс панели из /opt/controlgui, но его порт нельзя безопасно определить');
+  }
+  const stopping = [];
+  for (const port of ports) {
+    const status = await request(port, 'GET', '/api/status');
+    let app = '';
+    if (status && status.status === 200) {
+      try { app = JSON.parse(status.body).app || ''; } catch (e) { /* на порту другая программа */ }
+    }
+    // Если процесс из /opt уже находится в фазе shutdown, /api/status отдаёт 503.
+    // Всё равно повторяем разрешённый /api/quit и ждём порт, не начиная распаковку рядом.
+    if (!/^CONTROLGUI\s+\d/.test(app) && !processPorts.has(port)) continue;
+
+    const quit = await request(port, 'POST', '/api/quit', {
+      'x-cg-local': '1',
+      'x-cg-stop-servers': '1',
+    });
+    if (!quit || quit.status !== 200) {
+      throw new Error('панель на порту ' + port + ' отклонила штатное завершение');
+    }
+    stopping.push(port);
+  }
+
+  if (!stopping.length) return;
+  process.stdout.write('CONTROLGUI: сохраняю миры и штатно останавливаю панель перед ' +
+    (action === 'upgrade' ? 'обновлением' : 'удалением') + '…\n');
+
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    const states = await Promise.all(stopping.map(portOpen));
+    if (states.every((open) => !open)) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error('панель не завершилась за 2 минуты; дождитесь окончания бэкапа/восстановления и повторите');
+})().catch((error) => {
+  process.stderr.write('CONTROLGUI: ' + error.message + '. Файлы пакета не изменены.\n');
+  process.exitCode = 1;
+});
+NODE
+else
+  # Node — зависимость пакета, но пользователь мог удалить его раньше. Не блокируем
+  # деинсталляцию пустой установки; останавливаемся только если в /proc ещё виден
+  # живой процесс панели, который нельзя безопасно попросить о завершении.
+  panel_running=0
+  if [ -d /proc ]; then
+    for proc in /proc/[0-9]*; do
+      [ "$(readlink "$proc/cwd" 2>/dev/null || true)" = "/opt/controlgui" ] || continue
+      command_line="$(tr '\000' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+      case "$command_line" in
+        *server.js*) panel_running=1; break ;;
+      esac
+    done
+  fi
+  if [ "$panel_running" -eq 1 ]; then
+    echo "CONTROLGUI: Node.js не найден, но панель ещё работает; файлы пакета не изменены." >&2
+    exit 1
+  fi
 fi
 
 exit 0
