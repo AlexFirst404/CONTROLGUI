@@ -7,7 +7,7 @@ set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-VERSION="${1:-2.4.1}"
+VERSION="${1:-2.4.2}"
 ARCH="x86_64"
 NODE_VER="v20.18.1"
 CACHE="$HERE/.appimage-cache"

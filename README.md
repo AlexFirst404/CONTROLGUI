@@ -11,7 +11,7 @@
 <br>
 
 [![Лицензия](https://img.shields.io/badge/license-GPL--3.0-3b8526?style=flat-square)](LICENSE)
-![Версия](https://img.shields.io/badge/release-2.4.1-6cc04a?style=flat-square)
+![Версия](https://img.shields.io/badge/release-2.4.2-6cc04a?style=flat-square)
 ![Платформы](https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux-2b2b2b?style=flat-square)
 ![Зависимости](https://img.shields.io/badge/npm--зависимостей-0-3b8526?style=flat-square)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-2b2b2b?style=flat-square)

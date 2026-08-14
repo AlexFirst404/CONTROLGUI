@@ -10,11 +10,11 @@ on:
       version:
         description: 'Версия (для имени файла)'
         required: true
-        default: '2.4.1'
+        default: '2.4.2'
       release_tag:
         description: 'Тег релиза, куда заливать .pkg'
         required: true
-        default: 'v2.4.1'
+        default: 'v2.4.2'
 
 permissions:
   contents: write
