@@ -151,6 +151,9 @@ html.embed #set-blur-row { display: flex !important; }
 
 /* контент растягивается под экран (с разумным потолком на ультрашироких) */
 #app { position: relative; z-index: 5; max-width: min(1480px, 96vw); margin: 0 auto; padding: 26px 18px 64px; }
+/* Вертикальная стойка глобальных действий занимает правый край окна. Резерв
+   действует и чуть выше мобильного брейкпоинта, где шапка уже переносится. */
+html:not(.embed) #app { padding-right: 64px; }
 
 /* ------------------------------------------------- предупреждение Java ---- */
 .java-alert { background: #241a1a; border: 2px solid #a33; color: #ff9a8a;
@@ -473,8 +476,8 @@ textarea.fld { resize: vertical; line-height: 1.7; font-size: 14px; }
 .info-grid { display: grid; grid-template-columns: max-content 1fr; gap: 12px 24px; font-size: 14px; }
 .info-grid .k { color: #a9a9a9; }
 .info-grid .v { color: #ececec; word-break: break-all; }
-.info-copy { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
-.info-copy .fld { flex: 1; min-width: 0; margin: 0; }
+.info-copy { display: inline-flex; justify-self: start; align-items: stretch; gap: 8px; min-width: 0; max-width: 100%; }
+.info-copy .fld { flex: 0 1 auto; width: auto; min-width: 0; max-width: calc(100% - 50px); margin: 0; }
 .info-copy .mc-btn { flex: none; min-width: 40px; margin: 0; }
 
 .danger-zone { margin-top: 26px; border-top: 1px solid #5a2a24; padding-top: 16px; }
@@ -730,7 +733,7 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 
 /* ----------------------- глобальные кнопки и уведомления ------------------ */
 .app-global-tools { position: fixed; top: 12px; right: 12px; z-index: 80;
-  display: flex; align-items: center; gap: 8px; }
+  display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .app-global-tools .mc-btn { width: 42px; height: 42px; min-width: 0; padding: 0; margin: 0;
   display: flex; align-items: center; justify-content: center; }
 .app-global-tools .mc-btn .pi { width: 20px; height: 20px; }
@@ -739,8 +742,8 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 .settings-save-fixed.mc-btn { position: fixed; right: 16px; bottom: 16px; z-index: 91;
   box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 #tab-settings { padding-bottom: 72px; } /* место под закреплённую кнопку */
-/* поповер — .mc-card, закреплён под кнопкой слева от настроек */
-.notif-pop.mc-card { position: fixed; right: 112px; top: 62px; z-index: 90;
+/* Поповер остаётся рядом с колоколом и не заходит под вертикальную колонку. */
+.notif-pop.mc-card { position: fixed; right: 64px; top: 12px; z-index: 90;
   width: 300px; max-height: 50vh; overflow: auto; padding: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .notif-pop-head { font-family: var(--font-head); font-size: 13px; color: #e6e6e6;
   padding: 4px 6px 8px; border-bottom: 1px solid var(--sep); margin-bottom: 6px; }
@@ -783,7 +786,8 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
   opacity: 0; pointer-events: none; transition: opacity .18s ease; }
 .app-scrim.open { opacity: 1; pointer-events: auto; }
 
-.app-menu { position: fixed; top: 58px; right: 12px; z-index: 79; width: 252px;
+.app-menu { position: fixed; top: 112px; right: 64px; z-index: 79; width: 252px;
+  max-height: calc(100vh - 124px); overflow-y: auto; transform-origin: top right;
   background: #1c1c1c; border: 2px solid #4a4a4a; box-shadow: 0 14px 36px rgba(0,0,0,.6);
   transform: translateY(-10px); opacity: 0; pointer-events: none;
   transition: transform .18s cubic-bezier(.2,.7,.2,1), opacity .14s ease; }
@@ -802,6 +806,11 @@ li.CodeMirror-hint-active { background: #3b3b3b; color: var(--accent-bright); }
 }
 .reduce-motion .bg-pattern::before, .reduce-motion .toast, .reduce-motion .dl-spin {
   animation: none !important;
+}
+.reduce-motion .mc-progress-fill { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .mc-progress-fill { transition: none; }
+  .mc-progress-fill.indeterminate { animation: none; left: 0; }
 }
 .graph-pref-hidden { display: none !important; }
 .console-nowrap .console { white-space: pre; word-break: normal; overflow-x: auto; }
@@ -1040,6 +1049,12 @@ input[type=password]::-ms-clear { display: none; }
 .bk-create { display: flex; gap: 10px; align-items: stretch; }
 .bk-create .fld { max-width: 220px; }
 .bk-create .mc-btn { margin-bottom: 0; }
+.bk-progress { margin: 14px 0 0; }
+.bk-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin-bottom: 7px; flex-wrap: wrap; }
+.bk-progress-head .progress-label { margin-bottom: 0; }
+.bk-progress-head .hint { margin: 0; }
+.bk-progress-detail { margin-top: 6px; }
 .bk-list { margin-top: 12px; max-height: 56vh; overflow-y: auto; }
 .bk-row .file-actions a.mc-btn { text-decoration: none; }
 
@@ -1209,7 +1224,9 @@ input[type=password]::-ms-clear { display: none; }
   .stats-row .stat-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 @media (max-width: 640px) {
-  #app { padding: 14px 10px 44px; }
+  /* Правая полоса принадлежит вертикальным глобальным действиям на всех экранах:
+     так карточки, вкладки и формы не попадут под них даже при ширине 320px. */
+  html:not(.embed) #app { padding: 14px 58px 44px 10px; }
   body { font-size: 15px; }
   .mc-title { font-size: 18px; }
   .console { height: max(300px, calc(100vh - 560px)); }
@@ -1233,14 +1250,19 @@ input[type=password]::-ms-clear { display: none; }
   .player-right { text-align: left; width: 100%; order: 4; }
   .app-global-tools { top: 8px; right: 8px; gap: 6px; }
   .app-global-tools .mc-btn { width: 38px; height: 38px; }
-  .notif-pop.mc-card { top: 52px; left: 10px; right: 10px; width: auto; }
-  .app-settings-head { padding-right: 132px; min-height: 42px; }
+  .notif-pop.mc-card { top: 8px; left: 10px; right: 54px; width: auto; max-height: calc(100vh - 16px); }
+  .app-menu { top: 96px; right: 54px; width: min(252px, calc(100vw - 64px));
+    max-height: calc(100vh - 104px); }
+  .app-settings-head { padding-right: 0; min-height: 42px; }
   .appset-tabbar { justify-content: flex-start; }
   .appset-tabbar .mc-tab { flex: 0 0 auto; min-width: 155px; }
   .app-settings-grid { grid-template-columns: 1fr; }
   .app-settings-card { padding: 14px; }
   .app-settings-card-head { flex-direction: column; }
   .app-settings-card-head > .mc-btn { align-self: flex-start; }
+  .bk-create { width: 100%; flex-wrap: wrap; }
+  .bk-create .fld { flex: 1 1 180px; max-width: none; }
+  .bk-create .mc-btn { flex: 1 1 auto; justify-content: center; }
 }
 @media (max-width: 420px) {
   .stats-row { grid-template-columns: 1fr; }

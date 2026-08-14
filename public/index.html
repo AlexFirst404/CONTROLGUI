@@ -1048,6 +1048,16 @@
           </div>
         </div>
         <div class="hint" style="margin-top:8px">Архив всего каталога сервера (.tar.gz). У работающего сервера мир сохраняется перед бэкапом. Восстановление — только на остановленном.</div>
+        <div class="progress-wrap bk-progress hidden" id="bk-progress">
+          <div class="bk-progress-head">
+            <div class="progress-label" id="bk-progress-label" role="status" aria-live="polite" aria-atomic="true">Создание бэкапа…</div>
+            <div class="hint" id="bk-progress-eta">Время завершения рассчитывается…</div>
+          </div>
+          <div class="mc-progress" id="bk-progress-bar" role="progressbar" aria-label="Прогресс создания бэкапа">
+            <div class="mc-progress-fill indeterminate" id="bk-progress-fill"></div>
+          </div>
+          <div class="hint bk-progress-detail" id="bk-progress-detail"></div>
+        </div>
         <div class="mc-card inset bk-list" id="bk-list"></div>
       </div>
     </div>

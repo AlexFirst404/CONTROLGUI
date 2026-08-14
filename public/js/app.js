@@ -185,6 +185,16 @@
     updatePollFailures: 0,
     updatePromptedVersion: null,
     updateNotifiedVersion: null,
+    backupPollTimer: null,
+    backupPollBusy: false,
+    backupPollServerId: null,
+    backupPollSeq: 0,
+    backupFetchSeq: 0,
+    backupCreatePending: Object.create(null),
+    backupCreatingByServer: Object.create(null),
+    backupRenderedServerId: null,
+    backupRenderedSignature: null,
+    consoleScrollAnimation: null,
   };
 
   // ---------- права ----------
@@ -2413,6 +2423,8 @@
   function resetServerScopedViews() {
     if (cancelPluginDeleteChoice) cancelPluginDeleteChoice();
     stopLogLive();
+    stopBackupPolling();
+    cancelConsoleScroll();
     state.statsSeq = (state.statsSeq || 0) + 1;
     state.logsListSeq = (state.logsListSeq || 0) + 1;
     state.logContentSeq = (state.logContentSeq || 0) + 1;
@@ -2438,6 +2450,11 @@
     const logQuery = $('#logs-query'); if (logQuery) logQuery.value = '';
     const pluginQuery = $('#pl-installed-query'); if (pluginQuery) pluginQuery.value = '';
     const modQuery = $('#md-installed-query'); if (modQuery) modQuery.value = '';
+    const backupProgress = $('#bk-progress'); if (backupProgress) backupProgress.classList.add('hidden');
+    const backupButton = $('#bk-create-btn'); if (backupButton) backupButton.disabled = false;
+    const backupLabel = $('#bk-label'); if (backupLabel) backupLabel.disabled = false;
+    state.backupRenderedServerId = null;
+    state.backupRenderedSignature = null;
     const crumbs = $('#files-crumbs'); if (crumbs) crumbs.textContent = '';
     const filesPath = $('#files-path'); if (filesPath) filesPath.textContent = '';
     $('#content-modal').classList.add('hidden');
@@ -2565,9 +2582,12 @@
       !(status === 'no-jar' || (dl && dl.phase === 'error'))
     );
     $('#btn-redownload').disabled = restoring;
-    ['#core-redownload', '#core-upload-btn', '#btn-delete-server', '#bk-create-btn', '#bk-label'].forEach((sel) => {
+    ['#core-redownload', '#core-upload-btn', '#btn-delete-server'].forEach((sel) => {
       const el = $(sel); if (el) el.disabled = restoring;
     });
+    const backupActiveNow = backupActive(server.id, server);
+    const backupButton = $('#bk-create-btn'); if (backupButton) backupButton.disabled = restoring || backupActiveNow;
+    const backupLabel = $('#bk-label'); if (backupLabel) backupLabel.disabled = restoring || backupActiveNow;
     const canRestoreBackup = ['stopped', 'no-jar', 'error'].includes(status);
     $$('#bk-list .mc-btn.accent').forEach((el) => { el.disabled = restoring || !canRestoreBackup; });
     $$('#bk-list .mc-btn.danger').forEach((el) => { el.disabled = restoring; });
@@ -2640,6 +2660,9 @@
       input.className = 'fld';
       input.readOnly = true;
       input.value = value;
+      // Нативный size даёт полю ширину по содержимому, а CSS ограничивает её
+      // доступной шириной при длинных путях и адресах.
+      input.size = Math.min(120, Math.max(1, Array.from(String(value)).length));
       input.setAttribute('aria-label', label);
       const button = document.createElement('button');
       button.type = 'button';
@@ -3671,6 +3694,47 @@
 
   // ---------- консоль ----------
 
+  function cancelConsoleScroll() {
+    const animation = state.consoleScrollAnimation;
+    if (!animation) return;
+    cancelAnimationFrame(animation.frame);
+    state.consoleScrollAnimation = null;
+  }
+
+  function scrollConsoleToBottom(consoleEl, animate) {
+    if (!consoleEl) return;
+    cancelConsoleScroll();
+    const reduced = document.body.classList.contains('reduce-motion') ||
+      (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const start = consoleEl.scrollTop;
+    const initialTarget = Math.max(0, consoleEl.scrollHeight - consoleEl.clientHeight);
+    if (!animate || reduced || initialTarget <= start + 1) {
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+      updateConsoleJump();
+      return;
+    }
+    const animation = { frame: 0, startedAt: performance.now() };
+    state.consoleScrollAnimation = animation;
+    const duration = 220;
+    const step = (now) => {
+      if (state.consoleScrollAnimation !== animation) return;
+      const progress = Math.min(1, (now - animation.startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      // Конец может сдвинуться из-за новых строк SSE; длительность при этом
+      // остаётся фиксированной и не зависит от расстояния прокрутки.
+      const target = Math.max(0, consoleEl.scrollHeight - consoleEl.clientHeight);
+      consoleEl.scrollTop = start + (target - start) * eased;
+      if (progress < 1) {
+        animation.frame = requestAnimationFrame(step);
+        return;
+      }
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+      state.consoleScrollAnimation = null;
+      updateConsoleJump();
+    };
+    animation.frame = requestAnimationFrame(step);
+  }
+
   function updateConsoleJump() {
     const c = $('#console'); const btn = $('#console-jump');
     if (!c || !btn) return;
@@ -3683,14 +3747,16 @@
     if (state.sse) state.sse.close();
     state.sse = null;
     const consoleEl = $('#console');
+    cancelConsoleScroll();
     // однократно вешаем слушатель прокрутки и клик по кнопке «к последним»
     if (!consoleEl.dataset.jumpBound) {
       consoleEl.dataset.jumpBound = '1';
       consoleEl.addEventListener('scroll', updateConsoleJump);
+      consoleEl.addEventListener('wheel', cancelConsoleScroll, { passive: true });
+      consoleEl.addEventListener('touchstart', cancelConsoleScroll, { passive: true });
+      consoleEl.addEventListener('pointerdown', cancelConsoleScroll);
       const jump = $('#console-jump');
-      if (jump) jump.addEventListener('click', () => {
-        consoleEl.scrollTop = consoleEl.scrollHeight; updateConsoleJump();
-      });
+      if (jump) jump.addEventListener('click', (event) => scrollConsoleToBottom(consoleEl, event.detail !== 0));
     }
     consoleEl.innerHTML = '';
     if (!can('console.view')) return;
@@ -3725,7 +3791,7 @@
     el.textContent = line;
     consoleEl.appendChild(el);
     while (consoleEl.childNodes.length > 1200) consoleEl.removeChild(consoleEl.firstChild);
-    if (state.consoleAutoscroll && atBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+    if (state.consoleAutoscroll && atBottom && !state.consoleScrollAnimation) consoleEl.scrollTop = consoleEl.scrollHeight;
     updateConsoleJump();
   }
 
@@ -5799,6 +5865,7 @@
     $('#tab-info').classList.toggle('hidden', tab !== 'info');
     syncServerPaneHeight();
     if (tab !== 'logs') stopLogLive();
+    if (tab !== 'backups') stopBackupPolling();
     if (tab === 'settings') loadSettings();
     if (tab === 'console') {
       loadStats();
@@ -5829,14 +5896,201 @@
 
   // ---------- бэкапы ----------
 
+  function stopBackupPolling() {
+    if (state.backupPollTimer) clearTimeout(state.backupPollTimer);
+    state.backupPollTimer = null;
+    state.backupPollServerId = null;
+    state.backupPollSeq = (state.backupPollSeq || 0) + 1;
+    state.backupFetchSeq = (state.backupFetchSeq || 0) + 1;
+  }
+
+  function backupPending(serverId) {
+    return !!state.backupCreatePending[serverId];
+  }
+
+  function backupActive(serverId, server) {
+    return backupPending(serverId) || state.backupCreatingByServer[serverId] === true ||
+      !!(server && (server.backupCreating === true || server.backupActive === true));
+  }
+
+  function backupListSignature(list) {
+    return list.map((item) => [String(item.name || ''), Number(item.size) || 0, Number(item.mtime) || 0].join('\u0001')).join('\u0002');
+  }
+
+  function renderBackupsIfChanged(list, serverId, server) {
+    const signature = backupListSignature(list);
+    if (state.backupRenderedServerId === serverId && state.backupRenderedSignature === signature) return false;
+    renderBackups(list, serverId, server);
+    state.backupRenderedServerId = serverId;
+    state.backupRenderedSignature = signature;
+    return true;
+  }
+
+  function backupProgressPercent(creating) {
+    let progress = creating && creating.progress != null ? Number(creating.progress) : NaN;
+    if (Number.isFinite(progress)) {
+      if (progress >= 0 && progress <= 1) progress *= 100;
+      return Math.max(0, Math.min(100, progress));
+    }
+    const processed = creating && creating.processedBytes != null ? Number(creating.processedBytes) : NaN;
+    const total = creating && creating.totalBytes != null ? Number(creating.totalBytes) : NaN;
+    if (Number.isFinite(processed) && Number.isFinite(total) && total > 0) {
+      return Math.max(0, Math.min(100, processed / total * 100));
+    }
+    return null;
+  }
+
+  function backupPhaseText(phase) {
+    const phases = {
+      starting: 'Запускаю создание бэкапа…',
+      preparing: 'Подготавливаю файлы…',
+      saving: 'Сохраняю мир сервера…',
+      scanning: 'Подсчитываю файлы…',
+      collecting: 'Собираю файлы…',
+      archiving: 'Создаю архив…',
+      compressing: 'Сжимаю архив…',
+      finalizing: 'Завершаю создание бэкапа…',
+    };
+    return phases[String(phase || '').toLowerCase()] || 'Создаю бэкап…';
+  }
+
+  function backupEtaSeconds(creating, percent) {
+    const supplied = creating && creating.etaSeconds != null ? Number(creating.etaSeconds) : NaN;
+    if (Number.isFinite(supplied) && supplied >= 0) return supplied;
+    if (!(percent > 0 && percent < 100)) return null;
+    const rawStartedAt = creating && creating.startedAt;
+    let startedAt = typeof rawStartedAt === 'number' ? rawStartedAt : Date.parse(rawStartedAt);
+    if (Number.isFinite(startedAt) && startedAt > 0 && startedAt < 1e12) startedAt *= 1000;
+    const elapsed = (Date.now() - startedAt) / 1000;
+    if (!Number.isFinite(elapsed) || elapsed <= 0) return null;
+    return Math.max(0, elapsed * (100 - percent) / percent);
+  }
+
+  function backupRemainingText(seconds) {
+    const value = Math.max(0, Math.ceil(seconds));
+    if (value < 10) return 'несколько секунд';
+    if (value < 60) return value + ' сек';
+    const minutes = Math.ceil(value / 60);
+    if (minutes < 60) return minutes + ' мин';
+    const hours = Math.floor(minutes / 60);
+    return hours + ' ч ' + (minutes % 60) + ' мин';
+  }
+
+  function renderBackupCreation(creating, serverId) {
+    const pending = backupPending(serverId);
+    const active = !!creating || pending;
+    if (active) state.backupCreatingByServer[serverId] = true;
+    else delete state.backupCreatingByServer[serverId];
+    const root = $('#bk-progress');
+    const button = $('#bk-create-btn');
+    const labelInput = $('#bk-label');
+    const restoring = isRestoring(state.current);
+    if (button) button.disabled = active || restoring;
+    if (labelInput) labelInput.disabled = active || restoring;
+    if (!root) return active;
+    root.classList.toggle('hidden', !active);
+    if (!active) return false;
+
+    const status = creating || { phase: 'starting' };
+    const percent = backupProgressPercent(status);
+    const phase = String(status.phase || '').toLowerCase();
+    const visualPercent = ['starting', 'preparing', 'scanning', 'saving', 'collecting'].includes(phase)
+      ? null : percent;
+    const fill = $('#bk-progress-fill');
+    const bar = $('#bk-progress-bar');
+    const phaseLabel = backupPhaseText(status.phase);
+    const phaseLabelEl = $('#bk-progress-label');
+    // Live-регион меняется только при смене фазы: частые проценты остаются
+    // в progressbar и не забивают очередь объявлений скринридера.
+    if (phaseLabelEl.textContent !== phaseLabel) phaseLabelEl.textContent = phaseLabel;
+    if (visualPercent == null) {
+      fill.classList.add('indeterminate');
+      fill.style.width = '';
+      bar.removeAttribute('aria-valuenow');
+      bar.removeAttribute('aria-valuemin');
+      bar.removeAttribute('aria-valuemax');
+    } else {
+      fill.classList.remove('indeterminate');
+      fill.style.width = visualPercent.toFixed(1) + '%';
+      bar.setAttribute('aria-valuemin', '0');
+      bar.setAttribute('aria-valuemax', '100');
+      bar.setAttribute('aria-valuenow', String(Math.round(visualPercent)));
+    }
+
+    const processed = status.processedBytes != null ? Number(status.processedBytes) : NaN;
+    const total = status.totalBytes != null ? Number(status.totalBytes) : NaN;
+    const detail = [];
+    if (Number.isFinite(processed) && processed >= 0 && (processed > 0 || visualPercent != null)) {
+      detail.push(Number.isFinite(total) && total > 0 ? fmtBytes(processed) + ' из ' + fmtBytes(total) : 'Обработано ' + fmtBytes(processed));
+    }
+    if (visualPercent != null) detail.push(Math.round(visualPercent) + '%');
+    $('#bk-progress-detail').textContent = detail.join(' · ');
+
+    const etaSeconds = backupEtaSeconds(status, visualPercent);
+    if (etaSeconds == null) {
+      $('#bk-progress-eta').textContent = 'Время завершения рассчитывается…';
+    } else {
+      const finish = new Date(Date.now() + etaSeconds * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      $('#bk-progress-eta').textContent = 'Примерно до ' + finish + ' · осталось ' + backupRemainingText(etaSeconds);
+    }
+    return true;
+  }
+
+  function scheduleBackupPoll(serverId, delay, seq) {
+    const expectedSeq = seq == null ? state.backupPollSeq : seq;
+    if (!isCurrentServerView(serverId, 'backups') || expectedSeq !== state.backupPollSeq) return;
+    if (state.backupPollTimer) clearTimeout(state.backupPollTimer);
+    state.backupPollServerId = serverId;
+    state.backupPollTimer = setTimeout(() => pollBackupCreation(serverId, expectedSeq), delay == null ? 700 : delay);
+  }
+
+  async function pollBackupCreation(serverId, seq) {
+    state.backupPollTimer = null;
+    if (!isCurrentServerView(serverId, 'backups') || state.backupPollServerId !== serverId || seq !== state.backupPollSeq) return;
+    if (state.backupPollBusy) { scheduleBackupPoll(serverId, 300, seq); return; }
+    state.backupPollBusy = true;
+    const fetchSeq = ++state.backupFetchSeq;
+    try {
+      const data = await API.backups(serverId);
+      if (!isCurrentServerView(serverId, 'backups') || seq !== state.backupPollSeq ||
+          fetchSeq !== state.backupFetchSeq) return;
+      renderBackupsIfChanged(data.backups || [], serverId, state.current);
+      const active = renderBackupCreation(data.creating, serverId);
+      if (active) scheduleBackupPoll(serverId, null, seq);
+      else stopBackupPolling();
+    } catch (e) {
+      // Краткий сетевой сбой не должен замораживать уже показанный прогресс.
+      if (isCurrentServerView(serverId, 'backups') && seq === state.backupPollSeq &&
+          fetchSeq === state.backupFetchSeq) scheduleBackupPoll(serverId, 1500, seq);
+    } finally {
+      state.backupPollBusy = false;
+    }
+  }
+
+  function startBackupPolling(serverId, delay) {
+    if (state.backupPollServerId !== serverId) state.backupPollSeq = (state.backupPollSeq || 0) + 1;
+    state.backupPollServerId = serverId;
+    scheduleBackupPoll(serverId, delay, state.backupPollSeq);
+  }
+
   async function loadBackups() {
     if (!state.currentId) return;
     const serverId = state.currentId;
-    await guard(async () => {
+    const fetchSeq = ++state.backupFetchSeq;
+    try {
       const data = await API.backups(serverId);
-      if (state.currentId !== serverId) return;
-      renderBackups(data.backups || [], serverId, state.current);
-    });
+      if (!isCurrentServerView(serverId, 'backups') || fetchSeq !== state.backupFetchSeq) return;
+      renderBackupsIfChanged(data.backups || [], serverId, state.current);
+      const active = renderBackupCreation(data.creating, serverId);
+      if (active) startBackupPolling(serverId);
+      else if (state.backupPollServerId === serverId) stopBackupPolling();
+    } catch (e) {
+      if (!isCurrentServerView(serverId, 'backups') || fetchSeq !== state.backupFetchSeq) return;
+      showToast(e.message);
+      // Если создание уже было замечено, временный сбой финального GET не должен
+      // оставить интерфейс навсегда в старом состоянии.
+      if (backupActive(serverId, state.current)) startBackupPolling(serverId, 1500);
+    }
   }
 
   function renderBackups(list, serverId, server) {
@@ -5901,19 +6155,25 @@
     if (!state.currentId) return;
     const serverId = state.currentId;
     if (isRestoring(state.current)) { showToast('Дождитесь завершения восстановления бэкапа.'); return; }
-    const btn = $('#bk-create-btn');
-    btn.disabled = true;
+    if (backupActive(serverId, state.current)) { showToast('Создание бэкапа уже выполняется.'); return; }
     const label = $('#bk-label').value.trim();
+    state.backupFetchSeq = (state.backupFetchSeq || 0) + 1;
+    state.backupCreatePending[serverId] = true;
+    renderBackupCreation(null, serverId);
     try {
       showToast('Создаю бэкап…', 'ok');
-      await API.backupCreate(serverId, label);
+      const request = API.backupCreate(serverId, label);
+      startBackupPolling(serverId, 200);
+      await request;
       if (state.currentId === serverId) $('#bk-label').value = '';
       showToast('Бэкап создан.', 'ok');
-      if (state.currentId === serverId) loadBackups();
     } catch (e) {
       showToast(e.message);
     } finally {
-      if (state.currentId === serverId) btn.disabled = isRestoring(state.current);
+      delete state.backupCreatePending[serverId];
+      if (isCurrentServerView(serverId, 'backups')) {
+        await loadBackups();
+      }
     }
   }
 

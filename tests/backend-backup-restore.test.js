@@ -14,9 +14,8 @@ const { PassThrough } = require('stream');
 const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'controlgui-restore-test-'));
 process.env.CONTROLGUI_DATA = dataRoot;
 
-/* На реальной Windows-машине bsdtar вернул код 1 при ENOSPC и оставил большой,
-   но обрезанный архив. Обёртка воспроизводит именно этот результат, не заполняя
-   диск: сначала создаёт маленький tar, затем обрезает его и подменяет exit code. */
+/* На реальной Windows-машине bsdtar вернул код 1 при ENOSPC. Обёртка подменяет
+   exit code защитного снимка, не заполняя диск; Node сам пишет gzip из stdout. */
 const realSpawn = childProcess.spawn;
 const realStatfsSync = fs.statfsSync;
 const realMkdirSync = fs.mkdirSync;
@@ -24,9 +23,9 @@ const realRenameSync = fs.renameSync;
 let forcedBeforeRestoreFailure = null;
 childProcess.spawn = function spawnWithIncompleteBeforeRestore(file, args, options) {
   const child = realSpawn(file, args, options);
-  const target = Array.isArray(args) && args[0] === '-czf' ? String(args[1] || '') : '';
+  const createsArchive = Array.isArray(args) && args[0] === '-cf' && args[1] === '-';
   const mode = forcedBeforeRestoreFailure;
-  if (!mode || !/_before-restore(?:_\d+)?\.tar\.gz\..+\.tmp$/i.test(target)) return child;
+  if (!mode || !createsArchive) return child;
 
   const proxy = new EventEmitter();
   const stderr = new PassThrough();
@@ -38,12 +37,6 @@ childProcess.spawn = function spawnWithIncompleteBeforeRestore(file, args, optio
   child.stderr.on('data', (chunk) => stderr.write(chunk));
   child.on('error', (error) => proxy.emit('error', error));
   child.on('exit', (code, signal) => {
-    if (code === 0) {
-      try {
-        const size = fs.statSync(target).size;
-        fs.truncateSync(target, Math.max(1, Math.floor(size / 2)));
-      } catch (e) { /* строгий режим всё равно обязан отклонить код tar=1 */ }
-    }
     stderr.write(mode === 'enospc'
       ? 'tar: No space left on device\n'
       : 'tar: часть файлов не удалось прочитать\n');
