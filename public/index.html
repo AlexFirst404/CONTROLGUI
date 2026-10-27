@@ -631,6 +631,7 @@
 
     <nav class="mc-card tabbar">
       <button class="mc-tab sel" data-tab="console"><i class="pi" data-ic="terminal-sharp"></i> Консоль</button>
+      <button class="mc-tab" data-tab="statistics"><i class="pi" data-ic="chart-bar"></i> Статистика</button>
       <button class="mc-tab" data-tab="settings"><i class="pi" data-ic="sliders-2"></i> Настройки</button>
       <button class="mc-tab" data-tab="files"><i class="pi" data-ic="folder"></i> Файлы</button>
       <button class="mc-tab" data-tab="plugins"><i class="pi" data-ic="box"></i> Плагины</button>
@@ -1059,6 +1060,43 @@
           <div class="hint bk-progress-detail" id="bk-progress-detail"></div>
         </div>
         <div class="mc-card inset bk-list" id="bk-list"></div>
+      </div>
+    </div>
+
+    <!-- Вкладка: статистика -->
+    <div class="tab-pane hidden" id="tab-statistics">
+      <div class="mc-card form-panel">
+        <div class="statistics-toolbar">
+          <div>
+            <div class="section-title">Статистика сервера</div>
+            <div class="hint" id="statistics-since">Загрузка статистики…</div>
+          </div>
+          <label class="mc-label">Период
+            <select class="fld" id="statistics-period">
+              <option value="7">7 дней</option>
+              <option value="30" selected>30 дней</option>
+              <option value="90">90 дней</option>
+              <option value="0">Всё время</option>
+            </select>
+          </label>
+          <button class="mc-btn sm" id="statistics-refresh"><i class="pi" data-ic="reload"></i> Обновить</button>
+        </div>
+        <div class="err hidden" id="statistics-error" role="status"></div>
+        <div class="statistics-grid" id="statistics-summary"></div>
+        <div class="hint" id="statistics-method">Средний онлайн учитывает длительность каждого значения, включая время с нулём игроков. Время без наблюдения панели не добавляется.</div>
+        <div class="statistics-grid" id="statistics-details"></div>
+      </div>
+      <div class="mc-card form-panel">
+        <div class="section-title">История по дням</div>
+        <div class="hint" id="statistics-history-note">Дни считаются по UTC. Даты рекордов показаны в вашем часовом поясе. Подробная история хранится за последние 366 дней.</div>
+        <div class="statistics-chart hidden" id="statistics-chart" aria-hidden="true"></div>
+        <div class="statistics-table-wrap" tabindex="0" role="region" aria-label="Ежедневная статистика сервера">
+          <table class="statistics-table">
+            <caption class="label-dim">Время работы и онлайн по дням (UTC)</caption>
+            <thead><tr><th scope="col">Дата</th><th scope="col">Работал</th><th scope="col">Пик</th><th scope="col">Когда был пик</th><th scope="col">Средний онлайн</th><th scope="col">Человеко-часы</th><th scope="col">Запуски</th></tr></thead>
+            <tbody id="statistics-daily"><tr><td colspan="7">Загрузка…</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
 

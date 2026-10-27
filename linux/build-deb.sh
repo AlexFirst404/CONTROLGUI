@@ -6,7 +6,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
-VERSION="${1:-2.4.2}"
+VERSION="${1:-2.4.3}"
 
 build_flavor() {
   flavor="$1"           # browser | app

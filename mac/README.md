@@ -11,8 +11,8 @@
 Запускать **на macOS** (нужен `pkgbuild` из системы):
 
 ```sh
-sh mac/build-pkg.sh           # версия 2.4.2 по умолчанию
-sh mac/build-pkg.sh 2.4.2     # явная версия
+sh mac/build-pkg.sh           # версия 2.4.3 по умолчанию
+sh mac/build-pkg.sh 2.4.3     # явная версия
 ```
 
 Скрипт сам определит архитектуру (Apple Silicon `arm64` / Intel `x64`),

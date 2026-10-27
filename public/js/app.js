@@ -195,6 +195,10 @@
     backupRenderedServerId: null,
     backupRenderedSignature: null,
     consoleScrollAnimation: null,
+    statisticsSeq: 0,
+    statisticsBusy: false,
+    statisticsLoadedAt: 0,
+    statisticsDays: 30,
   };
 
   // ---------- права ----------
@@ -219,6 +223,7 @@
 
   const TAB_PERMISSIONS = {
     console: ['console.view'],
+    statistics: ['console.view'],
     settings: ['settings.edit'],
     files: ['files.read'],
     plugins: ['files.read'],
@@ -234,7 +239,7 @@
     if (perms && !canAny(perms, srv)) return false;
     if (tab === 'plugins' && !(srv && srv.plugins)) return false;
     if (tab === 'mods' && !(srv && srv.mods)) return false;
-    return ['console', 'settings', 'files', 'plugins', 'mods', 'players', 'logs', 'backups', 'info'].includes(tab);
+    return ['console', 'statistics', 'settings', 'files', 'plugins', 'mods', 'players', 'logs', 'backups', 'info'].includes(tab);
   }
 
   async function loadMe() {
@@ -2305,11 +2310,14 @@
 
   async function loadVersions() {
     const type = $('#core-select').value || 'vanilla';
+    const seq = (state.versionsSeq = (state.versionsSeq || 0) + 1);
     if (type === 'custom') return; // у своего ядра версии не из репозитория
     const select = $('#version-select');
     select.innerHTML = '<option value="">Загрузка версий...</option>';
+    if (select._mcSync) select._mcSync();
     try {
       const data = await API.versions(type);
+      if (seq !== state.versionsSeq || $('#core-select').value !== type) return;
       select.innerHTML = '';
       for (const v of data.versions) {
         const opt = document.createElement('option');
@@ -2319,8 +2327,11 @@
       }
       if (!data.versions.length) select.innerHTML = '<option value="">Версии не найдены</option>';
     } catch (e) {
+      if (seq !== state.versionsSeq || $('#core-select').value !== type) return;
       select.innerHTML = '<option value="">Не удалось загрузить (нет сети?)</option>';
       showToast(e.message);
+    } finally {
+      if (seq === state.versionsSeq && select._mcSync) select._mcSync();
     }
   }
 
@@ -2409,7 +2420,7 @@
   // ---------- экран сервера ----------
 
   function firstAllowedTab(server) {
-    const order = ['console', 'settings', 'files', 'plugins', 'mods', 'players', 'logs', 'backups', 'info'];
+    const order = ['console', 'statistics', 'settings', 'files', 'plugins', 'mods', 'players', 'logs', 'backups', 'info'];
     for (const tab of order) { if (tabAllowed(tab, server)) return tab; }
     return 'info';
   }
@@ -2425,7 +2436,11 @@
     stopLogLive();
     stopBackupPolling();
     cancelConsoleScroll();
+    state.serverRefreshRequest = null;
+    state.serverRefreshSeq = (state.serverRefreshSeq || 0) + 1;
+    state.serverRefreshErrorShown = false;
     state.statsSeq = (state.statsSeq || 0) + 1;
+    resetStatisticsView();
     state.logsListSeq = (state.logsListSeq || 0) + 1;
     state.logContentSeq = (state.logContentSeq || 0) + 1;
     state.logSearchSeq = (state.logSearchSeq || 0) + 1;
@@ -2506,27 +2521,42 @@
   async function refreshServer() {
     if (state.screen !== 'server' || !state.currentId) return;
     const requestedId = state.currentId;
+    // При ответах дольше 2,5 секунд новые тики раньше бесконечно отменяли старые
+    // по seq: удалённый сервер отвечал, но интерфейс ни разу не обновлялся.
+    if (state.serverRefreshRequest && state.serverRefreshRequest.id === requestedId) return;
+    const request = { id: requestedId };
+    state.serverRefreshRequest = request;
     const seq = (state.serverRefreshSeq = (state.serverRefreshSeq || 0) + 1);
     try {
       const server = await API.server(requestedId);
       if (state.screen !== 'server' || state.currentId !== requestedId || seq !== state.serverRefreshSeq) return;
       state.current = server;
+      state.serverRefreshErrorShown = false;
       const idx = state.servers.findIndex((s) => s.id === requestedId);
       if (idx >= 0) state.servers[idx] = Object.assign({}, state.servers[idx], server);
       if (!tabAllowed(state.currentTab, server)) await switchTab(firstAllowedTab(server));
       renderServerHead();
       if (state.currentTab === 'console') loadStats();
+      if (state.currentTab === 'statistics' && !state.statisticsBusy && Date.now() - state.statisticsLoadedAt >= 10000) loadStatistics();
       // перерисовываем вкладку игроков — иначе OP/бан/вайтлист показывают старое состояние после действия
       if (state.currentTab === 'players') renderPlayers(state.current);
     } catch (e) {
       if (state.currentId !== requestedId || seq !== state.serverRefreshSeq) return;
-      // сервер удалён (строго 404) — убираем из списка, чтобы не висел
+      // Временный сетевой сбой не должен закрывать редактор и сбрасывать экран.
+      // Уходим только при подтверждённом удалении сервера или отзыве доступа.
+      if (e.status !== 404 && e.status !== 403) {
+        if (!state.serverRefreshErrorShown) showToast('Не удалось обновить сервер. Повторяю подключение…');
+        state.serverRefreshErrorShown = true;
+        return;
+      }
       if (e.status === 404) {
         state.servers = (state.servers || []).filter((s) => s.id !== state.currentId);
       }
       showScreen('list');
       showToast(e.message);
       renderList();
+    } finally {
+      if (state.serverRefreshRequest === request) state.serverRefreshRequest = null;
     }
   }
 
@@ -2628,6 +2658,8 @@
 
   function renderInfo(server) {
     const grid = $('#info-grid');
+    // Опрос не должен уничтожать выделение пути или адреса, пока его копируют.
+    if (state.infoRenderedId === server.id && grid.contains(document.activeElement)) return;
     const running = server.status === 'running' || server.status === 'starting';
     const uptime = (running && server.startedAt) ? fmtDuration(Date.now() - server.startedAt) : '—';
     const createdDate = server.createdAt ? new Date(server.createdAt) : null;
@@ -2645,6 +2677,11 @@
       ['Система', platformName(state.platform)],
       ['Создан', createdText],
     ];
+    const serverPath = serverBasePath(server);
+    const signature = JSON.stringify([server.id, rows, server.port, state.externalIp, state.lanIps, serverPath, state.remoteSession]);
+    if (state.infoSignature === signature) return;
+    state.infoSignature = signature;
+    state.infoRenderedId = server.id;
     grid.innerHTML = '';
     const addKey = (label) => {
       const kEl = document.createElement('div');
@@ -2689,7 +2726,6 @@
       vEl.textContent = v;
       grid.appendChild(vEl);
     }
-    const serverPath = serverBasePath(server);
     const pathText = serverPath || (state.remoteSession
       ? 'Путь скрыт для удалённого доступа'
       : 'Внешняя папка (импорт «на месте»)');
@@ -5855,6 +5891,7 @@
     moveTabIndicator(state.tabIndReady === true);
     state.tabIndReady = true;
     $('#tab-console').classList.toggle('hidden', tab !== 'console');
+    $('#tab-statistics').classList.toggle('hidden', tab !== 'statistics');
     $('#tab-settings').classList.toggle('hidden', tab !== 'settings');
     $('#tab-files').classList.toggle('hidden', tab !== 'files');
     $('#tab-plugins').classList.toggle('hidden', tab !== 'plugins');
@@ -5866,6 +5903,11 @@
     syncServerPaneHeight();
     if (tab !== 'logs') stopLogLive();
     if (tab !== 'backups') stopBackupPolling();
+    if (tab !== 'statistics') {
+      state.statisticsSeq += 1;
+      state.statisticsBusy = false;
+    }
+    if (tab === 'statistics') loadStatistics(true);
     if (tab === 'settings') loadSettings();
     if (tab === 'console') {
       loadStats();
@@ -5892,6 +5934,177 @@
       }
     }
     return true;
+  }
+
+  // ---------- накопительная статистика ----------
+
+  function statisticsDuration(value) {
+    if (value == null || !Number.isFinite(Number(value))) return '—';
+    const seconds = Math.max(0, Math.floor(Number(value) / 1000));
+    if (seconds < 60) return seconds + ' сек';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + ' мин';
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + ' ч ' + (minutes % 60) + ' мин';
+    return Math.floor(hours / 24) + ' д ' + (hours % 24) + ' ч';
+  }
+
+  function statisticsNumber(value) {
+    return value == null || !Number.isFinite(Number(value)) ? '—'
+      : Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  }
+
+  function statisticsDate(value) {
+    if (value == null) return '—';
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toLocaleString('ru-RU') : '—';
+  }
+
+  function resetStatisticsView() {
+    state.statisticsSeq += 1;
+    state.statisticsBusy = false;
+    state.statisticsLoadedAt = 0;
+    $('#statistics-summary').textContent = '';
+    $('#statistics-details').textContent = '';
+    $('#statistics-chart').textContent = '';
+    $('#statistics-chart').classList.add('hidden');
+    $('#statistics-since').textContent = 'Загрузка статистики…';
+    $('#statistics-error').classList.add('hidden');
+    $('#statistics-refresh').disabled = false;
+    $('#tab-statistics').removeAttribute('aria-busy');
+    const body = $('#statistics-daily');
+    body.textContent = '';
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 7;
+    cell.textContent = 'Загрузка…';
+    row.appendChild(cell);
+    body.appendChild(row);
+  }
+
+  function statisticsCard(root, name, value, hint) {
+    const card = document.createElement('div');
+    card.className = 'mc-card inset stat-card';
+    const label = document.createElement('div');
+    label.className = 'stat-name';
+    label.textContent = name;
+    const number = document.createElement('div');
+    number.className = 'stat-val';
+    number.textContent = value;
+    const note = document.createElement('div');
+    note.className = 'hint';
+    note.textContent = hint;
+    card.append(label, number, note);
+    root.appendChild(card);
+  }
+
+  function renderStatistics(data) {
+    const summary = data.summary || {};
+    const lifetime = data.lifetime || {};
+    const current = data.current || {};
+    const periodText = state.statisticsDays === 0 ? 'За всё время наблюдения' : 'За выбранные ' + state.statisticsDays + ' дней (UTC)';
+    $('#statistics-since').textContent = 'Сбор данных с ' + statisticsDate(data.collectedSince) + '. Обновляется каждые 10 секунд.';
+    if (data.persistenceError) {
+      $('#statistics-error').textContent = 'Статистика временно не сохраняется. Проверьте доступность диска и файла статистики.';
+      $('#statistics-error').classList.remove('hidden');
+    }
+    const box = $('#statistics-summary');
+    box.textContent = '';
+    statisticsCard(box, 'Время работы', statisticsDuration(summary.uptimeMs), periodText);
+    statisticsCard(box, 'Пиковый онлайн', statisticsNumber(summary.peakPlayers),
+      summary.peakPlayersAt == null ? 'Пока нет наблюдений онлайна' : 'Рекорд: ' + statisticsDate(summary.peakPlayersAt));
+    statisticsCard(box, 'Средний онлайн', statisticsNumber(summary.averagePlayers), 'Взвешен по времени известного онлайна');
+    statisticsCard(box, 'Запуски сервера', statisticsNumber(summary.starts), periodText);
+    const details = $('#statistics-details');
+    details.textContent = '';
+    statisticsCard(details, 'Текущая сессия', current.running ? statisticsDuration(current.uptimeMs) : 'Остановлен',
+      current.orphan ? 'Процесс работает вне панели; онлайн неизвестен' :
+        (current.running ? (current.playersKnown ? 'Сейчас игроков: ' + statisticsNumber(current.players) : 'Ожидание данных онлайна') : 'Время остановки не добавляется'));
+    statisticsCard(details, 'Самая долгая сессия', statisticsDuration(lifetime.longestSessionMs), 'За всё время наблюдения');
+    statisticsCard(details, 'Человеко-часы', statisticsNumber(summary.playerHours), 'Суммарное время всех игроков за период');
+    statisticsCard(details, 'Онлайн наблюдался', statisticsDuration(summary.onlineObservedMs), 'Время, по которому рассчитано среднее');
+    const daily = Array.isArray(data.daily) ? data.daily : [];
+    const body = $('#statistics-daily');
+    body.textContent = '';
+    for (const day of daily.slice().reverse()) {
+      const row = document.createElement('tr');
+      const values = [day.date, statisticsDuration(day.uptimeMs), statisticsNumber(day.peakPlayers),
+        statisticsDate(day.peakPlayersAt), statisticsNumber(day.averagePlayers), statisticsNumber(day.playerHours), statisticsNumber(day.starts)];
+      for (const value of values) {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        row.appendChild(cell);
+      }
+      body.appendChild(row);
+    }
+    if (!daily.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 7;
+      cell.textContent = 'Истории пока нет. Данные появятся после запуска сервера под наблюдением панели.';
+      row.appendChild(cell);
+      body.appendChild(row);
+    }
+    const chart = $('#statistics-chart');
+    chart.textContent = '';
+    const peaks = daily.map((day) => day.peakPlayers);
+    const maximum = Math.max(0, ...peaks.filter((value) => value != null && Number.isFinite(value)));
+    chart.classList.toggle('hidden', maximum <= 0);
+    if (maximum > 0) {
+      const svgNs = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(svgNs, 'svg');
+      svg.setAttribute('viewBox', '0 0 1000 120');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      const width = 1000 / daily.length;
+      daily.forEach((day, index) => {
+        if (!(day.peakPlayers > 0)) return;
+        const bar = document.createElementNS(svgNs, 'rect');
+        const height = day.peakPlayers / maximum * 112;
+        bar.setAttribute('x', String(index * width + Math.min(2, width / 8)));
+        bar.setAttribute('y', String(120 - height));
+        bar.setAttribute('width', String(Math.max(1, width - Math.min(4, width / 4))));
+        bar.setAttribute('height', String(height));
+        const title = document.createElementNS(svgNs, 'title');
+        title.textContent = day.date + ' (UTC): пик ' + statisticsNumber(day.peakPlayers);
+        bar.appendChild(title);
+        svg.appendChild(bar);
+      });
+      const label = document.createElement('div');
+      label.className = 'hint';
+      label.textContent = 'Пиковый онлайн по дням, от старых дат к новым. Точные значения — в таблице.';
+      chart.append(svg, label);
+    }
+  }
+
+  async function loadStatistics(force) {
+    const serverId = state.currentId;
+    if (!serverId || !isCurrentServerView(serverId, 'statistics') || !can('console.view')) return;
+    if (state.statisticsBusy && !force) return;
+    const seq = ++state.statisticsSeq;
+    const days = state.statisticsDays;
+    state.statisticsBusy = true;
+    state.statisticsLoadedAt = Date.now();
+    $('#statistics-refresh').disabled = true;
+    $('#tab-statistics').setAttribute('aria-busy', 'true');
+    try {
+      const data = await API.statistics(serverId, days);
+      if (!isCurrentServerView(serverId, 'statistics') || seq !== state.statisticsSeq || days !== state.statisticsDays) return;
+      $('#statistics-error').classList.add('hidden');
+      renderStatistics(data);
+    } catch (e) {
+      if (!isCurrentServerView(serverId, 'statistics') || seq !== state.statisticsSeq) return;
+      const error = $('#statistics-error');
+      error.textContent = e.status === 404 || e.status === 405
+        ? 'Эта удалённая панель ещё не поддерживает историю статистики. Обновите её до новой версии.'
+        : 'Не удалось обновить статистику: ' + e.message;
+      error.classList.remove('hidden');
+    } finally {
+      if (seq === state.statisticsSeq) {
+        state.statisticsBusy = false;
+        $('#statistics-refresh').disabled = false;
+        $('#tab-statistics').removeAttribute('aria-busy');
+      }
+    }
   }
 
   // ---------- бэкапы ----------
@@ -6870,6 +7083,12 @@
   // ---------- инициализация ----------
 
   function bind() {
+    $('#statistics-refresh').addEventListener('click', () => loadStatistics(true));
+    $('#statistics-period').addEventListener('change', () => {
+      state.statisticsDays = Number($('#statistics-period').value);
+      resetStatisticsView();
+      loadStatistics(true);
+    });
     $('#btn-goto-create').addEventListener('click', () => {
       showScreen('create');
       suggestPort();
@@ -7398,8 +7617,6 @@
     }
   }
 
-  // macOS: курсор WebKit рисует крупнее — переключаем на меньший вариант (см. --cursor в CSS)
-  try { if (/Mac/i.test((navigator.platform || '') + ' ' + (navigator.userAgent || ''))) document.documentElement.classList.add('is-mac'); } catch (e) { /* */ }
   applyAppSettings(appSettings);
   applyIcons(document);
   initCycleButtons(document);

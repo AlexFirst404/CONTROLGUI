@@ -65,6 +65,7 @@ window.API = (function () {
     proxyLinkSet: (id, proxyId, action) => call('POST', '/api/servers/' + id + '/proxy-link', { proxyId: proxyId, action: action }),
     consoleStream: (id) => new EventSource(B('/api/servers/' + id + '/console')),
     stats: (id) => call('GET', '/api/servers/' + id + '/stats'),
+    statistics: (id, days) => call('GET', '/api/servers/' + id + '/statistics?days=' + encodeURIComponent(days == null ? 30 : days)),
     player: (id, name) => call('GET', '/api/servers/' + id + '/player?name=' + encodeURIComponent(name)),
     itemIconUrl: (id, itemId) => B('/api/servers/' + id + '/item-icon?item=' + encodeURIComponent(itemId)),
     playerEdit: (id, body) => call('POST', '/api/servers/' + id + '/playeredit', body),

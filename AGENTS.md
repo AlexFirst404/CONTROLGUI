@@ -110,7 +110,7 @@ public/css/minecraft.css — UI-кит (единственный визуаль�
 
 - Ветки: рабочая **`linux-deb`**, дефолтная **`main`**. Пушить в обе (`git push origin linux-deb` → `linux-deb:main` → `git branch -f main linux-deb`). Контрибьюшн-плитка считает коммиты на `main`.
 - Перед коммитом — секрет-скан; **никогда не коммитить cert/key/пароли**. `data/` в `.gitignore`. `panel.zip` пересобирать при изменении тела панели.
-- Сообщения коммитов на русском; завершать `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+- Сообщения коммитов на русском. Не добавлять Claude или других ИИ в авторы, соавторы и контрибьюторы; не добавлять автоматические `Co-Authored-By`.
 
 ---
 

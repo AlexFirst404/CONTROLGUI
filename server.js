@@ -22,6 +22,18 @@ function isLoopbackReq(req) {
   return ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1';
 }
 
+function isLoopbackHost(req) {
+  const authority = String(req.headers.host || '');
+  // Браузер при DNS rebinding соединяется с loopback, но сохраняет Host чужого
+  // сайта. Одной проверки remoteAddress недостаточно: такой origin получил бы
+  // полный доступ владельца, включая POST со своим же Origin.
+  if (!authority || /[\s\\/@?#]/.test(authority)) return false;
+  let parsed;
+  try { parsed = new URL('http://' + authority); } catch (e) { return false; }
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  return host === 'localhost' || host === '[::1]' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+}
+
 // Сеть защиты: единичный кривой запрос (напр. NUL в пути) не должен ронять весь процесс
 // вместе с запущенными Minecraft-серверами. Логируем и продолжаем.
 process.on('uncaughtException', (e) => { console.error('[uncaughtException]', e && e.stack || e); });
@@ -110,7 +122,7 @@ async function handleRequest(req, res) {
     }
   } else {
     // -------- HTTP-листенер: только loopback (или явный CONTROLGUI_ALLOW_LAN=1) --------
-    if (!ALLOW_LAN && !isLoopbackReq(req)) {
+    if (!ALLOW_LAN && (!isLoopbackReq(req) || !isLoopbackHost(req))) {
       res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('403: панель доступна только локально. Удалённый доступ включается в настройках панели (HTTPS + пароль).');
       return;
